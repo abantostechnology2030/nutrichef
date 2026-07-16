@@ -4,7 +4,7 @@
 // Vive aparte porque lo usan varios flujos (generar menu, regenerar dia/plato,
 // verificar platos propuestos) y todos deben ver EXACTAMENTE la misma verdad: si
 // cada ruta armara su propio contexto, una podria olvidar las alergias.
-const { db } = require('../db');
+const { db, getConfig } = require('../db');
 
 // Une las alergias de TODOS los integrantes en una sola lista.
 // Se calcula aqui, una vez, porque es la restriccion DURA del prompt: si una alergia
@@ -71,6 +71,15 @@ function textoContexto(ctx) {
       : 'DESPENSA: vacia (no tiene ingredientes registrados).'
   );
   if (ctx.hogar.notas) partes.push(`NOTAS DE LA FAMILIA: ${ctx.hogar.notas}`);
+
+  // Instrucciones generales del admin (config.ia_instrucciones): valen para TODOS los
+  // hogares y se anteponen a todos los flujos del planificador. NUNCA por encima de las
+  // reglas duras: las alergias y condiciones medicas mandan aunque una instruccion diga
+  // otra cosa (lo dejamos explicito para que un texto del admin no baje esa proteccion).
+  const instrucciones = (getConfig('ia_instrucciones') || '').trim();
+  if (instrucciones) {
+    partes.push(`INSTRUCCIONES GENERALES DEL SERVICIO (tenlas SIEMPRE en cuenta al proponer y adaptar los platos, salvo que choquen con una alergia o condicion medica del hogar, que siempre mandan): ${instrucciones}`);
+  }
   return partes.join('\n');
 }
 

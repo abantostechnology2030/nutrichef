@@ -250,10 +250,13 @@ tbody tr:hover { background: var(--bg); }
 /* ===== Modal de confirmacion / dialogo ===== */
 .modal-back { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50; place-items: center; padding: 20px; }
 .modal-back.show { display: grid; }
-.modal { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); max-width: 460px; width: 100%; padding: 24px; animation: pop .15s ease; }
-.modal h3 { margin-bottom: 10px; font-size: 18px; }
-.modal .modal-body { color: var(--muted); margin-bottom: 18px; }
-.modal .row { justify-content: flex-end; }
+.modal { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); max-width: 460px; width: 100%; padding: 24px; animation: pop .15s ease; max-height: 90vh; display: flex; flex-direction: column; }
+.modal h3 { margin-bottom: 10px; font-size: 18px; flex-shrink: 0; }
+/* El cuerpo hace scroll; cabecera y botones quedan siempre visibles (en PC el contenido
+   alto se salia de pantalla y no se veia la parte baja ni los botones). min-height:0 es
+   lo que permite que un hijo flex realmente scrollee dentro de la columna. */
+.modal .modal-body { color: var(--muted); margin-bottom: 18px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.modal .row { justify-content: flex-end; flex-shrink: 0; }
 @keyframes pop { from { transform: scale(.96); opacity: .6; } to { transform: scale(1); opacity: 1; } }
 
 /* ===== Plan de comidas (calendario 7 dias x 3 momentos) ===== */

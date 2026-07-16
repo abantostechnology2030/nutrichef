@@ -128,6 +128,7 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     check(errores.length === 0, `sin errores de runtime ${errores.length ? '-> ' + errores.join(' | ') : ''}`);
     check(doc.querySelector('#lista-catalogo').children.length === 51, `datalist con 51 ingredientes (= ${doc.querySelector('#lista-catalogo').children.length})`);
     check(doc.querySelector('#d-nivel').options.length === 3, 'select de nivel con 3 opciones');
+    check(doc.querySelector('#d-cat').options.length === 11, `select de categoria con 11 opciones (= ${doc.querySelector('#d-cat').options.length})`);
     check(doc.querySelector('#filtro-cat').options.length === 12, `filtro con 11 categorias + "todas" (= ${doc.querySelector('#filtro-cat').options.length})`);
     check(/\d+ en despensa/.test(txt(doc, '#pill-despensa')), `pill de despensa: "${txt(doc, '#pill-despensa')}"`);
     const antes = doc.querySelectorAll('#lista-despensa [data-del]').length;
@@ -141,19 +142,22 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     const despues = doc.querySelectorAll('#lista-despensa [data-del]').length;
     check(despues === antes + 1, `agregar ingrediente: ${antes} -> ${despues}`);
 
-    // Tab de compra.
+    // Tab de compra. El ingrediente recien agregado queda PRESELECCIONADO aqui (queda
+    // listo para registrarlo como compra de la semana), asi que el boton ya esta habilitado.
     doc.querySelector('#t-compra').click(); await esperar(600);
     check(!doc.querySelector('#panel-compra').classList.contains('hidden'), 'la tab de compra se muestra');
     check(doc.querySelectorAll('#catalogo-chips [data-cat-chip]').length === 51, `chips del catalogo (= ${doc.querySelectorAll('#catalogo-chips [data-cat-chip]').length})`);
-    check(doc.querySelector('#btn-guardar-compra').disabled === true, 'el boton de registrar arranca deshabilitado');
+    check(doc.querySelector('#btn-guardar-compra').disabled === false, 'el ingrediente agregado llega preseleccionado (boton habilitado)');
+    check(txt(doc, '#c-resumen').includes('1 ingrediente'), `resumen arranca con el agregado: "${txt(doc, '#c-resumen')}"`);
+    check(doc.querySelectorAll('#lista-seleccion [data-sel-del]').length === 1, 'el agregado se lista para registrar');
 
-    // Seleccionar 2 y ver el resumen.
+    // Seleccionar 2 chips mas -> 3 en total.
     const chips = doc.querySelectorAll('#catalogo-chips [data-cat-chip]');
     chips[0].click(); await esperar(60);
     chips[5].click(); await esperar(60);
-    check(doc.querySelector('#btn-guardar-compra').disabled === false, 'el boton se habilita al seleccionar');
-    check(txt(doc, '#c-resumen').includes('2 ingredientes'), `resumen: "${txt(doc, '#c-resumen')}"`);
-    check(doc.querySelectorAll('#lista-seleccion [data-sel-del]').length === 2, 'los seleccionados se listan con su nivel');
+    check(doc.querySelector('#btn-guardar-compra').disabled === false, 'el boton sigue habilitado al seleccionar mas');
+    check(txt(doc, '#c-resumen').includes('3 ingredientes'), `resumen: "${txt(doc, '#c-resumen')}"`);
+    check(doc.querySelectorAll('#lista-seleccion [data-sel-del]').length === 3, 'los seleccionados se listan con su nivel');
 
     // Filtro de busqueda.
     doc.querySelector('#c-buscar').value = 'papa';

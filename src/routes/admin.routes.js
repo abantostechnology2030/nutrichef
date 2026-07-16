@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const bcrypt = require('bcryptjs');
 const { db, getAllConfig, getConfig, setConfig, CATEGORIAS_ING, fechaPeru, sumarDias } = require('../db');
 
 // Vigencia de un plan de pago al aprobarlo (mensual).
@@ -375,6 +376,11 @@ router.put('/config', (req, res) => {
   // Motor de IA (validado)
   if (['gemini', 'claude', 'ambos'].includes(String(cambios.ai_modo))) setConfig('ai_modo', cambios.ai_modo);
   if (['gemini', 'claude'].includes(String(cambios.ai_prioridad))) setConfig('ai_prioridad', cambios.ai_prioridad);
+  // Instrucciones generales para la IA (texto libre; se permite vaciarlas, por eso no
+  // pasan por el filtro de "no vacio" de arriba). Tope de 1500 para no inflar cada prompt.
+  if (cambios.ia_instrucciones !== undefined) {
+    setConfig('ia_instrucciones', String(cambios.ia_instrucciones).trim().slice(0, 1500));
+  }
   // Credito recargado por proveedor (USD)
   for (const k of ['credito_gemini', 'credito_claude']) {
     if (cambios[k] !== undefined && cambios[k] !== null && cambios[k] !== '') {
@@ -384,6 +390,22 @@ router.put('/config', (req, res) => {
   }
 
   res.json({ mensaje: 'Configuracion actualizada.', config: getAllConfig() });
+});
+
+// Cambiar la contrasena de la propia cuenta admin (exige la actual).
+router.put('/password', (req, res) => {
+  const { actual, nueva } = req.body || {};
+  if (!actual || !nueva) return res.status(400).json({ error: 'Faltan la contrasena actual y la nueva.' });
+  if (String(nueva).length < 6) return res.status(400).json({ error: 'La nueva contrasena debe tener al menos 6 caracteres.' });
+
+  const fila = db.prepare('SELECT password_hash FROM usuarios WHERE id = ?').get(req.usuario.id);
+  if (!fila || !bcrypt.compareSync(String(actual), fila.password_hash)) {
+    return res.status(403).json({ error: 'La contrasena actual no es correcta.' });
+  }
+
+  const hash = bcrypt.hashSync(String(nueva), 10);
+  db.prepare('UPDATE usuarios SET password_hash = ? WHERE id = ?').run(hash, req.usuario.id);
+  res.json({ mensaje: 'Contrasena actualizada.' });
 });
 
 // Subir / reemplazar el QR de Yape

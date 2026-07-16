@@ -42,11 +42,16 @@
                 <datalist id="lista-catalogo"></datalist>
               </div>
               <div class="field" style="margin:0">
+                <label>Categoría</label>
+                <select id="d-cat" class="input" style="width:auto"></select>
+              </div>
+              <div class="field" style="margin:0">
                 <label>¿Cuánto tienes?</label>
                 <select id="d-nivel" class="input" style="width:auto"></select>
               </div>
               <button class="btn btn-sm" id="btn-add-ing" type="button" style="margin-bottom:2px">+ Agregar</button>
             </div>
+            <p class="muted" style="font-size:12.5px;margin-top:8px">Al agregarlo también queda listo en <b>🛒 Registrar compra semanal</b> por si quieres registrarlo como compra de la semana.</p>
           </div>
 
           <div class="card">
@@ -109,6 +114,8 @@
     </div>
   </div>
 
+  <img class="mascota" src="/img/mascota-despensa.png" alt="" aria-hidden="true" />
+
   <script src="/js/api.js"></script>
   <script>
     exigirSesion();
@@ -120,6 +127,7 @@
     let CATALOGO = [];
     let DESPENSA = [];
     let NIVELES = [];
+    let CATEGORIAS = [];
     let seleccion = new Map(); // nombre -> { nombre, categoria, nivel }
 
     const NIVEL_TXT = { poco: '🔸 Poco', normal: '🔹 Normal', bastante: '🟢 Bastante' };
@@ -175,11 +183,12 @@
     async function cargar() {
       try {
         const d = await api('/api/despensa');
-        CATALOGO = d.catalogo; DESPENSA = d.despensa; NIVELES = d.niveles;
+        CATALOGO = d.catalogo; DESPENSA = d.despensa; NIVELES = d.niveles; CATEGORIAS = d.categorias;
         document.getElementById('d-nivel').innerHTML = NIVELES.map((n) => `<option value="${n}" ${n === 'normal' ? 'selected' : ''}>${NIVEL_TXT[n] || n}</option>`).join('');
+        document.getElementById('d-cat').innerHTML = CATEGORIAS.map((c) => `<option value="${c}" ${c === 'otro' ? 'selected' : ''}>${CAT_INFO[c]?.ic || ''} ${CAT_INFO[c]?.txt || c}</option>`).join('');
         document.getElementById('lista-catalogo').innerHTML = CATALOGO.map((c) => `<option value="${c.nombre}">`).join('');
         document.getElementById('filtro-cat').innerHTML = '<option value="">Todas las categorías</option>' +
-          d.categorias.map((c) => `<option value="${c}">${CAT_INFO[c]?.ic || ''} ${CAT_INFO[c]?.txt || c}</option>`).join('');
+          CATEGORIAS.map((c) => `<option value="${c}">${CAT_INFO[c]?.ic || ''} ${CAT_INFO[c]?.txt || c}</option>`).join('');
         pintarDespensa();
         pintarCatalogoChips();
       } catch (err) {
@@ -190,16 +199,32 @@
 
     document.getElementById('filtro-cat').onchange = pintarDespensa;
 
+    // Sugerir la categoria del catalogo cuando el nombre coincide (editable: el usuario puede cambiarla).
+    document.getElementById('d-nombre').oninput = () => {
+      const nombre = document.getElementById('d-nombre').value.trim().toLowerCase();
+      if (!nombre) return;
+      const hit = CATALOGO.find((c) => c.nombre.toLowerCase() === nombre);
+      if (hit) document.getElementById('d-cat').value = hit.categoria;
+    };
+
     document.getElementById('btn-add-ing').onclick = async () => {
       limpiarAlerta(alInv);
       const nombre = document.getElementById('d-nombre').value.trim();
       if (!nombre) { alerta(alInv, 'Escribe el nombre del ingrediente.'); return; }
+      const categoria = document.getElementById('d-cat').value;
+      const nivel = document.getElementById('d-nivel').value;
       try {
-        const d = await api('/api/despensa', { method: 'POST', body: { nombre, nivel: document.getElementById('d-nivel').value } });
+        const d = await api('/api/despensa', { method: 'POST', body: { nombre, categoria, nivel } });
         DESPENSA = d.despensa;
+        // Ademas de guardarlo en la despensa, lo dejamos LISTO en la compra de la semana
+        // (preseleccionado). No se registra hasta que el usuario le de a "Registrar compra".
+        seleccion.set(nombre.toLowerCase(), { nombre, categoria, nivel });
         document.getElementById('d-nombre').value = '';
+        document.getElementById('d-cat').value = 'otro';
         pintarDespensa();
         pintarCatalogoChips();
+        pintarSeleccion();
+        alerta(alInv, `«${nombre}» agregado. Queda listo en 🛒 Registrar compra semanal.`, 'ok');
       } catch (err) { alerta(alInv, err.error || 'No pudimos agregar el ingrediente.'); }
     };
     document.getElementById('d-nombre').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-ing').click(); } };

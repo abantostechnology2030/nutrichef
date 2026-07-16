@@ -328,6 +328,9 @@ setConfigDefault('ai_prioridad', 'gemini');
 // Credito recargado por proveedor (USD) para estimar el saldo restante y avisar.
 setConfigDefault('credito_gemini', '10.67');
 setConfigDefault('credito_claude', '7.60');
+// Instrucciones generales que el admin le da a la IA: se anteponen al contexto de TODOS
+// los flujos del planificador (generar, verificar, detallar). Vacio = sin instrucciones.
+setConfigDefault('ia_instrucciones', '');
 
 // ===== Semilla del catalogo de ingredientes (solo si esta vacio) =====
 if (db.prepare('SELECT COUNT(*) c FROM ingredientes_catalogo').get().c === 0) {

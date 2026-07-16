@@ -219,6 +219,12 @@
                 <option value="claude">Claude primero, Gemini de respaldo</option>
               </select>
             </div>
+            <div class="field">
+              <label>Instrucciones generales para la IA</label>
+              <textarea id="c-ia_instrucciones" class="input" rows="4" maxlength="1500"
+                placeholder="Ej: Prioriza platos de bajo costo. Evita frituras cuando se pueda. Usa porciones generosas de verduras."></textarea>
+              <span class="muted" style="font-size:12px">La IA las tendrá en cuenta al generar y verificar los platos de <b>todos</b> los hogares. Las alergias y condiciones médicas de cada familia <b>siempre</b> mandan por encima de esto. Déjalo vacío para no dar ninguna.</span>
+            </div>
 
             <hr style="border:none;border-top:1px solid var(--line);margin:16px 0" />
             <label style="display:block;font-weight:600;font-size:13.5px;margin-bottom:8px">Crédito recargado por IA (USD)</label>
@@ -235,11 +241,26 @@
           <label style="display:block;font-weight:600;font-size:13.5px;margin-bottom:6px">QR de Yape (opcional)</label>
           <p class="muted" style="font-size:13px;margin-bottom:12px">Sube la imagen de tu QR de Yape para que los clientes lo escaneen. Si no subes ninguno, en el checkout se muestra solo el número.</p>
           <div id="qr-preview" style="margin-bottom:12px"></div>
-          <input type="file" id="c-yape_qr" accept="image/*" />
+          <input type="file" id="c-yape_qr" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" />
+          <div class="row" style="gap:10px;align-items:center">
+            <label for="c-yape_qr" class="btn btn-sm" style="cursor:pointer">Seleccionar imagen…</label>
+            <span id="qr-nombre" class="muted" style="font-size:13px">Ningún archivo seleccionado</span>
+          </div>
           <div class="row" style="gap:8px;margin-top:10px">
             <button type="button" class="btn btn-sm" id="btn-subir-qr" disabled>Subir / Reemplazar</button>
             <button type="button" class="btn btn-danger btn-sm" id="btn-quitar-qr">Quitar QR</button>
           </div>
+
+          <hr style="border:none;border-top:1px solid var(--line);margin:18px 0" />
+          <label style="display:block;font-weight:600;font-size:13.5px;margin-bottom:6px">Cambiar mi contraseña</label>
+          <p class="muted" style="font-size:13px;margin-bottom:12px">Cambia la contraseña de esta cuenta de administrador. Necesitas la contraseña actual.</p>
+          <div id="alerta-password" class="alert"></div>
+          <form id="form-password">
+            <div class="field"><label>Contraseña actual</label><input id="p-actual" type="password" autocomplete="current-password" /></div>
+            <div class="field"><label>Nueva contraseña</label><input id="p-nueva" type="password" autocomplete="new-password" placeholder="Mínimo 6 caracteres" /></div>
+            <div class="field"><label>Repetir nueva contraseña</label><input id="p-nueva2" type="password" autocomplete="new-password" /></div>
+            <button class="btn btn-block" type="submit">Cambiar contraseña</button>
+          </form>
         </div>
       </div>
     </div>
@@ -375,13 +396,18 @@
         return;
       }
       if (t.dataset.aprobar) {
-        if (!confirm('¿Aprobar este pago y activar el plan?')) return;
+        const ok = await confirmar(
+          '¿<b>Ya verificaste en tu app de Yape</b> que este pago realmente ingresó?<br><br>' +
+          'Al aprobar se activa el plan del cliente de inmediato. Confirma el número de operación y el monto antes de continuar.',
+          { titulo: 'Verificar el Yape', ok: 'Sí, verifiqué — aprobar' }
+        );
+        if (!ok) return;
         t.disabled = true;
         try { await api(`/api/admin/pagos/${t.dataset.aprobar}/aprobar`, { method: 'POST' }); cargarPagos(); cargarResumen(); }
         catch (err) { alert(err.error || 'Error'); t.disabled = false; }
       }
       if (t.dataset.rechazar) {
-        if (!confirm('¿Rechazar este pago?')) return;
+        if (!await confirmar('¿Rechazar este pago?', { titulo: 'Rechazar pago', ok: 'Rechazar', peligro: true })) return;
         t.disabled = true;
         try { await api(`/api/admin/pagos/${t.dataset.rechazar}/rechazar`, { method: 'POST' }); cargarPagos(); cargarResumen(); }
         catch (err) { alert(err.error || 'Error'); t.disabled = false; }
@@ -668,6 +694,7 @@
       document.getElementById('c-ai_prioridad').value = config.ai_prioridad || 'gemini';
       document.getElementById('c-credito_gemini').value = config.credito_gemini || '';
       document.getElementById('c-credito_claude').value = config.credito_claude || '';
+      document.getElementById('c-ia_instrucciones').value = config.ia_instrucciones || '';
       togglePrioridad();
       pintarQrPreview(config.yape_qr_path);
     }
@@ -682,6 +709,7 @@
           ai_prioridad: document.getElementById('c-ai_prioridad').value,
           credito_gemini: document.getElementById('c-credito_gemini').value,
           credito_claude: document.getElementById('c-credito_claude').value,
+          ia_instrucciones: document.getElementById('c-ia_instrucciones').value,
         }});
         alerta(al, 'Configuración guardada.', 'ok');
         cargarResumen();
@@ -691,7 +719,11 @@
     // ===== QR de Yape (subir / quitar) =====
     const fileQr = document.getElementById('c-yape_qr');
     const btnSubirQr = document.getElementById('btn-subir-qr');
-    fileQr.onchange = () => { btnSubirQr.disabled = !fileQr.files[0]; };
+    const qrNombre = document.getElementById('qr-nombre');
+    fileQr.onchange = () => {
+      btnSubirQr.disabled = !fileQr.files[0];
+      qrNombre.textContent = fileQr.files[0] ? fileQr.files[0].name : 'Ningún archivo seleccionado';
+    };
     btnSubirQr.onclick = async () => {
       const f = fileQr.files[0]; if (!f) return;
       const al = document.getElementById('alerta-config');
@@ -701,6 +733,7 @@
         const res = await api('/api/admin/yape-qr', { method: 'POST', body: fd, isForm: true });
         pintarQrPreview(res.yape_qr);
         fileQr.value = '';
+        qrNombre.textContent = 'Ningún archivo seleccionado';
         alerta(al, 'QR actualizado.', 'ok');
       } catch (err) { alerta(al, err.error || 'No se pudo subir el QR.'); btnSubirQr.disabled = false; }
     };
@@ -712,6 +745,23 @@
         fileQr.value = ''; btnSubirQr.disabled = true;
         alerta(al, 'QR eliminado.', 'ok');
       } catch (err) { alerta(al, err.error || 'No se pudo quitar el QR.'); }
+    };
+
+    // ===== Cambiar contraseña del admin =====
+    document.getElementById('form-password').onsubmit = async (e) => {
+      e.preventDefault();
+      const al = document.getElementById('alerta-password');
+      const actual = document.getElementById('p-actual').value;
+      const nueva = document.getElementById('p-nueva').value;
+      const nueva2 = document.getElementById('p-nueva2').value;
+      if (!actual || !nueva) return alerta(al, 'Completa la contraseña actual y la nueva.');
+      if (nueva.length < 6) return alerta(al, 'La nueva contraseña debe tener al menos 6 caracteres.');
+      if (nueva !== nueva2) return alerta(al, 'Las dos contraseñas nuevas no coinciden.');
+      try {
+        await api('/api/admin/password', { method: 'PUT', body: { actual, nueva } });
+        e.target.reset();
+        alerta(al, 'Contraseña actualizada.', 'ok');
+      } catch (err) { alerta(al, err.error || 'No se pudo cambiar la contraseña.'); }
     };
 
     cargarResumen();
