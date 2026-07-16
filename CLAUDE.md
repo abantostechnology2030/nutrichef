@@ -68,7 +68,7 @@ Solo local (`http://localhost:3002`). Admin por defecto: `admin@nutrichefia.pe` 
 | 1 | Base: esquema limpio, auth, freemium, Yape, admin, escáner | ✅ **hecha** |
 | 2 | Hogar + Despensa (config previa, sin IA) | ✅ **hecha** |
 | 3 | Generador IA **por día** + calendario 7×3 + regenerar día/plato | ✅ **hecha** |
-| 4 | Detalle del plato (pasos) + platos manuales/biblioteca + **verificar platos propuestos** | 🟡 **pasos y biblioteca hechos**; falta **verificar** |
+| 4 | Detalle del plato (pasos) + platos manuales/biblioteca + **verificar platos propuestos** | ✅ **hecha** |
 | 5 | Lista de faltantes + PDF | ⬜ pendiente |
 | 6 | Admin: catálogo de ingredientes + medidor con generaciones | 🟡 backend listo, falta pulir UI |
 
@@ -292,8 +292,14 @@ dispara el botón "Analizar nutrición".
 > explícita (`UPDATE ... WHERE nombre='Free' AND generaciones_max = 1`, que solo pisa el
 > valor viejo exacto para no aplastar lo que el admin haya configurado a propósito).
 
-### Verificación de platos propuestos (fase 4) — plan acordado
-`verificarPlatos(propuestos[], hogar, integrantes, despensa)` — **una sola llamada en batch** (de 1 a 21 platos; 21 llamadas sueltas serían absurdamente caras). Devuelve por plato: ingredientes escalados a los comensales, **cobertura** (tengo / falta), **veredicto** (`alcanza` | `alcanza_justo` | `falta_comprar`) y **advertencias médicas**.
+### Verificación de platos propuestos — ✅ hecha (2026-07-16)
+`verificarPlatos(ctxTexto, pedidos[])` + **`POST /api/plan/verificar`** (`tipo='verificar'`) — **una sola llamada en batch** (de 1 a 21 platos; 21 llamadas sueltas serían absurdamente caras). Devuelve por plato: ingredientes escalados a los comensales, **cobertura** (tengo / falta), **veredicto** (`alcanza` | `alcanza_justo` | `falta_comprar`) y **advertencias médicas**. El plato nace con `origen='propuesto'`, y la cobertura va a `plan_comidas.cobertura` + `verificado_en`.
+
+- **La IA informa, NO sustituye.** Si el plato que pidió la familia lleva un alérgeno, el prompt le prohíbe cambiarlo por otro "que le convenga": lo devuelve tal cual y lo dice en `advertencias`. La familia decide. Medido con el hogar de prueba (alérgico al maní), pidiendo "pollo con salsa de maní": *"¡ALERTA DE ALERGIA! Este plato contiene maní, al cual **Luis** es alérgico. No debe consumirlo bajo ninguna circunstancia."* — nombra al integrante concreto.
+- **`reconocido: false`** → HTTP **422** con `no_reconocidos`. La UI se queda en el modal para que el usuario corrija en vez de inventarse un plato con un texto sin sentido.
+- El nombre se guarda **normalizado por la IA** ("aji d gallina" → "Ají de gallina"), con el del usuario como respaldo.
+- ⚠️ **El tope de longitud de `advertencias` es 400, no 80.** `listaTexto()` trunca a 80 porque sirve para nombres de ingredientes; aplicado a una advertencia la cortaba **a media palabra** (*"…alergeno absoluto para L"*) — justo el mensaje que no se puede recortar. Lo cubre `smoke:plan`.
+- Costo medido (1 plato, Claude): 4.549 in / 1.894 out. **Latencia alta: ~40s con 1 plato y hasta ~190s con 2** — la respuesta trae receta + nutrición + cobertura + advertencias. La UI anuncia "hasta un minuto".
 
 > **El emparejamiento ingrediente↔despensa lo hace la IA, no un `LIKE` en SQL.** Ya le mandamos la despensa en el mismo prompt, y sabe que "pechuga" cubre "pollo", que "chuño" es papa seca y que "ají amarillo" no es "ají panca".
 >
@@ -361,19 +367,23 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 - **Basura en la despensa = basura en el menú.** La IA usa lo que encuentre; un ingrediente de prueba olvidado genera platos reales alrededor de él.
 - **`sed` puede fallar en silencio.** Si editas con `sed`, verifica el resultado: di por hecho que un bloque se había insertado y no era así.
 
-## POR DÓNDE SEGUIR (pausa: 2026-07-15, fases 1-3 hechas)
+## POR DÓNDE SEGUIR (pausa: 2026-07-16, fases 1-4 hechas)
 
-> **Dos frentes abiertos, independientes entre sí:** la **fase 4** (funcionalidad) y el
-> **despliegue** (archivos listos, falta el repo git — ver Deuda y `DEPLOY.md`).
-> El **rebranding ya está aplicado**; solo queda encargar el arte propio de la mascota (Deuda).
+> **Un frente abierto:** la **fase 5** (lista de faltantes + PDF). El **rebranding ya está
+> aplicado** (solo falta el arte propio de la mascota) y el **despliegue** está preparado
+> pero no ejecutado — ver Deuda y `DEPLOY.md`.
+
+> **La fase 4 se cerró el 2026-07-16.** El calendario ya tiene **las tres vías** para llenar
+> una casilla: *"✨ Proponer"* (la IA elige), *"✍️ Ya sé qué cocinar"* (la familia elige y la
+> IA verifica) y *"📋 Mis platos"* (de su biblioteca, sin IA). El modal del plato muestra la
+> receta, el aporte nutricional, la cobertura y un botón **"☆ Guardar en mi biblioteca"**.
 
 > **Cambio de modelo (2026-07-15):** la generación pasó de **la semana de un golpe** al
 > **día a la carta**. Se eliminó la ruta que armaba los 21 platos, `POST /generar` ahora
 > recibe casillas, el Free pasó de 1 a **7 generaciones/semana** y cada día del calendario
 > tiene su botón. Detalles en "Plan de comidas" y "El cupo de generaciones".
 
-### Fase 4 — lo inmediato
-Tres cosas independientes; se pueden hacer en cualquier orden:
+### Fase 4 — ✅ CERRADA (2026-07-16). Lo cubren `smoke:plan` y `smoke:platos`.
 
 1. **Pasos de preparación** — ✅ **hecho** (2026-07-15). `npm run smoke:plan` lo verifica.
    - El plato **nace con su receta**: `FORMATO_PASOS` va dentro de `FORMATO_PLATO`, así que
@@ -389,9 +399,10 @@ Tres cosas independientes; se pueden hacer en cualquier orden:
 2. **Biblioteca de platos** (`platos.html` + `/api/platos`) — ✅ **hecha**. `npm run smoke:platos`.
    - CRUD de platos manuales (`origen='manual'`, `guardado=1`) desde la página. El tope
      `platos_max` se aplica **al crear/guardar** (403 `{upgrade}`), no al editar.
-   - `POST /api/platos/:id/guardar` y `DELETE .../guardar` existen y funcionan, pero
-     **el calendario todavía no los llama**: falta el botón "Guardar en mi biblioteca" en
-     el modal `verPlato()` de `plan.html`. Es lo único que queda de este punto.
+   - **"☆ Guardar en mi biblioteca"** en el modal `verPlato()` del calendario — ✅ **hecho**
+     (2026-07-16). Llama a `POST/DELETE /api/platos/:id/guardar`. Es la vía por la que el
+     usuario **cura** lo que le gustó: un plato generado que sale del calendario y no está
+     guardado **se borra** (`limpiarPlatoHuerfano`).
    - Poner un plato de la biblioteca en una casilla — ✅ **hecho** (2026-07-15). La casilla
      vacía ofrece **"📋 Mis platos"** junto a "✨ Proponer": abre un selector
      (`elegirDeBiblioteca()` en `plan.html`) que filtra por el momento de la casilla —
@@ -404,11 +415,12 @@ Tres cosas independientes; se pueden hacer en cualquier orden:
    - `limpiarPlatoHuerfano()` ya respeta `guardado=1`: no borres esa lógica. `DELETE /:id/guardar`
      replica esa misma regla (si lo generó la IA y no está en ningún plan, se borra).
 
-3. **Verificar platos propuestos** (`verificarPlatos`). Ver la sección de arriba; el esquema ya tiene `plan_comidas.cobertura` y `verificado_en` esperando.
-   - `platos.origen='propuesto'` es para esto.
-   - **En batch**: de 1 a 21 platos en UNA llamada.
-   - En el calendario, la casilla vacía hoy solo ofrece "✨ Proponer" (que la llene la IA). Falta la 3ª vía: escribir el nombre de un plato.
-   - Encaja bien con el modelo por día: el usuario ya mezcla platos suyos con generados en la misma semana, y verificar es lo que le falta para meter los suyos con criterio.
+3. **Verificar platos propuestos** — ✅ **hecho** (2026-07-16). El detalle está en
+   "Verificación de platos propuestos" arriba. La casilla vacía ya ofrece **las tres vías**:
+   *"✨ Proponer"* (la IA elige), *"✍️ Ya sé qué cocinar"* (`verificarPlato()` → 
+   `POST /api/plan/verificar`) y *"📋 Mis platos"*. El modal pinta la cobertura con
+   `bloqueCobertura()`, y **las advertencias van primero y en rojo**: pueden decir que el
+   plato lleva un alérgeno del hogar, y es lo más importante de esa pantalla.
 
 ### Fase 5 — lista de faltantes + PDF
 - `platos.faltantes` **ya se llena** en cada generación (medido: ~23 faltantes distintos en una semana).

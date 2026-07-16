@@ -15,7 +15,7 @@ const { db, lunesDe, fechaPeru, MOMENTOS, DIAS } = require('../db');
 const { requiereAuth } = require('../middleware/auth');
 const { requierePlanificador, requiereHogar } = require('../middleware/planificador');
 const { contextoDe, textoContexto } = require('../services/contexto');
-const { generarPlatos, detallarPlatos } = require('../services/ai.service');
+const { generarPlatos, detallarPlatos, verificarPlatos } = require('../services/ai.service');
 
 const router = express.Router();
 router.use(requiereAuth, requierePlanificador);
@@ -204,7 +204,9 @@ function normInfo(info) {
 
 // Convierte un plato de la IA en una fila de "platos". Tolerante: la IA a veces
 // devuelve un string donde esperamos un array, y perder el menu entero por eso seria peor.
-function crearPlato(usuarioId, p, momento, comensales, region) {
+// origen: 'ia' = lo propuso el planificador ; 'propuesto' = lo pidio el usuario por nombre
+// y la IA solo lo verifico (ver POST /verificar).
+function crearPlato(usuarioId, p, momento, comensales, region, origen = 'ia') {
   const lista = (v) => (Array.isArray(v) ? v : []);
   const nombre = String(p?.nombre || '').trim().slice(0, 120);
   if (!nombre) return null;
@@ -212,7 +214,7 @@ function crearPlato(usuarioId, p, momento, comensales, region) {
   const dificultad = ['facil', 'media', 'dificil'].includes(p?.dificultad) ? p.dificultad : null;
   const fila = db.prepare(
     `INSERT INTO platos (usuario_id, nombre, momento, porciones, ingredientes, faltantes, nota, pasos, info, tiempo_min, dificultad, region, origen, guardado)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ia', 0)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
   ).run(
     usuarioId, nombre, momento, comensales,
     JSON.stringify(lista(p?.ingredientes)),
@@ -221,7 +223,7 @@ function crearPlato(usuarioId, p, momento, comensales, region) {
     normPasos(p?.pasos),
     normInfo(p?.info),
     Number.isFinite(p?.tiempo_min) ? Math.max(0, Math.round(p.tiempo_min)) : null,
-    dificultad, region
+    dificultad, region, origen
   );
   return fila.lastInsertRowid;
 }
@@ -477,6 +479,138 @@ router.post('/detallar', requiereHogar, async (req, res) => {
   res.json({
     mensaje: detallados ? `${detallados} plato(s) completados.` : 'La IA no pudo completar estos platos.',
     detallados,
+    semana,
+    plan: planSemana(usuario.id, semana),
+    limites: { generaciones_max: usuario.generaciones_max, generaciones_usadas: generacionesUsadas(usuario.id, semana) },
+  });
+});
+
+// ===== Verificacion de platos propuestos por el usuario (fase 4) =====
+
+// Normaliza la cobertura que devuelve la IA -> JSON para plan_comidas.cobertura.
+// Vive en plan_comidas y NO en platos a proposito: el plato es estable, lo que cambia es
+// la despensa. El mismo "aji de gallina" puede alcanzar esta semana y faltar la otra.
+const VEREDICTOS = ['alcanza', 'alcanza_justo', 'falta_comprar'];
+
+// maxLen NO es un detalle: los nombres de ingredientes son cortos, pero una ADVERTENCIA es
+// una frase entera ("PELIGRO: lleva mani, que es un alergeno absoluto para Luis"). Con el
+// tope de 80 que sirve para un ingrediente, la advertencia salia cortada a media palabra
+// ("...alergeno absoluto para L") — justo el mensaje que no se puede recortar. Ya paso.
+const listaTexto = (v, max = 40, maxLen = 80) =>
+  (Array.isArray(v) ? v : []).map((x) => String(x || '').trim().slice(0, maxLen)).filter(Boolean).slice(0, max);
+
+function normCobertura(p) {
+  const tengo = listaTexto(p?.tengo);
+  const faltantes = listaTexto(p?.faltantes);
+  const advertencias = listaTexto(p?.advertencias, 6, 400);
+  // Si la IA manda un veredicto raro, se deduce de los faltantes en vez de descartarlo.
+  const veredicto = VEREDICTOS.includes(p?.veredicto)
+    ? p.veredicto
+    : (faltantes.length ? 'falta_comprar' : 'alcanza');
+  return JSON.stringify({ tengo, faltantes, advertencias, veredicto });
+}
+
+// POST /api/plan/verificar { semana, casillas: [{dia, momento, nombre}] }
+// La 3a via para llenar una casilla: el usuario ESCRIBE el plato que quiere cocinar y la
+// IA le dice que lleva, si le alcanza con su despensa y que cuidados tiene para su hogar.
+//
+// Es la direccion inversa del planificador (despensa -> IA -> platos). Aqui la familia
+// elige y la IA informa: NUNCA sustituye el plato pedido por otro que le convenga mas —
+// si no le conviene, lo dice en "advertencias" y la familia decide.
+//
+// EN BATCH: de 1 a 21 platos en una sola llamada = una sola generacion de cupo.
+router.post('/verificar', requiereHogar, async (req, res) => {
+  const semana = lunesDe(req.body?.semana);
+  const usuario = req.usuario;
+
+  const casillas = (Array.isArray(req.body?.casillas) ? req.body.casillas : [])
+    .map((c) => ({
+      dia: parseInt(c?.dia, 10),
+      momento: String(c?.momento || ''),
+      nombre: String(c?.nombre || '').trim().slice(0, 120),
+    }))
+    .filter((c) => c.dia >= 0 && c.dia <= 6 && MOMENTOS.includes(c.momento) && c.nombre)
+    .slice(0, 21);
+  if (!casillas.length) return res.status(400).json({ error: 'Escribe el nombre del plato que quieres cocinar.' });
+
+  if (semanaBloqueada(usuario.id, semana, usuario.semanas_max)) {
+    return res.status(403).json({
+      error: `Tu plan permite programar ${usuario.semanas_max} semana(s). Pasa a un plan superior para programar mas.`,
+      upgrade: true, redirect: '/mi-plan.html',
+    });
+  }
+  const sinCupo = cupoAgotado(usuario, semana);
+  if (sinCupo) return res.status(403).json(sinCupo);
+
+  const ctx = contextoDe(usuario.id);
+  if (!ctx || !ctx.integrantes.length) {
+    return res.status(409).json({ error: 'Configura tu hogar antes de verificar platos.', necesita_hogar: true, redirect: '/hogar.html' });
+  }
+
+  let resultado, usage;
+  try {
+    ({ resultado, usage } = await verificarPlatos(textoContexto(ctx), casillas.map((c) => c.nombre)));
+  } catch (e) {
+    console.error('Error IA (verificar):', e.message);
+    return res.status(502).json({ error: 'No pudimos verificar el plato. Intenta nuevamente en un momento.' });
+  }
+  registrarGeneracion(usuario.id, semana, 'verificar', usage);
+
+  if (resultado?.error) return res.status(502).json({ error: String(resultado.error) });
+  const analizados = Array.isArray(resultado?.platos) ? resultado.platos : null;
+  if (!analizados || !analizados.length) return res.status(502).json({ error: 'La IA no pudo analizar ese plato. Intenta nuevamente.' });
+
+  // Mismo criterio que en /generar: primero por etiqueta ("pedido"), y si la IA no la
+  // devolvio, por POSICION. Ver la nota de platoDe() — el prompt es una peticion, no una
+  // garantia, y no vamos a tirar un analisis bueno por una etiqueta que falta.
+  const tx = db.transaction(() => {
+    const puestos = [];
+    const usados = new Set();
+    casillas.forEach((c, i) => {
+      let idx = analizados.findIndex((x, j) =>
+        !usados.has(j) && String(x?.pedido || '').trim().toLowerCase() === c.nombre.toLowerCase());
+      if (idx === -1 && !usados.has(i) && analizados[i]) idx = i;
+      if (idx === -1) return;
+      usados.add(idx);
+
+      const p = analizados[idx];
+      // La IA no reconocio el texto: no se inventa un plato, se le dice al usuario.
+      if (p?.reconocido === false) {
+        puestos.push({ dia: c.dia, momento: c.momento, pedido: c.nombre, reconocido: false });
+        return;
+      }
+      // El nombre que se guarda es el normalizado por la IA ("aji d gallina" -> "Ají de
+      // gallina"), con el del usuario como respaldo.
+      const platoId = crearPlato(
+        usuario.id,
+        { ...p, nombre: p?.nombre || c.nombre },
+        c.momento, ctx.hogar.comensales, ctx.hogar.region, 'propuesto'
+      );
+      if (!platoId) return;
+      ponerEnCasilla(usuario.id, semana, c.dia, c.momento, platoId, ctx.hogar.comensales);
+      db.prepare(
+        `UPDATE plan_comidas SET cobertura = ?, verificado_en = datetime('now')
+          WHERE usuario_id = ? AND semana = ? AND dia = ? AND momento = ?`
+      ).run(normCobertura(p), usuario.id, semana, c.dia, c.momento);
+      puestos.push({ dia: c.dia, momento: c.momento, pedido: c.nombre, reconocido: true });
+    });
+    return puestos;
+  });
+  const puestos = tx();
+
+  const ok = puestos.filter((p) => p.reconocido);
+  if (!ok.length) {
+    const nombres = puestos.map((p) => `"${p.pedido}"`).join(', ');
+    return res.status(422).json({
+      error: `No reconocimos ${nombres} como un plato. Escribelo de otra forma (ej. "aji de gallina").`,
+      no_reconocidos: puestos.map((p) => p.pedido),
+    });
+  }
+
+  res.status(201).json({
+    mensaje: ok.length === 1 ? 'Plato verificado y puesto en tu calendario.' : `${ok.length} platos verificados.`,
+    verificados: ok.length,
+    no_reconocidos: puestos.filter((p) => !p.reconocido).map((p) => p.pedido),
     semana,
     plan: planSemana(usuario.id, semana),
     limites: { generaciones_max: usuario.generaciones_max, generaciones_usadas: generacionesUsadas(usuario.id, semana) },

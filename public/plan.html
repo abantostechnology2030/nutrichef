@@ -177,6 +177,7 @@
           <span class="muted" style="font-size:12px">Sin plato</span>
           <div class="row" style="gap:5px;flex-wrap:wrap;justify-content:center">
             <button class="btn btn-ghost btn-sm" data-gen="${dia}:${momento}" style="padding:3px 9px;font-size:11px"${t}>✨ Proponer</button>
+            <button class="btn btn-ghost btn-sm" data-ver-plato="${dia}:${momento}" style="padding:3px 9px;font-size:11px" title="Escribe un plato y te decimos si te alcanza"${t}>✍️ Ya sé qué cocinar</button>
             <button class="btn btn-ghost btn-sm" data-lib="${dia}:${momento}" style="padding:3px 9px;font-size:11px" title="Elegir uno de mis platos">📋 Mis platos</button>
           </div>
         </div>`;
@@ -394,6 +395,11 @@
         await generar([{ dia: Number(dia), momento }], t);
         return;
       }
+      if (t.dataset.verPlato) {
+        const [dia, momento] = t.dataset.verPlato.split(':');
+        await verificarPlato(Number(dia), momento);
+        return;
+      }
       if (t.dataset.lib) {
         const [dia, momento] = t.dataset.lib.split(':');
         await elegirDeBiblioteca(Number(dia), momento);
@@ -423,8 +429,41 @@
       return null;
     };
 
-    // Detalle del plato. Los PASOS de preparacion se generan aparte (fase 4): por ahora
-    // se muestran los ingredientes, los faltantes y la nota de adaptacion.
+    // Cobertura: solo la tienen los platos que el usuario PROPUSO y la IA verifico
+    // (plan_comidas.cobertura). Es lo primero que quiere ver quien escribio "aji de
+    // gallina": si le alcanza y si le conviene.
+    const VEREDICTO_INFO = {
+      alcanza:       { cls: 'sem-verde-bn',    ic: '✓', txt: 'Te alcanza con lo que tienes' },
+      alcanza_justo: { cls: 'sem-amarillo-bn', ic: '!', txt: 'Te alcanza, pero justo' },
+      falta_comprar: { cls: 'sem-amarillo-bn', ic: '🛒', txt: 'Te falta comprar' },
+    };
+
+    function bloqueCobertura(cob) {
+      if (!cob) return '';
+      const v = VEREDICTO_INFO[cob.veredicto] || VEREDICTO_INFO.falta_comprar;
+      // Las advertencias van PRIMERO y en rojo: pueden decir que el plato lleva un
+      // alergeno del hogar. Es lo mas importante de toda la pantalla.
+      const adv = (cob.advertencias || []).length
+        ? `<div class="sem-banner sem-rojo-bn" style="align-items:flex-start;margin-bottom:10px">
+             <span class="sem-dot" style="margin-top:5px"></span>
+             <span>${cob.advertencias.map((a) => esc(a)).join('<br>')}</span>
+           </div>`
+        : '';
+      const listar = (arr, vacio) => (arr || []).length
+        ? (arr || []).map((x) => esc(x)).join(', ')
+        : vacio;
+      return `<div style="margin-top:4px;margin-bottom:12px">
+        ${adv}
+        <div class="sem-banner ${v.cls}"><span class="sem-dot"></span><span>${v.ic} ${v.txt}</span></div>
+        <p class="muted" style="font-size:12.5px;margin-top:8px">
+          ✓ <b>Ya tienes:</b> ${listar(cob.tengo, '—')}<br>
+          🛒 <b>Te falta:</b> ${listar(cob.faltantes, 'nada, tienes todo')}
+        </p>
+      </div>`;
+    }
+
+    // Detalle del plato: ingredientes, faltantes, nota, cobertura (si lo propuso el
+    // usuario), aporte nutricional y receta.
     function verPlato(it) {
       if (!it) return;
       const p = it.plato;
@@ -443,12 +482,13 @@
             ${p.dificultad ? `<span class="tag">${p.dificultad}</span>` : ''}
             <span class="tag">🍽 ${p.porciones} porciones</span>
           </div>
+          ${bloqueCobertura(it.cobertura)}
           ${p.nota ? `<p style="background:var(--green-soft);border-radius:10px;padding:10px;font-size:13px;margin-bottom:12px">💡 ${p.nota}</p>` : ''}
           <b style="font-size:13px">Ingredientes</b>
           <ul style="margin:8px 0 12px 18px;font-size:13.5px;line-height:1.7">${ing || '<li class="muted">Sin detalle</li>'}</ul>
-          ${p.faltantes.length
+          ${it.cobertura ? '' : (p.faltantes.length
             ? `<p class="muted" style="font-size:12.5px">🛒 <b>Te falta comprar:</b> ${p.faltantes.join(', ')}</p>`
-            : '<p class="muted" style="font-size:12.5px">✓ Tienes todo en tu despensa.</p>'}
+            : '<p class="muted" style="font-size:12.5px">✓ Tienes todo en tu despensa.</p>')}
           ${bloqueNutri(p.info)}
           ${p.pasos && p.pasos.length
             ? `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
@@ -458,11 +498,94 @@
             : `<div class="reco-foto" style="margin-top:12px">🍳 Este plato todavía no tiene su receta.
                  Usa <b>“Completar platos”</b> arriba para pedírsela a la IA.</div>`}
         </div>
-        <div class="row"><button class="btn btn-ghost btn-sm" data-cerrar>Cerrar</button></div>
+        <div class="row" style="justify-content:space-between">
+          <button class="btn btn-ghost btn-sm" data-guardar>${p.guardado ? '★ En mi biblioteca' : '☆ Guardar en mi biblioteca'}</button>
+          <button class="btn btn-ghost btn-sm" data-cerrar>Cerrar</button>
+        </div>
       </div>`;
       document.body.appendChild(back);
       back.querySelector('[data-cerrar]').onclick = () => back.remove();
       back.onclick = (e) => { if (e.target === back) back.remove(); };
+
+      // Guardar en la biblioteca: lo que la IA propuso es efimero (un plato generado que
+      // sale del calendario y no esta guardado se borra, ver limpiarPlatoHuerfano). Este
+      // boton es como el usuario CURA lo que le gusto. El tope platos_max se aplica al
+      // guardar -> 403 {upgrade}.
+      const btnG = back.querySelector('[data-guardar]');
+      btnG.onclick = async () => {
+        const guardado = p.guardado;
+        cargando(btnG, true, '…');
+        try {
+          await api(`/api/platos/${p.id}/guardar`, { method: guardado ? 'DELETE' : 'POST' });
+          p.guardado = !guardado;
+          cargando(btnG, false);
+          btnG.textContent = p.guardado ? '★ En mi biblioteca' : '☆ Guardar en mi biblioteca';
+          alerta(alPlan, p.guardado ? 'Plato guardado en "Mis platos".' : 'Plato quitado de tu biblioteca.', 'ok');
+        } catch (err) {
+          cargando(btnG, false);
+          back.remove();
+          manejar(err);
+        }
+      };
+    }
+
+    // ===== 3a via: el usuario ESCRIBE el plato y la IA verifica si le alcanza =====
+    // La direccion inversa del planificador. La IA no elige: la familia elige y la IA
+    // informa que lleva, si le alcanza con su despensa y que cuidados tiene para su hogar.
+    async function verificarPlato(dia, momento) {
+      const mi = MOMENTO_INFO[momento];
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="text-align:left">
+        <h3>¿Qué quieres cocinar?</h3>
+        <p class="muted" style="font-size:13px;margin-bottom:12px">
+          ${DATA.dias[dia]} · ${mi.ic} ${mi.txt}. Escribe el plato y te decimos qué lleva,
+          qué te falta comprar y si le conviene a tu familia.
+        </p>
+        <div class="modal-body">
+          <div id="alerta-ver" class="alert"></div>
+          <input class="input" id="ver-nombre" placeholder="Ej: ají de gallina, lomo saltado, sopa de quinua…" maxlength="120" />
+        </div>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" data-no>Cancelar</button>
+          <button class="btn btn-sm" data-si>Verificar con IA</button>
+        </div>
+      </div>`;
+      document.body.appendChild(back);
+      const cerrar = () => back.remove();
+      back.querySelector('[data-no]').onclick = cerrar;
+      back.onclick = (e) => { if (e.target === back) cerrar(); };
+      const input = back.querySelector('#ver-nombre');
+      const alVer = back.querySelector('#alerta-ver');
+      input.focus();
+
+      const enviar = async () => {
+        const nombre = input.value.trim();
+        if (!nombre) { alerta(alVer, 'Escribe el nombre del plato.'); return; }
+        const btn = back.querySelector('[data-si]');
+        cargando(btn, true, '🔎 Verificando…');
+        // Medido: ~40s con Gemini y hasta ~90s con Claude (la respuesta trae receta,
+        // nutricion, cobertura y advertencias). Se anuncia el caso lento, no el optimista.
+        alerta(alVer, '🔎 Buscando la receta y comparándola con tu despensa. Puede tardar hasta un minuto', 'info');
+        try {
+          const d = await api('/api/plan/verificar', { method: 'POST', body: { semana, casillas: [{ dia, momento, nombre }] } });
+          cerrar();
+          DATA.plan = d.plan; DATA.limites = { ...DATA.limites, ...d.limites };
+          pintar();
+          alerta(alPlan, d.mensaje, 'ok');
+          // Se abre el detalle directo: lo que el usuario quiere ver es la cobertura.
+          const it = DATA.plan[dia][momento];
+          if (it) verPlato(it);
+        } catch (err) {
+          cargando(btn, false);
+          // 422 = no reconocio el texto. Se queda en el modal para que corrija.
+          if (err.status === 422) { alerta(alVer, err.error); return; }
+          cerrar();
+          manejar(err);
+        }
+      };
+      back.querySelector('[data-si]').onclick = enviar;
+      input.onkeydown = (e) => { if (e.key === 'Enter') enviar(); };
     }
 
     // ===== Poner un plato de MI BIBLIOTECA en una casilla =====

@@ -175,6 +175,45 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
   check(nombreCasilla(1) === almuerzoAntes,
     `y NO piso el almuerzo que ya estaba ("${almuerzoAntes}" -> "${nombreCasilla(1)}")`);
 
+  // ===== Verificar un plato PROPUESTO por el usuario (fase 4) =====
+  // La direccion inversa: el usuario escribe el plato y la IA le dice si le alcanza.
+  // Se pide un plato con MANI a proposito: el hogar de prueba es alergico al mani, y lo
+  // que se verifica aqui no es que la IA cocine bonito, sino que AVISE del alergeno en vez
+  // de cambiar el plato en silencio. Si esto falla, es un fallo de seguridad, no de UX.
+  console.log('\n=== plan.html: verificar un plato propuesto (real) ===');
+  await vaciarSemana();
+  const ver = await apiSrv('/api/plan/verificar', {
+    method: 'POST',
+    body: JSON.stringify({ semana: SEMANA, casillas: [{ dia: 3, momento: 'almuerzo', nombre: 'pollo con salsa de mani' }] }),
+  });
+  check(!!ver.verificados, `verifica el plato (${ver.mensaje || ver.error})`);
+
+  const it = ver.plan?.[3]?.almuerzo;
+  const cob = it?.cobertura;
+  check(!!it, 'lo pone en la casilla pedida');
+  check(it?.plato?.origen === 'propuesto', `el plato queda con origen='propuesto' (= ${it?.plato?.origen})`);
+  check(!!cob, 'la casilla trae su cobertura');
+  check(['alcanza', 'alcanza_justo', 'falta_comprar'].includes(cob?.veredicto), `veredicto valido (= ${cob?.veredicto})`);
+  check(Array.isArray(cob?.tengo) && Array.isArray(cob?.faltantes), 'separa lo que tiene de lo que le falta');
+
+  // Lo importante: el alergeno.
+  const adv = (cob?.advertencias || []).join(' ').toLowerCase();
+  check((cob?.advertencias || []).length > 0, `avisa de algo (${(cob?.advertencias || []).length} advertencia(s))`);
+  check(/man[ií]/.test(adv), 'la advertencia nombra el MANI (el alergeno del hogar)');
+  check(/alerg/.test(adv), 'y dice explicitamente que es una alergia');
+  // La advertencia NO puede llegar cortada: el tope de 80 de los ingredientes la mutilaba
+  // a media palabra ("...alergeno absoluto para L"). Ya paso.
+  const larga = (cob?.advertencias || []).some((a) => a.length > 80);
+  check(larga, `las advertencias no se truncan a 80 chars (la mas larga: ${Math.max(0, ...(cob?.advertencias || []).map((a) => a.length))} chars)`);
+  check(!(cob?.advertencias || []).some((a) => a.length === 80), 'ninguna quedo exactamente en el tope (senal de recorte)');
+
+  // El texto mal escrito se normaliza y el 422 avisa si no se reconoce.
+  const raro = await apiSrv('/api/plan/verificar', {
+    method: 'POST',
+    body: JSON.stringify({ semana: SEMANA, casillas: [{ dia: 4, momento: 'cena', nombre: 'xkcd qwerty zzzz' }] }),
+  });
+  check(!raro.verificados, `un texto sin sentido no se inventa como plato (${raro.error || 'lo acepto <- falla'})`);
+
   // Limpieza: borrar la semana de prueba para no dejar basura.
   console.log(`\n(limpieza: ${await vaciarSemana()} casillas de la semana de prueba eliminadas)`);
 

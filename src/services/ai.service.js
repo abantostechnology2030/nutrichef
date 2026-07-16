@@ -139,6 +139,55 @@ const PROMPT_DETALLE = (ctxTexto, platos) =>
 PLATOS A ANALIZAR (usa el "id" tal cual en tu respuesta):
 ${JSON.stringify(platos)}`;
 
+// ===== Verificacion de platos PROPUESTOS POR EL USUARIO (fase 4) =====
+// La direccion inversa del planificador: el usuario escribe "aji de gallina" y la IA le
+// dice si le alcanza con lo que tiene. Aqui la IA NO elige el plato — lo eligio la familia.
+//
+// EL EMPAREJAMIENTO ingrediente<->despensa LO HACE LA IA, no un LIKE en SQL. Ya le mandamos
+// la despensa en el mismo prompt, y sabe que "pechuga" cubre "pollo", que el chuño es papa
+// seca y que el aji amarillo no es aji panca. Medido: con "Arroz" y "Leche" en la despensa
+// marco "arroz integral" y "leche sin lactosa" como FALTANTES, porque el arroz blanco no
+// le sirve al diabetico del hogar ni la leche normal al intolerante. Un LIKE habria dicho
+// "ya lo tienes" y le habria servido leche a quien no puede tomarla.
+const FORMATO_COBERTURA = `Para CADA plato devuelve un objeto con:
+- "nombre": el plato, con el nombre normalizado y bien escrito (el usuario puede escribir "aji d gallina").
+- "reconocido": true | false. false SOLO si no puedes identificar que plato es (texto sin sentido). Si es un plato real que no conoces al dedillo, usa tu mejor criterio y pon true.
+- "ingredientes": array de { "nombre", "cantidad", "unidad" } con las cantidades YA ESCALADAS a los comensales del hogar. Es la receta REAL del plato, no la que quisieras.
+- "tengo": array de strings — los ingredientes que SI estan cubiertos por su despensa.
+- "faltantes": array de strings — los que NO tiene y debe comprar. [] si le alcanza con todo.
+- "veredicto": "alcanza" (tiene todo) | "alcanza_justo" (tiene todo pero algo esta en "poco" y podria no rendir) | "falta_comprar" (le falta al menos un ingrediente).
+- "advertencias": array de strings. Aqui va lo IMPORTANTE para la salud de este hogar:
+  - Si el plato lleva un ALERGENO de la familia, la primera advertencia debe decirlo de frente y sin rodeos. NO adaptes el plato en silencio: el usuario pidio ESE plato y tiene derecho a saber que no le conviene.
+  - Si choca con una condicion medica (diabetes, hipertension...), dilo y sugiere el cambio concreto.
+  - [] si no hay nada que advertir.
+- "nota": una frase corta con el consejo mas util para prepararlo en esta casa. null si no aporta nada.
+${FORMATO_PASOS}
+${FORMATO_INFO}
+
+Al decidir "tengo" vs "faltantes", usa el criterio de un cocinero, no un buscador de texto:
+- Un ingrediente de la despensa cubre al del plato si sirve DE VERDAD para cocinarlo (si tiene "pollo", cubre "pechuga de pollo").
+- PERO si la condicion medica del hogar exige una version distinta de la que tiene (arroz integral cuando solo tiene arroz blanco; leche sin lactosa cuando solo tiene leche), eso es un FALTANTE, no algo que ya tiene.
+- Lo que tenga en "poco" cuenta como que lo tiene, pero si el plato necesita bastante, dilo en "veredicto": "alcanza_justo".`;
+
+const SYSTEM_VERIFICAR = `${REGLAS_PLANIFICADOR}
+
+Se te dara el contexto de un hogar y una lista de platos que LA FAMILIA quiere cocinar. Tu tarea NO es proponer platos ni cambiarlos por otros: es decirles, para cada uno, que necesitan y si les alcanza con lo que tienen en casa.
+
+Respeta el plato que te piden. Si el plato no le conviene a alguien del hogar, NO lo sustituyas por otro: proponlo tal cual y AVISA en "advertencias". La familia decide; tu informas.
+
+${FORMATO_COBERTURA}
+
+Responde UNICAMENTE con un objeto JSON limpio (sin texto antes/despues ni markdown):
+{"platos":[{"pedido":"<el texto EXACTO que escribio el usuario, tal cual>", ...campos de arriba...}, ...]}
+
+Devuelve exactamente una entrada por cada plato pedido, EN EL MISMO ORDEN, con su "pedido" original para poder emparejarlas.`;
+
+const PROMPT_VERIFICAR = (ctxTexto, pedidos) =>
+  `${ctxTexto}
+
+PLATOS QUE LA FAMILIA QUIERE COCINAR (devuelve "pedido" tal cual para cada uno):
+${JSON.stringify(pedidos)}`;
+
 // comprometidos: [{ nombre, platos }] — ingredientes que los platos YA programados esa
 // semana van a consumir, con en cuantos platos aparece cada uno.
 //
@@ -385,6 +434,24 @@ async function generarPlatos(ctxTexto, casillas, yaEnLaSemana, comprometidos, ev
   return { resultado: data, usage };
 }
 
+// Verifica platos que propone EL USUARIO: que lleva cada uno, si le alcanza con su
+// despensa y que advertencias medicas tiene para este hogar.
+//
+// EN BATCH a proposito: de 1 a 21 platos en UNA llamada. 21 llamadas sueltas costarian
+// ~20x mas (el contexto del hogar se repetiria entero cada vez). Mismo criterio que
+// detallarPlatos.
+// pedidos: [string] (lo que escribio el usuario) -> { platos: [{ pedido, ...cobertura }] }
+async function verificarPlatos(ctxTexto, pedidos) {
+  const { data, usage } = await pedir(
+    SYSTEM_VERIFICAR,
+    [{ texto: PROMPT_VERIFICAR(ctxTexto, pedidos) }],
+    // 1400 por plato, igual que generarPlatos: la respuesta trae lo mismo (ingredientes,
+    // receta, info) mas la cobertura y las advertencias.
+    Math.min(MAX_TOKENS_PLANIFICADOR, 1200 + pedidos.length * 1400)
+  );
+  return { resultado: data, usage };
+}
+
 console.log(`[IA] Proveedor por defecto: ${PROVIDER} (configurable en admin: ai_modo/ai_prioridad)`);
 
 module.exports = {
@@ -392,6 +459,6 @@ module.exports = {
   explicarPorImagen,
   generarPlatos,
   detallarPlatos,
-  // Base para el metodo que falta (fase 4): verificarPlatos.
+  verificarPlatos,
   pedir,
 };
