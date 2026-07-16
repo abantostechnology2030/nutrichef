@@ -80,9 +80,10 @@ marcar cocinado, copiar una semana, ver el detalle de cada plato → **curar su 
 "Mis platos"** (crear/editar/borrar recetas propias). Más el escáner de productos, el
 paywall Yape y el panel admin.
 
-> ⚠️ El modal de detalle del plato avisa que los pasos de preparación aún no existen
-> (`platos.pasos` sigue en NULL para los platos que genera la IA): es lo que falta de la
-> fase 4, junto con verificar platos propuestos.
+Y **las tres vías** para llenar una casilla: *"✨ Proponer"* (la IA elige con tu despensa),
+*"✍️ Ya sé qué cocinar"* (tú eliges y la IA verifica si te alcanza y si le conviene a tu
+hogar) y *"📋 Mis platos"*. Cada plato trae su **receta**, su **aporte nutricional** y, si lo
+propusiste tú, su **cobertura** con advertencias médicas.
 
 **Datos de prueba en la BD local:** `fam@test.pe` / `prueba123` — "Casa Abanto" (sierra/Cusco), 4 integrantes con condiciones reales (diabetes, hipertensión, intolerancia a la lactosa) y alergias (maní, mariscos), 16 ingredientes en despensa y una semana con menú generado. Sirve para probar el planificador contra un hogar realista. **Ojo:** cualquier basura que quede en la despensa la IA la tomará como real y generará platos alrededor de ella.
 
@@ -102,7 +103,7 @@ src/
     analisis.routes.js   # escaner: /texto (cache-first), /imagen (2 fotos), /historial, DELETE
     hogar.routes.js      # hogar + CRUD de integrantes (condiciones y alergias)
     despensa.routes.js   # inventario + /compra (bulk semanal) + /compras (historial)
-    plan.routes.js       # calendario 7x3 + /generar (POR DIA) + /detallar + /copiar (registra generaciones)
+    plan.routes.js       # calendario 7x3 + /generar (POR DIA) + /verificar + /detallar + /copiar
     platos.routes.js     # biblioteca: CRUD de platos manuales + guardar/quitar (tope platos_max)
     pagos.routes.js      # info del paywall (incl. yape_qr) + comprobante Yape + /historial
     soporte.routes.js    # mensajes de contacto
