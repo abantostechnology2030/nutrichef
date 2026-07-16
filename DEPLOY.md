@@ -2,9 +2,11 @@
 
 NutriChefIA corre como **un solo proceso** Express (API + frontend estático + `/uploads`) en el VPS Hetzner compartido con eskulclass / publipropiedades / medicaIA / nutriia / finanzasia.
 
-> ⬜ **Estado: NO DESPLEGADO.** El subdominio `nutrichef.solucionesctec.com` ya existe en el panel DNS de `solucionesctec.com`; falta todo lo demás. Los prerequisitos bloqueantes están abajo — **el principal es que este proyecto todavía no es un repo git**.
+> ✅ **Estado: EN PRODUCCIÓN** desde 2026-07-16 → **https://nutrichef.solucionesctec.com**
+>
+> Verificado de punta a punta contra producción: registro → hogar → despensa → **generar un plato con IA** (3,5 s) → **verificar un plato con alérgeno** (5,7 s, avisó correctamente). SSL de Let's Encrypt con renovación automática (`certbot.timer` activo).
 
-## Datos de producción (previstos)
+## Datos de producción
 
 | Dato | Valor |
 |------|-------|
@@ -14,7 +16,7 @@ NutriChefIA corre como **un solo proceso** Express (API + frontend estático + `
 | Puerto backend | **`4005`** (4000=eskulclass, 4001=publipropiedades, 4002=medicaia, 4003=nutriia, 4004=finanzasia, 3000=pp-frontend, 5555/3001=calificaprof) |
 | Ruta en el server | `/var/www/nutrichefia` |
 | Proceso PM2 | `nutrichefia` |
-| Repo | `github.com/abantostechnology2030/nutrichefia` (privado, rama `main`) — **por crear** |
+| Repo | `github.com/abantostechnology2030/nutrichef` (privado, rama `main`) |
 | Base de datos | SQLite `nutrichefia.db` (raíz del proyecto, modo WAL) |
 | Subidas | `uploads/` — comprobantes Yape + QR (persistente, gitignored) |
 | SSL | Let's Encrypt vía certbot (renovación automática) |
@@ -23,36 +25,30 @@ NutriChefIA corre como **un solo proceso** Express (API + frontend estático + `
 >
 > ⚠️ **`better-sqlite3` compila al instalar.** Es una dependencia nativa: el `npm ci` del server necesita `build-essential` y `python3`. Ya están (medicaIA y NutriIA usan la misma dependencia), pero si el server se rehace desde cero, esto es lo primero que falla.
 
-## ⚠️ Prerequisitos que faltan (antes de poder desplegar)
+## ✅ Prerequisitos — todos resueltos (2026-07-16)
 
-1. **Repositorio Git**: este proyecto **todavía no es un repo**. Hay que `git init`, crear el repo privado en GitHub y hacer push. El flujo de deploy clona desde GitHub.
-2. **Revisar `.gitignore` antes del primer commit** — ver la sección "Trampas" abajo. `archivos/` está ignorado y ahí viven los **originales de marca**.
-3. **Deploy key** del server para el repo privado (una por repo; las deploy keys **no** se reusan entre repos), + alias en `/root/.ssh/config`.
-4. ~~**DNS**~~ ✅ **Listo.** El registro `A` `nutrichef.solucionesctec.com` → `87.99.144.139` ya resuelve (verificado 2026-07-15, misma IP que `finanzasia.solucionesctec.com`).
-5. **Confirmar que el 4005 está libre** en el server (`ss -lntp | grep 4005`). La tabla de puertos de arriba viene de los `DEPLOY.md` de los otros proyectos, no de una inspección del server.
-6. **Secrets de GitHub Actions** (Settings → Secrets and variables → Actions) si se usa el workflow — tabla abajo.
+1. ~~Repositorio Git~~ → `github.com/abantostechnology2030/nutrichef`, rama `main`.
+2. ~~`.gitignore`~~ → **`archivos/` SÍ se versiona** (los originales de marca existían solo en un disco). El `.env`, la BD y `uploads/*` siguen fuera — verificado con `git check-ignore` antes del primer commit.
+3. ~~Deploy keys~~ → dos, ambas en *Settings → Deploy keys* del repo:
+   - **`push-local`** (con *write access*): la máquina de desarrollo empuja con `~/.ssh/nutrichef_push`. El repo local lo usa vía `git config core.sshCommand` — **local, no global**.
+   - **`vps-eskulclass-server`** (**solo lectura**): el servidor clona con `/root/.ssh/nutrichef_deploy`. Solo necesita leer; darle escritura sería regalarle permisos que no usa.
+4. ~~DNS~~ → `A nutrichef.solucionesctec.com` → `87.99.144.139`.
+5. ~~Puerto 4005 libre~~ → confirmado por inspección (`ss -lntp`), no por suposición.
+6. **Secrets de GitHub Actions** — ⬜ pendiente, solo si se quiere el deploy por workflow. Hoy el redeploy es manual por SSH (abajo).
 
-## Acceso del servidor a GitHub (repo privado)
+## Acceso del servidor a GitHub
 
-Mismo patrón que NutriIA/finanzasIA — una deploy key dedicada por repo:
-
-```bash
-# En el server
-ssh-keygen -t ed25519 -f /root/.ssh/nutrichefia_deploy -N "" -C "nutrichefia-deploy"
-cat /root/.ssh/nutrichefia_deploy.pub   # → pegar como Deploy Key del repo (solo lectura)
-```
-
-Alias SSH en `/root/.ssh/config`:
+Alias SSH en `/root/.ssh/config` (las deploy keys son **por repo**, así que cada proyecto necesita el suyo):
 
 ```
-Host github-nutrichefia
+Host github-nutrichef
   HostName github.com
   User git
-  IdentityFile ~/.ssh/nutrichefia_deploy
+  IdentityFile ~/.ssh/nutrichef_deploy
   IdentitiesOnly yes
 ```
 
-URL de clonado: `git@github-nutrichefia:abantostechnology2030/nutrichefia.git`
+URL de clonado: `git@github-nutrichef:abantostechnology2030/nutrichef.git`
 
 ## Variables de entorno en el servidor (`/var/www/nutrichefia/.env`)
 
@@ -60,13 +56,13 @@ El `.env` **NO se commitea** (está en `.gitignore`). Ver `.env.example` para la
 
 - `PORT=4005` — lo fija PM2 igualmente (`ecosystem.config.cjs`).
 - `JWT_SECRET` — random de 96 hex (`openssl rand -hex 48`). **No reusar el local.**
-- `AI_PROVIDER=gemini` — solo el fallback; en runtime manda `ai_modo` de la BD (panel admin).
+- `AI_PROVIDER=gemini` — solo el fallback si la BD no tiene `ai_modo`; en runtime manda la `config` de la BD (panel admin).
 - `GEMINI_API_KEY` / `GEMINI_MODEL=gemini-2.5-flash` — ver el aviso de crédito compartido abajo.
 - `ANTHROPIC_BASE_URL=https://aiprimetech.io` — **gateway compartido** (no es la API directa de Anthropic).
 - `ANTHROPIC_API_KEY` — la **misma key del gateway** que usa publipropiedades (`c:\app-publipropiedades\backend\.env`). Formato `sk-...`, no `sk-ant-...`.
-- `ANTHROPIC_MODEL=claude-sonnet-4-6` — modelo soportado por el gateway.
-- `YAPE_NUMERO`, `YAPE_TITULAR`, `PRECIO_PREMIUM` — **placeholders en el `.env.example`**, cambiar por los reales antes de cobrar.
-- `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NOMBRE`, `ANALISIS_FREE=3`.
+- `ANTHROPIC_MODEL=claude-sonnet-5` — ⚠️ **el "grupo" de la key en el panel del gateway (Claude Default 0.85x / Fast 1.1x / Max 1.3x) es un MULTIPLICADOR DE PRECIO, no un modelo.** Los tres grupos sirven los mismos: `claude-opus-4-8`, `claude-opus-4-6`, `claude-sonnet-5`, `claude-fable-5`. El modelo se elige **aquí**, no allá. Un modelo inventado ("claude max 1.3") devuelve un 400 disfrazado de *"Your conversation is too long"*.
+- `YAPE_NUMERO=976901977`, `YAPE_TITULAR`, `PRECIO_PREMIUM=19.90` — **el titular sigue siendo un placeholder**; se cambia desde el panel admin (vive en la tabla `config`, no en el `.env`).
+- `ADMIN_EMAIL=admin@nutrichefia.pe`, `ADMIN_PASSWORD`, `ADMIN_NOMBRE`, `ANALISIS_FREE=3`.
 
 > ⚠️ **Credenciales admin:** el seed default es `admin@nutrichefia.pe` / `admin123`. **Cambiar la contraseña** tras el primer login, y los datos de Yape desde el panel admin.
 >
@@ -77,7 +73,7 @@ El `.env` **NO se commitea** (está en `.gitignore`). Ver `.env.example` para la
 ```bash
 # 1. En el server
 cd /var/www
-git clone git@github-nutrichefia:abantostechnology2030/nutrichefia.git nutrichefia
+git clone git@github-nutrichef:abantostechnology2030/nutrichef.git nutrichefia
 cd nutrichefia
 
 cp .env.example .env && nano .env      # completar valores reales (ver arriba)
@@ -122,6 +118,12 @@ O por **GitHub Actions**: pestaña *Actions → Deploy to Hetzner → Run workfl
 
 El workflow respalda la BD (10 copias rodantes en `~/backups/nutrichefia`), hace pull, `npm ci`, seed, restart y **health check contra el 4005**.
 
+## Lo que pasó el día del despliegue (2026-07-16)
+
+- **NO recortes la conf de nginx del repo con `sed` para quitarle el bloque SSL.** `sed '/listen 443 ssl;/,$d'` borra desde esa línea al final y **deja huérfano el `server {`** del bloque 443 → `unexpected end of file, expecting "}"` y nginx no carga. Escribe la conf de :80 **entera** y deja que certbot agregue el :443. (Nginx rechazó la conf rota y **siguió con la anterior**, así que las otras 6 apps del VPS no se cayeron: el `nginx -t` hizo su trabajo. Aun así, no repitas el atajo.)
+- **El DNS de `solucionesctec.com` se cayó a mitad del despliegue** y certbot falló con *"DNS problem: query timed out"*. Diagnóstico: la **zona entera** daba SERVFAIL (raíz, `www` y `nutrichef`), mientras `finanzasia` seguía resolviendo **desde caché** y `eskulclass.com` —mismo servidor— iba perfecto. Si certbot falla por DNS: compara la **raíz** de la zona contra otro dominio del mismo VPS antes de tocar nada del servidor. Se resolvió solo desde el lado del proveedor de DNS.
+- **Un navegador NO sirve para diagnosticar DNS.** Chrome/Edge usan DNS-over-HTTPS y se saltan el resolver del sistema: el dominio "funcionaba" en el navegador mientras `Resolve-DnsName`/`dig` daban SERVFAIL en la misma máquina. Usa `dig`/`resolvectl` desde el VPS, que es quien tiene que resolver.
+
 ## Trampas de este proyecto (leer antes del primer deploy)
 
 - **`archivos/` está en `.gitignore`** (heredado de NutriIA) y ahí viven `logotipo.png` y `favicon.png`, los **únicos originales de la marca**. Si haces el primer commit tal cual, los originales **no se versionan** y existen solo en esta máquina. Decidir antes de `git init`: sacarlos del ignore, o moverlos a `public/img/` al aplicar el rebranding (ver "Rebranding pendiente" en `CLAUDE.md`).
@@ -131,4 +133,6 @@ El workflow respalda la BD (10 copias rodantes en `~/backups/nutrichefia`), hace
 - **`client_max_body_size` = 20M, no 12M.** El escáner sube **dos** imágenes en un mismo multipart (`ingredientes` + `nombre`), 8MB cada una por el límite de multer → el cuerpo puede llegar a ~16MB. Los 12M que usa NutriIA (una sola imagen) darían **413** antes de que multer pudiera responder.
 - **`proxy_read_timeout` = 180s.** Generar el menú (21 platos) es una llamada a la IA de ~60s medidos; el default de nginx (60s) queda al filo y produce 504 fantasma con el menú a medio generar.
 - **El `deploy.yml` de NutriIA está roto** — es un copy-paste de MedicaIA sin terminar: job "Deploy MedicaIA", `concurrency: deploy-medicaia`, backup a `~/backups/medicaia` y **health check al puerto 4002** (MedicaIA), no al 4003 de NutriIA. Es decir, **da verde aunque NutriIA esté caída**. El de aquí ya está corregido; si algún día tocas el de NutriIA, arréglalo también.
-- **Estado del producto: fases 1-3 hechas, fase 4 a medias.** Lo que se despliegue hoy no tiene pasos de preparación (el modal avisa), ni verificación de platos propuestos, ni lista de faltantes/PDF. Ver `CLAUDE.md` → "POR DÓNDE SEGUIR".
+- **Estado del producto: fases 1-4 hechas.** Falta la fase 5 (lista de faltantes + PDF) y el arte propio de la mascota. Ver `CLAUDE.md` → "POR DÓNDE SEGUIR".
+- **⚠️ Producción NO usa la misma IA que tu local.** La tabla `config` del server es nueva y quedó en **`ai_modo='ambos'` con `ai_prioridad='gemini'`** — al revés que el local (prioridad `claude`). Por eso en producción genera en **~3,5 s y cuesta ~$0.036/semana**, contra ~30 s y ~$0.25 con Claude. Es lo que conviene; si alguien lo cambia desde el admin, el costo se multiplica por ~7. El desglose por proveedor está en `GET /api/admin/resumen`.
+- **La `GEMINI_API_KEY` de producción es la MISMA de MedicaIA y NutriIA** (verificado: bytes idénticos). Las tres apps comparten crédito y ésta es la más hambrienta. Sacar una key propia antes de tener usuarios reales.

@@ -59,9 +59,11 @@ el servidor real) — ver `pruebas/README.md`.
 > servidor escribe `nutrichefia.db` (+ los archivos WAL) al arrancar, el watcher lo
 > detectaba y reiniciaba, y vuelta a empezar. No le quites el `--watch-path`.
 
-## Estado — EN CONSTRUCCIÓN
+## Estado — ✅ EN PRODUCCIÓN
 
-Solo local (`http://localhost:3002`). Admin por defecto: `admin@nutrichefia.pe` / `admin123`.
+**https://nutrichef.solucionesctec.com** desde 2026-07-16 (ver `DEPLOY.md`). Local: `http://localhost:3002`. Admin: `admin@nutrichefia.pe` / `admin123` — **cambiar la contraseña**.
+
+> ⚠️ **Producción NO corre con la misma IA que tu local.** Allá `ai_modo='ambos'` con **prioridad `gemini`** (~3,5 s por plato, ~$0.036/semana); en local la prioridad es `claude` (~30 s, ~$0.25/semana). Si comparas latencias o costos entre los dos, esa es la razón.
 
 | Fase | Qué | Estado |
 |---|---|---|
@@ -443,6 +445,6 @@ Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `gener
   - ⚠️ **`archivos/` está en `.gitignore`** (heredado de NutriIA): los originales de marca no se versionarían. Revisar antes de crear el repo.
 - **Credenciales admin** por defecto (`admin@nutrichefia.pe`/`admin123`): cambiar contraseña y datos de Yape (placeholders).
 - **`platos.region`** se llena al generar pero no se usa en ninguna consulta todavía.
-- **Despliegue: preparado, NO ejecutado.** Ya existen `DEPLOY.md`, `ecosystem.config.cjs` (PM2 `nutrichefia`, puerto **4005**), `nginx.nutrichef.solucionesctec.com.conf` y `.github/workflows/deploy.yml`. El DNS de **`nutrichef.solucionesctec.com` → `87.99.144.139`** ya resuelve. **Sigue faltando lo bloqueante: este proyecto no es un repo git** (el deploy clona desde GitHub). Ver `DEPLOY.md` → "Prerequisitos que faltan".
+- **Despliegue: ✅ EN PRODUCCIÓN** desde 2026-07-16 → **https://nutrichef.solucionesctec.com** (PM2 `nutrichefia`, puerto 4005, SSL con renovación automática). Repo: `github.com/abantostechnology2030/nutrichef`. Redeploy y trampas del día del despliegue en `DEPLOY.md`.
   - ⚠️ Antes de `git init`: **`archivos/` está gitignored** y ahí están los únicos originales de marca (`logotipo.png`, `favicon.png`). Decidir si se versionan o se mueven a `public/img/` con el rebranding.
 - **Cobertura de pruebas:** los smoke tests no tocan el escáner con imagen, el pago Yape ni el panel admin.
