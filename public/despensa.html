@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Mi despensa</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Mi despensa</h2>
+        <div class="spacer"></div>
+        <span class="analisis-pill" id="pill-despensa">…</span>
+      </header>
+
+      <div class="content stack">
+        <div class="scan-tabs" style="max-width:520px">
+          <button id="t-inventario" class="active">🧺 Lo que tengo</button>
+          <button id="t-compra">🛒 Registrar compra semanal</button>
+        </div>
+
+        <!-- ===== INVENTARIO ===== -->
+        <div id="panel-inventario" class="stack">
+          <div class="card card-tint">
+            <h3 style="margin-bottom:4px">Agregar un ingrediente</h3>
+            <p class="muted" style="font-size:13px;margin-bottom:12px">Elige del catálogo o escribe el nombre. El nivel le dice a la IA cuánto puede contar con él.</p>
+            <div id="alerta-inv" class="alert"></div>
+            <div class="row" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
+              <div class="field" style="margin:0;flex:1;min-width:200px">
+                <label>Ingrediente</label>
+                <input id="d-nombre" list="lista-catalogo" placeholder="Ej: Papa, Pollo, Ají amarillo..." />
+                <datalist id="lista-catalogo"></datalist>
+              </div>
+              <div class="field" style="margin:0">
+                <label>¿Cuánto tienes?</label>
+                <select id="d-nivel" class="input" style="width:auto"></select>
+              </div>
+              <button class="btn btn-sm" id="btn-add-ing" type="button" style="margin-bottom:2px">+ Agregar</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+              <h3>En mi despensa <span class="muted" id="cont-desp" style="font-weight:400;font-size:14px"></span></h3>
+              <select id="filtro-cat" class="input" style="width:auto"><option value="">Todas las categorías</option></select>
+            </div>
+            <div id="lista-despensa" class="stack"></div>
+          </div>
+        </div>
+
+        <!-- ===== COMPRA SEMANAL ===== -->
+        <div id="panel-compra" class="stack hidden">
+          <div class="card card-verde">
+            <h3 style="margin-bottom:4px">🛒 Registrar la compra de la semana</h3>
+            <p class="muted" style="font-size:13px;margin-bottom:12px">
+              Marca todo lo que compraste de una sola vez. Esto es lo que la IA usará para proponerte los platos de la semana.
+            </p>
+            <div id="alerta-compra" class="alert"></div>
+
+            <div class="field">
+              <label>Buscar y agregar</label>
+              <div class="row" style="gap:8px">
+                <input id="c-buscar" placeholder="Escribe para filtrar el catálogo, o agrega algo propio..." style="flex:1" />
+                <button class="btn btn-ghost btn-sm" id="btn-c-otro" type="button">+ Agregar propio</button>
+              </div>
+            </div>
+
+            <div id="catalogo-chips" style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px"></div>
+
+            <div class="field">
+              <label>Nota de la compra (opcional)</label>
+              <input id="c-nota" placeholder="Ej: compra del mercado de Wanchaq" />
+            </div>
+
+            <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
+              <span class="muted" id="c-resumen">Nada seleccionado todavía</span>
+              <button class="btn" id="btn-guardar-compra" type="button" disabled>Registrar compra</button>
+            </div>
+          </div>
+
+          <!-- Seleccionados con su nivel -->
+          <div class="card hidden" id="card-seleccion">
+            <h3 style="margin-bottom:12px">Lo que vas a registrar</h3>
+            <div id="lista-seleccion" class="stack"></div>
+          </div>
+
+          <!-- Historial -->
+          <div class="card">
+            <h3 style="margin-bottom:12px">Compras anteriores</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Fecha</th><th>Semana</th><th>Nota</th><th>Compré</th><th>Siguen en despensa</th></tr></thead>
+                <tbody id="tbody-compras"><tr><td colspan="5" class="muted">Cargando…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('despensa');
+    activarMenuMovil();
+
+    const alInv = document.getElementById('alerta-inv');
+    const alCompra = document.getElementById('alerta-compra');
+    let CATALOGO = [];
+    let DESPENSA = [];
+    let NIVELES = [];
+    let seleccion = new Map(); // nombre -> { nombre, categoria, nivel }
+
+    const NIVEL_TXT = { poco: '🔸 Poco', normal: '🔹 Normal', bastante: '🟢 Bastante' };
+    const nivelSelect = (valor, attrs = '') =>
+      `<select class="input" ${attrs} style="width:auto;padding:6px 10px;font-size:13px">
+        ${NIVELES.map((n) => `<option value="${n}" ${n === valor ? 'selected' : ''}>${NIVEL_TXT[n] || n}</option>`).join('')}
+      </select>`;
+
+    // ===== Tabs =====
+    const tabs = { inventario: 't-inventario', compra: 't-compra' };
+    function verTab(n) {
+      Object.entries(tabs).forEach(([k, id]) => {
+        document.getElementById(id).classList.toggle('active', k === n);
+        document.getElementById('panel-' + k).classList.toggle('hidden', k !== n);
+      });
+      if (n === 'compra') cargarCompras();
+    }
+    Object.entries(tabs).forEach(([k, id]) => { document.getElementById(id).onclick = () => verTab(k); });
+
+    // ===== Inventario =====
+    function pintarDespensa() {
+      const filtro = document.getElementById('filtro-cat').value;
+      const items = filtro ? DESPENSA.filter((d) => d.categoria === filtro) : DESPENSA;
+      document.getElementById('cont-desp').textContent = DESPENSA.length ? `· ${DESPENSA.length} ingredientes` : '';
+      document.getElementById('pill-despensa').innerHTML = `🧺 ${DESPENSA.length} en despensa`;
+
+      const cont = document.getElementById('lista-despensa');
+      if (!items.length) {
+        cont.innerHTML = DESPENSA.length
+          ? '<p class="muted">No hay ingredientes en esa categoría.</p>'
+          : '<p class="muted">Tu despensa está vacía. Agrega ingredientes arriba o registra tu compra semanal.</p>';
+        return;
+      }
+      // Agrupados por categoria para que se lea como una despensa de verdad.
+      const porCat = {};
+      items.forEach((i) => { (porCat[i.categoria] ||= []).push(i); });
+      cont.innerHTML = Object.entries(porCat).map(([cat, list]) => `
+        <div>
+          <div style="margin-bottom:8px">${chipCategoria(cat)}</div>
+          <div class="stack" style="gap:8px">
+            ${list.map((i) => `
+              <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:10px 12px">
+                <b style="flex:1;min-width:120px">${i.nombre}</b>
+                <div class="row" style="gap:6px">
+                  ${nivelSelect(i.nivel, `data-nivel="${i.id}"`)}
+                  <button class="btn btn-danger btn-sm" data-del="${i.id}">Quitar</button>
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>`).join('');
+    }
+
+    async function cargar() {
+      try {
+        const d = await api('/api/despensa');
+        CATALOGO = d.catalogo; DESPENSA = d.despensa; NIVELES = d.niveles;
+        document.getElementById('d-nivel').innerHTML = NIVELES.map((n) => `<option value="${n}" ${n === 'normal' ? 'selected' : ''}>${NIVEL_TXT[n] || n}</option>`).join('');
+        document.getElementById('lista-catalogo').innerHTML = CATALOGO.map((c) => `<option value="${c.nombre}">`).join('');
+        document.getElementById('filtro-cat').innerHTML = '<option value="">Todas las categorías</option>' +
+          d.categorias.map((c) => `<option value="${c}">${CAT_INFO[c]?.ic || ''} ${CAT_INFO[c]?.txt || c}</option>`).join('');
+        pintarDespensa();
+        pintarCatalogoChips();
+      } catch (err) {
+        if (err.status === 403) { location.href = '/mi-plan.html?upgrade=1'; return; }
+        alerta(alInv, err.error || 'No pudimos cargar tu despensa.');
+      }
+    }
+
+    document.getElementById('filtro-cat').onchange = pintarDespensa;
+
+    document.getElementById('btn-add-ing').onclick = async () => {
+      limpiarAlerta(alInv);
+      const nombre = document.getElementById('d-nombre').value.trim();
+      if (!nombre) { alerta(alInv, 'Escribe el nombre del ingrediente.'); return; }
+      try {
+        const d = await api('/api/despensa', { method: 'POST', body: { nombre, nivel: document.getElementById('d-nivel').value } });
+        DESPENSA = d.despensa;
+        document.getElementById('d-nombre').value = '';
+        pintarDespensa();
+        pintarCatalogoChips();
+      } catch (err) { alerta(alInv, err.error || 'No pudimos agregar el ingrediente.'); }
+    };
+    document.getElementById('d-nombre').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-ing').click(); } };
+
+    document.getElementById('lista-despensa').addEventListener('change', async (e) => {
+      const id = e.target.dataset.nivel;
+      if (!id) return;
+      try { DESPENSA = (await api(`/api/despensa/${id}`, { method: 'PATCH', body: { nivel: e.target.value } })).despensa; }
+      catch (err) { alerta(alInv, err.error || 'No pudimos actualizar.'); }
+    });
+
+    document.getElementById('lista-despensa').addEventListener('click', async (e) => {
+      const id = e.target.dataset.del;
+      if (!id) return;
+      try {
+        DESPENSA = (await api(`/api/despensa/${id}`, { method: 'DELETE' })).despensa;
+        pintarDespensa();
+        pintarCatalogoChips();
+      } catch (err) { alerta(alInv, err.error || 'No pudimos quitar el ingrediente.'); }
+    });
+
+    // ===== Compra semanal =====
+    // Los chips del catalogo marcan lo comprado. Lo que ya esta en la despensa se
+    // muestra atenuado: registrarlo de nuevo solo actualiza su nivel, no duplica.
+    function pintarCatalogoChips() {
+      const q = document.getElementById('c-buscar').value.trim().toLowerCase();
+      const lista = q ? CATALOGO.filter((c) => c.nombre.toLowerCase().includes(q)) : CATALOGO;
+      const cont = document.getElementById('catalogo-chips');
+      if (!lista.length) {
+        cont.innerHTML = '<p class="muted" style="font-size:13px">Nada en el catálogo con ese nombre. Usa «+ Agregar propio».</p>';
+        return;
+      }
+      const porCat = {};
+      lista.forEach((c) => { (porCat[c.categoria] ||= []).push(c); });
+      cont.innerHTML = Object.entries(porCat).map(([cat, items]) => `
+        <div style="margin-bottom:10px">
+          <div style="margin-bottom:6px">${chipCategoria(cat)}</div>
+          <div class="row" style="flex-wrap:wrap;gap:6px">
+            ${items.map((c) => {
+              const on = seleccion.has(c.nombre.toLowerCase());
+              const tengo = DESPENSA.some((d) => d.nombre.toLowerCase() === c.nombre.toLowerCase());
+              return `<button type="button" class="btn btn-sm ${on ? '' : 'btn-ghost'}" data-cat-chip="${c.nombre.replace(/"/g, '&quot;')}"
+                data-categoria="${c.categoria}" title="${tengo ? 'Ya está en tu despensa' : ''}"
+                style="${on ? '' : 'opacity:' + (tengo ? '.45' : '.72')};padding:5px 11px;font-size:12.5px">${on ? '✓ ' : ''}${c.nombre}${tengo && !on ? ' ·🧺' : ''}</button>`;
+            }).join('')}
+          </div>
+        </div>`).join('');
+      cont.querySelectorAll('[data-cat-chip]').forEach((b) => {
+        b.onclick = () => {
+          const nombre = b.dataset.catChip;
+          const k = nombre.toLowerCase();
+          if (seleccion.has(k)) seleccion.delete(k);
+          else seleccion.set(k, { nombre, categoria: b.dataset.categoria, nivel: 'normal' });
+          pintarCatalogoChips();
+          pintarSeleccion();
+        };
+      });
+    }
+    document.getElementById('c-buscar').oninput = pintarCatalogoChips;
+
+    document.getElementById('btn-c-otro').onclick = () => {
+      const el = document.getElementById('c-buscar');
+      const nombre = el.value.trim();
+      if (!nombre) { alerta(alCompra, 'Escribe el nombre de lo que compraste.'); return; }
+      limpiarAlerta(alCompra);
+      seleccion.set(nombre.toLowerCase(), { nombre, nivel: 'normal' }); // sin categoria: la resuelve el backend
+      el.value = '';
+      pintarCatalogoChips();
+      pintarSeleccion();
+    };
+
+    function pintarSeleccion() {
+      const items = [...seleccion.values()];
+      const btn = document.getElementById('btn-guardar-compra');
+      btn.disabled = !items.length;
+      document.getElementById('c-resumen').textContent = items.length
+        ? `${items.length} ingrediente${items.length === 1 ? '' : 's'} seleccionado${items.length === 1 ? '' : 's'}`
+        : 'Nada seleccionado todavía';
+      document.getElementById('card-seleccion').classList.toggle('hidden', !items.length);
+      document.getElementById('lista-seleccion').innerHTML = items.map((i) => `
+        <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:10px 12px">
+          <b style="flex:1;min-width:120px">${i.nombre}</b>
+          <div class="row" style="gap:6px">
+            ${nivelSelect(i.nivel, `data-sel-nivel="${i.nombre.toLowerCase().replace(/"/g, '&quot;')}"`)}
+            <button class="btn btn-ghost btn-sm" data-sel-del="${i.nombre.toLowerCase().replace(/"/g, '&quot;')}">Quitar</button>
+          </div>
+        </div>`).join('');
+    }
+
+    document.getElementById('lista-seleccion').addEventListener('change', (e) => {
+      const k = e.target.dataset.selNivel;
+      if (k && seleccion.has(k)) seleccion.get(k).nivel = e.target.value;
+    });
+    document.getElementById('lista-seleccion').addEventListener('click', (e) => {
+      const k = e.target.dataset.selDel;
+      if (!k) return;
+      seleccion.delete(k);
+      pintarCatalogoChips();
+      pintarSeleccion();
+    });
+
+    document.getElementById('btn-guardar-compra').onclick = async () => {
+      limpiarAlerta(alCompra);
+      const btn = document.getElementById('btn-guardar-compra');
+      btn.disabled = true; btn.textContent = 'Registrando…';
+      try {
+        const d = await api('/api/despensa/compra', { method: 'POST', body: {
+          nota: document.getElementById('c-nota').value,
+          items: [...seleccion.values()],
+        } });
+        DESPENSA = d.despensa;
+        seleccion.clear();
+        document.getElementById('c-nota').value = '';
+        pintarSeleccion();
+        pintarCatalogoChips();
+        pintarDespensa();
+        cargarCompras();
+        alerta(alCompra, d.mensaje, 'ok');
+      } catch (err) { alerta(alCompra, err.error || 'No pudimos registrar la compra.'); }
+      finally { btn.textContent = 'Registrar compra'; pintarSeleccion(); }
+    };
+
+    async function cargarCompras() {
+      const tb = document.getElementById('tbody-compras');
+      try {
+        const { compras } = await api('/api/despensa/compras');
+        tb.innerHTML = compras.length
+          ? compras.map((c) => `<tr>
+              <td>${c.creado_local}</td><td>${c.semana}</td><td>${c.nota || '—'}</td>
+              <td>${c.total_items}</td><td>${c.vigentes}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="5" class="muted">Aún no registras compras.</td></tr>';
+      } catch { tb.innerHTML = '<tr><td colspan="5" class="muted">No pudimos cargar el historial.</td></tr>'; }
+    }
+
+    cargar();
+  </script>
+</body>
+</html>

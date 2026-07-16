@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Panel admin</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Panel de administración</h2>
+      </header>
+
+      <div class="content stack">
+        <!-- Aviso grande de crédito por agotarse -->
+        <div id="aviso-credito" class="hidden"></div>
+
+        <!-- Métricas -->
+        <div class="grid grid-4">
+          <div class="card stat"><span class="num" id="m-usuarios">–</span><span class="lbl">Usuarios</span></div>
+          <div class="card stat"><span class="num" id="m-pago">–</span><span class="lbl">En plan de pago</span></div>
+          <div class="card stat"><span class="num" id="m-pendientes">–</span><span class="lbl">Pagos pendientes</span></div>
+          <div class="card stat"><span class="num" id="m-platos">–</span><span class="lbl">Platos creados</span></div>
+        </div>
+
+        <!-- Consumo de IA -->
+        <div class="card">
+          <div class="row" style="justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <h3>Consumo de IA (tokens)</h3>
+            <button class="btn btn-ghost btn-sm" id="btn-reset-tokens" type="button">↺ Reiniciar contador</button>
+          </div>
+          <div id="ia-consumo" class="grid grid-2"></div>
+          <p class="muted" style="font-size:12px;margin-top:10px">Estimación según los tokens registrados de los análisis de producto y de las generaciones del planificador (cada IA con su tarifa). El saldo restante es aproximado; el valor exacto está en la consola del proveedor.</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="scan-tabs" style="max-width:680px">
+          <button id="t-pagos" class="active">💳 Pagos</button>
+          <button id="t-planes">📦 Planes</button>
+          <button id="t-catalogo">🥕 Catálogo</button>
+          <button id="t-soporte">💬 Soporte <span id="sop-badge" class="badge badge-rechazado" style="display:none;padding:1px 7px">0</span></button>
+          <button id="t-usuarios">👥 Usuarios</button>
+          <button id="t-config">⚙️ Config</button>
+        </div>
+
+        <!-- PAGOS -->
+        <div id="panel-pagos" class="card">
+          <div class="row" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+            <h3>Pagos Yape</h3>
+            <div class="row" style="flex-wrap:wrap;gap:8px">
+              <select id="filtro-estado" class="input" style="width:auto">
+                <option value="pendiente">Pendientes</option>
+                <option value="aprobado">Aprobados</option>
+                <option value="rechazado">Rechazados</option>
+                <option value="todos">Todos</option>
+              </select>
+              <input type="date" id="filtro-desde" class="input" style="width:auto" title="Desde" />
+              <input type="date" id="filtro-hasta" class="input" style="width:auto" title="Hasta" />
+              <button class="btn btn-ghost btn-sm" id="btn-limpiar-fechas" type="button">Limpiar fechas</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Usuario</th><th>Plan</th><th>Operación</th><th>Monto</th><th>Fecha</th><th>Comprobante</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody id="tbody-pagos"><tr><td colspan="8" class="muted">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- PLANES -->
+        <div id="panel-planes" class="card hidden">
+          <div class="row" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+            <h3>Planes</h3>
+            <button class="btn btn-sm" id="btn-nuevo-plan">+ Nuevo plan</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Nombre</th><th>Precio</th><th>Análisis</th><th>Historial</th><th>Planificador</th><th>Platos</th><th>Semanas</th><th>Gen. IA</th><th>Vig.</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody id="tbody-planes"><tr><td colspan="11" class="muted">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+
+          <!-- Formulario plan -->
+          <div id="form-plan-wrap" class="hidden" style="margin-top:18px;border-top:1px solid var(--line);padding-top:18px">
+            <h4 id="form-plan-titulo">Nuevo plan</h4>
+            <div id="alerta-plan" class="alert"></div>
+            <input type="hidden" id="p-id" />
+            <div class="grid grid-2">
+              <div class="field"><label>Nombre</label><input id="p-nombre" placeholder="Ej: Pro" /></div>
+              <div class="field"><label>Precio (S/)</label><input id="p-precio" type="number" step="0.10" placeholder="0.00" /></div>
+            </div>
+            <div class="grid grid-2">
+              <div class="field">
+                <label>Análisis de producto incluidos</label>
+                <input id="p-analisis" type="number" placeholder="Ej: 50" />
+                <label class="row" style="font-weight:500;margin-top:6px;gap:6px"><input type="checkbox" id="p-ilimitado"> Análisis ilimitados</label>
+              </div>
+              <div class="field">
+                <label>Productos guardados (historial)</label>
+                <input id="p-historial" type="number" min="0" placeholder="Ej: 10 (0 = no guarda)" />
+                <label class="row" style="font-weight:500;margin-top:6px;gap:6px"><input type="checkbox" id="p-hist-ilimitado"> Historial ilimitado</label>
+              </div>
+            </div>
+            <div class="grid grid-2">
+              <div class="field">
+                <label>Platos guardados</label>
+                <input id="p-platos-max" type="number" min="0" placeholder="Ej: 5" />
+                <label class="row" style="font-weight:500;margin-top:6px;gap:6px"><input type="checkbox" id="p-platos-ilim"> Platos ilimitados</label>
+              </div>
+              <div class="field">
+                <label>Semanas programables (calendario)</label>
+                <input id="p-semanas-max" type="number" min="0" placeholder="Ej: 1" />
+                <label class="row" style="font-weight:500;margin-top:6px;gap:6px"><input type="checkbox" id="p-semanas-ilim"> Semanas ilimitadas</label>
+              </div>
+            </div>
+            <div class="grid grid-2">
+              <div class="field">
+                <!-- 1 generacion = 1 dia del calendario (3 platos). Una semana completa
+                     son 7, que es lo que trae el plan Free. -->
+                <label>Generaciones de IA por semana <span class="muted" style="font-weight:400">(1 = un día)</span></label>
+                <input id="p-generaciones-max" type="number" min="0" placeholder="Ej: 7" />
+                <label class="row" style="font-weight:500;margin-top:6px;gap:6px"><input type="checkbox" id="p-generaciones-ilim"> Generaciones ilimitadas</label>
+                <span class="muted" style="font-size:12px">Generar menú, regenerar un día/plato y verificar platos. Es el mayor costo de IA: no lo dejes ilimitado en planes gratuitos.</span>
+              </div>
+              <div class="field">
+                <label>Días de vigencia del plan</label>
+                <input id="p-dias-vigencia" type="number" min="1" placeholder="30" />
+                <span class="muted" style="font-size:12px">Cuántos días dura tras aprobar el pago (para la renovación).</span>
+              </div>
+            </div>
+            <div class="grid grid-2">
+              <div class="field">
+                <label>Funciones</label>
+                <label class="row" style="font-weight:500;gap:6px"><input type="checkbox" id="p-planificador"> Incluye Plan de comidas (hogar + despensa + calendario)</label>
+                <label class="row" style="font-weight:500;margin-top:6px;gap:6px"><input type="checkbox" id="p-activo" checked> Plan activo (visible)</label>
+              </div>
+            </div>
+            <div class="row">
+              <button class="btn btn-sm" id="btn-guardar-plan">Guardar plan</button>
+              <button class="btn btn-ghost btn-sm" id="btn-cancelar-plan">Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CATALOGO -->
+        <div id="panel-catalogo" class="card hidden">
+          <div class="row" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+            <h3>Catálogo de ingredientes</h3>
+            <p class="muted" style="font-size:13px;flex:1;min-width:200px">Estos ingredientes son los que el usuario podrá elegir al abastecer su despensa, agrupados por categoría.</p>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:16px;align-items:flex-end">
+            <div class="field" style="margin:0"><label>Ingrediente</label><input id="cat-nombre" placeholder="Ej: Aji amarillo" style="width:220px" /></div>
+            <div class="field" style="margin:0"><label>Categoría</label>
+              <select id="cat-categoria" class="input" style="width:auto"></select>
+            </div>
+            <button class="btn btn-sm" id="btn-add-cat" type="button">+ Agregar</button>
+          </div>
+          <div id="alerta-cat" class="alert"></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Ingrediente</th><th>Categoría</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody id="tbody-catalogo"><tr><td colspan="4" class="muted">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SOPORTE -->
+        <div id="panel-soporte" class="card hidden">
+          <div class="row" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+            <h3>Mensajes de soporte</h3>
+            <button class="btn btn-ghost btn-sm" id="btn-refrescar-sop" type="button">↻ Actualizar</button>
+          </div>
+          <div id="lista-soporte" class="stack"><p class="muted">Cargando…</p></div>
+        </div>
+
+        <!-- USUARIOS -->
+        <div id="panel-usuarios" class="card hidden">
+          <h3 style="margin-bottom:14px">Usuarios</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Plan</th><th>Análisis</th><th>Cambiar plan</th></tr></thead>
+              <tbody id="tbody-usuarios"><tr><td colspan="6" class="muted">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- CONFIG -->
+        <div id="panel-config" class="card hidden" style="max-width:520px">
+          <h3 style="margin-bottom:14px">Datos de Yape</h3>
+          <div id="alerta-config" class="alert"></div>
+          <form id="form-config">
+            <div class="field"><label>Número de Yape</label><input id="c-yape_numero" /></div>
+            <div class="field"><label>Titular del Yape</label><input id="c-yape_titular" /></div>
+
+            <hr style="border:none;border-top:1px solid var(--line);margin:16px 0" />
+            <label style="display:block;font-weight:600;font-size:13.5px;margin-bottom:8px">Motor de IA</label>
+            <div class="field">
+              <label>Modo</label>
+              <select id="c-ai_modo" class="input">
+                <option value="gemini">Solo Gemini</option>
+                <option value="claude">Solo Claude</option>
+                <option value="ambos">Ambos (con respaldo automático)</option>
+              </select>
+            </div>
+            <div class="field" id="campo-prioridad">
+              <label>Prioridad (cuál se usa primero)</label>
+              <select id="c-ai_prioridad" class="input">
+                <option value="gemini">Gemini primero, Claude de respaldo</option>
+                <option value="claude">Claude primero, Gemini de respaldo</option>
+              </select>
+            </div>
+
+            <hr style="border:none;border-top:1px solid var(--line);margin:16px 0" />
+            <label style="display:block;font-weight:600;font-size:13.5px;margin-bottom:8px">Crédito recargado por IA (USD)</label>
+            <div class="grid grid-2">
+              <div class="field"><label>Gemini</label><input id="c-credito_gemini" type="number" step="0.01" min="0" placeholder="10.67" /></div>
+              <div class="field"><label>Claude</label><input id="c-credito_claude" type="number" step="0.01" min="0" placeholder="7.60" /></div>
+            </div>
+            <p class="muted" style="font-size:12px;margin:-6px 0 12px">Ingresa el monto en dólares (ej. 40 soles ≈ $10.67). Sirve para estimar el saldo y avisar cuando se esté agotando.</p>
+
+            <button class="btn btn-block" type="submit">Guardar</button>
+          </form>
+
+          <hr style="border:none;border-top:1px solid var(--line);margin:18px 0" />
+          <label style="display:block;font-weight:600;font-size:13.5px;margin-bottom:6px">QR de Yape (opcional)</label>
+          <p class="muted" style="font-size:13px;margin-bottom:12px">Sube la imagen de tu QR de Yape para que los clientes lo escaneen. Si no subes ninguno, en el checkout se muestra solo el número.</p>
+          <div id="qr-preview" style="margin-bottom:12px"></div>
+          <input type="file" id="c-yape_qr" accept="image/*" />
+          <div class="row" style="gap:8px;margin-top:10px">
+            <button type="button" class="btn btn-sm" id="btn-subir-qr" disabled>Subir / Reemplazar</button>
+            <button type="button" class="btn btn-danger btn-sm" id="btn-quitar-qr">Quitar QR</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal comprobante -->
+  <div class="overlay" id="modal-img" style="z-index:40;display:none;place-items:center;padding:20px">
+    <img id="modal-img-src" style="max-width:90vw;max-height:85vh;border-radius:14px;box-shadow:var(--shadow)" />
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    exigirSesion({ admin: true });
+    document.getElementById('sidebar').innerHTML = pintarSidebar('admin');
+    activarMenuMovil();
+
+    let PLANES = [];
+
+    const nfTok = new Intl.NumberFormat('es-PE');
+    const PROV = { gemini: { lbl: 'Gemini', ic: '🔷' }, claude: { lbl: 'Claude', ic: '🟣' } };
+    const provsActivos = (modo) => modo === 'gemini' ? ['gemini'] : (modo === 'claude' ? ['claude'] : ['gemini', 'claude']);
+
+    async function cargarResumen() {
+      const r = await api('/api/admin/resumen');
+      document.getElementById('m-usuarios').textContent = r.totalUsuarios;
+      document.getElementById('m-pago').textContent = r.dePago;
+      document.getElementById('m-pendientes').textContent = r.pendientes;
+      document.getElementById('m-platos').textContent = r.totalPlatos;
+      pintarConsumoIA(r);
+      avisarSoporte(r.soporteNuevos);
+    }
+
+    function pintarConsumoIA(r) {
+      const ia = r.ia || {};
+      const activos = provsActivos(r.ai_modo);
+      document.getElementById('ia-consumo').innerHTML = ['gemini', 'claude'].map((p) => {
+        const d = ia[p] || { input: 0, output: 0, costo: 0, credito: 0, restante: 0, pct: 0, bajo: false, agotado: false, tarifa: { in: 0, out: 0 } };
+        const activo = activos.includes(p);
+        const estado = d.credito <= 0 ? '' : (d.agotado ? 'rojo' : (d.bajo ? 'amarillo' : 'verde'));
+        const bar = estado === 'rojo' ? '#e05b50' : (estado === 'amarillo' ? '#e8a93a' : '#34b36a');
+        return `<div class="card ${estado ? 'sem-' + estado : ''}" style="box-shadow:none">
+          <div class="row" style="justify-content:space-between;margin-bottom:8px">
+            <b>${PROV[p].ic} ${PROV[p].lbl}</b>
+            ${activo ? '<span class="badge badge-aprobado">en uso</span>' : '<span class="badge badge-free">en espera</span>'}
+          </div>
+          <div class="muted" style="font-size:12.5px">Tokens: ${nfTok.format(d.input)} in · ${nfTok.format(d.output)} out</div>
+          <div class="muted" style="font-size:12px">Tarifa ref.: $${d.tarifa.in}/$${d.tarifa.out} por 1M</div>
+          <div style="margin-top:8px;font-size:14px"><b>Gastado:</b> $${d.costo.toFixed(4)}</div>
+          ${d.credito > 0 ? `
+            <div style="font-size:14px"><b>Crédito:</b> $${d.credito.toFixed(2)} · <b>Restante:</b> $${d.restante.toFixed(2)}</div>
+            <div style="height:8px;background:#eef1f5;border-radius:6px;margin-top:8px;overflow:hidden">
+              <div style="height:100%;width:${Math.round(d.pct * 100)}%;background:${bar}"></div>
+            </div>` : '<div class="muted" style="font-size:12.5px;margin-top:6px">Sin crédito configurado (Config).</div>'}
+        </div>`;
+      }).join('');
+
+      const aviso = document.getElementById('aviso-credito');
+      const criticos = activos.map((p) => ({ p, d: ia[p] })).filter((x) => x.d && x.d.credito > 0 && x.d.bajo);
+      if (!criticos.length) { aviso.classList.add('hidden'); aviso.innerHTML = ''; return; }
+      const agotado = criticos.some((x) => x.d.agotado);
+      aviso.classList.remove('hidden');
+      aviso.innerHTML = `<div style="padding:18px 22px;border-radius:14px;font-size:18px;font-weight:800;
+          background:${agotado ? '#fbe7e6' : '#fdf4e1'};color:${agotado ? '#c0392b' : '#a86a05'};border:2px solid ${agotado ? '#e05b50' : '#e8a93a'}">
+          ${agotado ? '⛔' : '⚠️'} ${criticos.map((x) => `${PROV[x.p].lbl}: ${x.d.agotado ? 'crédito AGOTADO' : 'quedan $' + x.d.restante.toFixed(2)} de $${x.d.credito.toFixed(2)}`).join(' · ')}
+          <div style="font-size:13.5px;font-weight:600;margin-top:6px">${agotado ? 'Recarga el crédito para seguir usando la IA.' : 'El crédito se está agotando, recarga pronto.'}</div>
+        </div>`;
+    }
+
+    // Reiniciar contador de consumo (no borra los productos guardados)
+    document.getElementById('btn-reset-tokens').onclick = async () => {
+      const ok = await confirmar('Esto pondrá en cero el consumo de IA (tokens y costo estimado). No borra nada de los usuarios. ¿Continuar?', { titulo: 'Reiniciar contador', ok: 'Reiniciar', peligro: true });
+      if (!ok) return;
+      try { await api('/api/admin/tokens/reset', { method: 'POST' }); cargarResumen(); }
+      catch (err) { alert(err.error || 'No se pudo reiniciar.'); }
+    };
+
+    // ===== Tabs =====
+    const tabs = { pagos: 't-pagos', planes: 't-planes', catalogo: 't-catalogo', soporte: 't-soporte', usuarios: 't-usuarios', config: 't-config' };
+    function mostrarTab(n) {
+      Object.entries(tabs).forEach(([k, id]) => {
+        document.getElementById(id).classList.toggle('active', k === n);
+        document.getElementById('panel-' + k).classList.toggle('hidden', k !== n);
+      });
+      if (n === 'planes') cargarPlanes();
+      if (n === 'catalogo') cargarCatalogo();
+      if (n === 'soporte') cargarSoporte();
+      if (n === 'usuarios') cargarUsuarios();
+      if (n === 'config') cargarConfig();
+    }
+    Object.keys(tabs).forEach((k) => document.getElementById(tabs[k]).onclick = () => mostrarTab(k));
+
+    // ===== Pagos =====
+    const tbodyPagos = document.getElementById('tbody-pagos');
+    const filtro = document.getElementById('filtro-estado');
+    const fDesde = document.getElementById('filtro-desde');
+    const fHasta = document.getElementById('filtro-hasta');
+    filtro.onchange = cargarPagos;
+    fDesde.onchange = cargarPagos;
+    fHasta.onchange = cargarPagos;
+    document.getElementById('btn-limpiar-fechas').onclick = () => {
+      fDesde.value = ''; fHasta.value = ''; cargarPagos();
+    };
+    const badgeEstado = (e) => `<span class="badge badge-${e}">${e}</span>`;
+
+    async function cargarPagos() {
+      tbodyPagos.innerHTML = '<tr><td colspan="8" class="muted">Cargando…</td></tr>';
+      const params = new URLSearchParams({ estado: filtro.value });
+      if (fDesde.value) params.set('desde', fDesde.value);
+      if (fHasta.value) params.set('hasta', fHasta.value);
+      const { pagos } = await api(`/api/admin/pagos?${params}`);
+      if (!pagos.length) { tbodyPagos.innerHTML = '<tr><td colspan="8" class="muted">Sin pagos en este rango.</td></tr>'; return; }
+      tbodyPagos.innerHTML = pagos.map((p) => `
+        <tr>
+          <td><b>${p.nombre}</b><br><span class="muted" style="font-size:12.5px">${p.email}</span></td>
+          <td>${p.plan_nombre || '—'}</td>
+          <td>${p.numero_operacion}</td>
+          <td>S/ ${p.monto}</td>
+          <td><span style="font-size:12.5px">${p.creado_local || ''}</span></td>
+          <td><a href="#" class="ver-img" data-src="${p.comprobante_path}">Ver</a></td>
+          <td>${badgeEstado(p.estado)}</td>
+          <td>${p.estado === 'pendiente'
+              ? `<div class="row"><button class="btn btn-green btn-sm" data-aprobar="${p.id}">Aprobar</button><button class="btn btn-danger btn-sm" data-rechazar="${p.id}">Rechazar</button></div>`
+              : `<span class="muted" style="font-size:12px">${p.revisado_local || ''}</span>`}</td>
+        </tr>`).join('');
+    }
+
+    tbodyPagos.addEventListener('click', async (e) => {
+      const t = e.target;
+      if (t.classList.contains('ver-img')) {
+        e.preventDefault();
+        document.getElementById('modal-img-src').src = t.dataset.src;
+        document.getElementById('modal-img').style.display = 'grid';
+        return;
+      }
+      if (t.dataset.aprobar) {
+        if (!confirm('¿Aprobar este pago y activar el plan?')) return;
+        t.disabled = true;
+        try { await api(`/api/admin/pagos/${t.dataset.aprobar}/aprobar`, { method: 'POST' }); cargarPagos(); cargarResumen(); }
+        catch (err) { alert(err.error || 'Error'); t.disabled = false; }
+      }
+      if (t.dataset.rechazar) {
+        if (!confirm('¿Rechazar este pago?')) return;
+        t.disabled = true;
+        try { await api(`/api/admin/pagos/${t.dataset.rechazar}/rechazar`, { method: 'POST' }); cargarPagos(); cargarResumen(); }
+        catch (err) { alert(err.error || 'Error'); t.disabled = false; }
+      }
+    });
+    document.getElementById('modal-img').onclick = (e) => { if (e.target.id === 'modal-img') e.currentTarget.style.display = 'none'; };
+
+    // ===== Planes =====
+    const tbodyPlanes = document.getElementById('tbody-planes');
+    const formWrap = document.getElementById('form-plan-wrap');
+    const alPlan = document.getElementById('alerta-plan');
+
+    const histLbl = (v) => v === null ? '∞ ilimitado' : (Number(v) === 0 ? '— no guarda' : v);
+    const maxLbl = (v) => v === null ? '∞' : v;
+    async function cargarPlanes() {
+      tbodyPlanes.innerHTML = '<tr><td colspan="11" class="muted">Cargando…</td></tr>';
+      const { planes } = await api('/api/admin/planes');
+      PLANES = planes;
+      tbodyPlanes.innerHTML = planes.map((p) => `
+        <tr>
+          <td><b>${p.nombre}</b>${p.es_default ? ' <span class="badge badge-free">default</span>' : ''}</td>
+          <td>S/ ${Number(p.precio).toFixed(2)}</td>
+          <td>${p.analisis === null ? '∞ ilimitados' : p.analisis}</td>
+          <td>${histLbl(p.historial_max)}</td>
+          <td>${p.incluye_planificador ? '✅' : '—'}</td>
+          <td>${p.incluye_planificador ? maxLbl(p.platos_max) : '—'}</td>
+          <td>${p.incluye_planificador ? maxLbl(p.semanas_max) : '—'}</td>
+          <td>${p.incluye_planificador ? maxLbl(p.generaciones_max) : '—'}</td>
+          <td>${p.precio > 0 ? p.dias_vigencia + 'd' : '—'}</td>
+          <td>${p.activo ? '<span class="badge badge-aprobado">activo</span>' : '<span class="badge badge-rechazado">inactivo</span>'}</td>
+          <td><div class="row">
+            <button class="btn btn-ghost btn-sm" data-editar="${p.id}">Editar</button>
+            ${p.es_default ? '' : `<button class="btn btn-danger btn-sm" data-eliminar="${p.id}">Eliminar</button>`}
+          </div></td>
+        </tr>`).join('');
+    }
+
+    function abrirFormPlan(plan) {
+      limpiarAlerta(alPlan);
+      formWrap.classList.remove('hidden');
+      document.getElementById('form-plan-titulo').textContent = plan ? `Editar: ${plan.nombre}` : 'Nuevo plan';
+      document.getElementById('p-id').value = plan ? plan.id : '';
+      document.getElementById('p-nombre').value = plan ? plan.nombre : '';
+      document.getElementById('p-precio').value = plan ? plan.precio : '';
+      document.getElementById('p-analisis').value = plan && plan.analisis !== null ? plan.analisis : '';
+      document.getElementById('p-ilimitado').checked = plan ? plan.analisis === null : false;
+      document.getElementById('p-historial').value = plan && plan.historial_max !== null ? plan.historial_max : '';
+      document.getElementById('p-hist-ilimitado').checked = plan ? plan.historial_max === null : false;
+      document.getElementById('p-platos-max').value = plan && plan.platos_max !== null ? plan.platos_max : '';
+      document.getElementById('p-platos-ilim').checked = plan ? plan.platos_max === null : false;
+      document.getElementById('p-semanas-max').value = plan && plan.semanas_max !== null ? plan.semanas_max : '';
+      document.getElementById('p-semanas-ilim').checked = plan ? plan.semanas_max === null : false;
+      document.getElementById('p-generaciones-max').value = plan && plan.generaciones_max !== null ? plan.generaciones_max : '';
+      document.getElementById('p-generaciones-ilim').checked = plan ? plan.generaciones_max === null : false;
+      document.getElementById('p-platos-max').disabled = document.getElementById('p-platos-ilim').checked;
+      document.getElementById('p-semanas-max').disabled = document.getElementById('p-semanas-ilim').checked;
+      document.getElementById('p-generaciones-max').disabled = document.getElementById('p-generaciones-ilim').checked;
+      document.getElementById('p-dias-vigencia').value = plan ? (plan.dias_vigencia || 30) : 30;
+      document.getElementById('p-planificador').checked = plan ? !!plan.incluye_planificador : false;
+      document.getElementById('p-activo').checked = plan ? !!plan.activo : true;
+      document.getElementById('p-analisis').disabled = document.getElementById('p-ilimitado').checked;
+      document.getElementById('p-historial').disabled = document.getElementById('p-hist-ilimitado').checked;
+      formWrap.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Cada checkbox "ilimitado" deshabilita y limpia su input de tope.
+    [['p-ilimitado', 'p-analisis'], ['p-hist-ilimitado', 'p-historial'], ['p-platos-ilim', 'p-platos-max'],
+     ['p-semanas-ilim', 'p-semanas-max'], ['p-generaciones-ilim', 'p-generaciones-max']]
+      .forEach(([check, input]) => {
+        document.getElementById(check).onchange = (e) => {
+          document.getElementById(input).disabled = e.target.checked;
+          if (e.target.checked) document.getElementById(input).value = '';
+        };
+      });
+    document.getElementById('btn-nuevo-plan').onclick = () => abrirFormPlan(null);
+    document.getElementById('btn-cancelar-plan').onclick = () => formWrap.classList.add('hidden');
+
+    tbodyPlanes.addEventListener('click', async (e) => {
+      const t = e.target;
+      if (t.dataset.editar) abrirFormPlan(PLANES.find((p) => p.id === Number(t.dataset.editar)));
+      if (t.dataset.eliminar) {
+        if (!confirm('¿Eliminar este plan?')) return;
+        try { const r = await api(`/api/admin/planes/${t.dataset.eliminar}`, { method: 'DELETE' }); if (r.mensaje) alert(r.mensaje); cargarPlanes(); }
+        catch (err) { alert(err.error || 'Error'); }
+      }
+    });
+
+    document.getElementById('btn-guardar-plan').onclick = async () => {
+      limpiarAlerta(alPlan);
+      const id = document.getElementById('p-id').value;
+      const ilimitado = document.getElementById('p-ilimitado').checked;
+      const histIlimitado = document.getElementById('p-hist-ilimitado').checked;
+      const body = {
+        nombre: document.getElementById('p-nombre').value,
+        precio: document.getElementById('p-precio').value,
+        analisis: ilimitado ? null : document.getElementById('p-analisis').value,
+        historial_max: histIlimitado ? null : (document.getElementById('p-historial').value || '0'),
+        platos_max: document.getElementById('p-platos-ilim').checked ? null : document.getElementById('p-platos-max').value,
+        semanas_max: document.getElementById('p-semanas-ilim').checked ? null : document.getElementById('p-semanas-max').value,
+        generaciones_max: document.getElementById('p-generaciones-ilim').checked ? null : document.getElementById('p-generaciones-max').value,
+        dias_vigencia: document.getElementById('p-dias-vigencia').value,
+        incluye_planificador: document.getElementById('p-planificador').checked,
+        activo: document.getElementById('p-activo').checked,
+      };
+      try {
+        if (id) await api(`/api/admin/planes/${id}`, { method: 'PATCH', body });
+        else await api('/api/admin/planes', { method: 'POST', body });
+        formWrap.classList.add('hidden');
+        cargarPlanes(); cargarResumen();
+      } catch (err) { alerta(alPlan, err.error || 'No se pudo guardar.'); }
+    };
+
+    // ===== Catálogo de ingredientes =====
+    // Las etiquetas salen de CAT_INFO (api.js), que es la fuente unica de categorias.
+    const CAT_LBL = Object.fromEntries(Object.entries(CAT_INFO).map(([k, v]) => [k, `${v.ic} ${v.txt}`]));
+    const tbodyCat = document.getElementById('tbody-catalogo');
+    const alCat = document.getElementById('alerta-cat');
+    document.getElementById('cat-categoria').innerHTML =
+      Object.entries(CAT_LBL).map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+
+    async function cargarCatalogo() {
+      tbodyCat.innerHTML = '<tr><td colspan="4" class="muted">Cargando…</td></tr>';
+      const { ingredientes } = await api('/api/admin/catalogo');
+      if (!ingredientes.length) { tbodyCat.innerHTML = '<tr><td colspan="4" class="muted">Catálogo vacío. Agrega ingredientes arriba.</td></tr>'; return; }
+      tbodyCat.innerHTML = ingredientes.map((p) => `
+        <tr data-id="${p.id}">
+          <td><input class="input cat-edit-nombre" value="${p.nombre.replace(/"/g, '&quot;')}" style="padding:7px 10px" /></td>
+          <td>
+            <select class="input cat-edit-categoria" style="width:auto;padding:7px 10px">
+              ${Object.entries(CAT_LBL).map(([v, t]) => `<option value="${v}" ${v === p.categoria ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </td>
+          <td>${p.activo ? '<span class="badge badge-aprobado">activo</span>' : '<span class="badge badge-rechazado">oculto</span>'}</td>
+          <td><div class="row">
+            <button class="btn btn-ghost btn-sm" data-guardar="${p.id}">Guardar</button>
+            <button class="btn btn-ghost btn-sm" data-toggle="${p.id}" data-activo="${p.activo}">${p.activo ? 'Ocultar' : 'Activar'}</button>
+            <button class="btn btn-danger btn-sm" data-del="${p.id}">Eliminar</button>
+          </div></td>
+        </tr>`).join('');
+    }
+
+    document.getElementById('btn-add-cat').onclick = async () => {
+      limpiarAlerta(alCat);
+      const nombre = document.getElementById('cat-nombre').value.trim();
+      const categoria = document.getElementById('cat-categoria').value;
+      if (!nombre) { alerta(alCat, 'Escribe el nombre del ingrediente.'); return; }
+      try {
+        await api('/api/admin/catalogo', { method: 'POST', body: { nombre, categoria } });
+        document.getElementById('cat-nombre').value = '';
+        cargarCatalogo();
+      } catch (err) { alerta(alCat, err.error || 'No se pudo agregar.'); }
+    };
+
+    tbodyCat.addEventListener('click', async (e) => {
+      const t = e.target;
+      const tr = t.closest('tr'); if (!tr) return;
+      const id = tr.dataset.id;
+      if (t.dataset.guardar) {
+        const nombre = tr.querySelector('.cat-edit-nombre').value.trim();
+        const categoria = tr.querySelector('.cat-edit-categoria').value;
+        try { await api(`/api/admin/catalogo/${id}`, { method: 'PATCH', body: { nombre, categoria } }); cargarCatalogo(); }
+        catch (err) { alert(err.error || 'Error'); }
+      }
+      if (t.dataset.toggle) {
+        try { await api(`/api/admin/catalogo/${id}`, { method: 'PATCH', body: { activo: t.dataset.activo !== '1' } }); cargarCatalogo(); }
+        catch (err) { alert(err.error || 'Error'); }
+      }
+      if (t.dataset.del) {
+        if (!(await confirmar('¿Eliminar este producto del catálogo?', { ok: 'Eliminar', peligro: true }))) return;
+        try { await api(`/api/admin/catalogo/${id}`, { method: 'DELETE' }); cargarCatalogo(); }
+        catch (err) { alert(err.error || 'Error'); }
+      }
+    });
+
+    // ===== Soporte =====
+    const listaSop = document.getElementById('lista-soporte');
+    const sopBadge = document.getElementById('sop-badge');
+    let swReg = null;
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').then((r) => swReg = r).catch(() => {});
+
+    function badgeSoporte(n) {
+      if (n > 0) { sopBadge.textContent = n; sopBadge.style.display = ''; }
+      else sopBadge.style.display = 'none';
+    }
+    async function cargarSoporte() {
+      listaSop.innerHTML = '<p class="muted">Cargando…</p>';
+      const { mensajes, nuevos } = await api('/api/admin/soporte');
+      badgeSoporte(nuevos);
+      if (!mensajes.length) { listaSop.innerHTML = '<p class="muted">No hay mensajes.</p>'; return; }
+      listaSop.innerHTML = mensajes.map((m) => `
+        <div class="result-section" style="${m.estado === 'nuevo' ? 'border-color:var(--primary);background:var(--primary-soft)' : ''}">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+            <div style="min-width:0">
+              <b>${m.nombre || 'Usuario'}</b>
+              <div class="muted" style="font-size:12.5px">${[m.email, m.celular ? '📞 ' + m.celular : '', (m.whatsapp && m.celular) ? `<a href="https://wa.me/51${(m.celular || '').replace(/\\D/g, '')}" target="_blank" style="color:#25a838;font-weight:700">WhatsApp</a>` : ''].filter(Boolean).join(' · ')}</div>
+            </div>
+            <span class="badge ${m.estado === 'leido' ? 'badge-aprobado' : 'badge-rechazado'}">${m.estado === 'leido' ? 'leído' : 'NUEVO'}</span>
+          </div>
+          ${m.asunto ? `<div style="font-weight:600;margin-top:6px">${m.asunto}</div>` : ''}
+          <p style="margin-top:4px">${(m.mensaje || '').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</p>
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:8px">
+            <span class="muted" style="font-size:12px">${m.creado_local || ''}</span>
+            <div class="row" style="gap:6px">
+              ${m.estado === 'nuevo' ? `<button class="btn btn-ghost btn-sm" data-leido="${m.id}">Marcar leído</button>` : ''}
+              <button class="btn btn-danger btn-sm" data-del-sop="${m.id}">Eliminar</button>
+            </div>
+          </div>
+        </div>`).join('');
+    }
+    listaSop.addEventListener('click', async (e) => {
+      const t = e.target;
+      if (t.dataset.leido) { await api(`/api/admin/soporte/${t.dataset.leido}`, { method: 'PATCH', body: { estado: 'leido' } }); cargarSoporte(); cargarResumen(); }
+      if (t.dataset.delSop) { if (!(await confirmar('¿Eliminar este mensaje?', { ok: 'Eliminar', peligro: true }))) return; await api(`/api/admin/soporte/${t.dataset.delSop}`, { method: 'DELETE' }); cargarSoporte(); cargarResumen(); }
+    });
+    document.getElementById('btn-refrescar-sop').onclick = cargarSoporte;
+
+    // Aviso (notificación del navegador) al admin cuando hay mensajes sin leer (1 vez/día)
+    async function avisarSoporte(n) {
+      badgeSoporte(n);
+      if (!n || !('Notification' in window)) return;
+      const hoy = new Date().toISOString().slice(0, 10);
+      if (localStorage.getItem('nutrichefia_aviso_soporte') === hoy) return;
+      let perm = Notification.permission;
+      if (perm === 'default') { try { perm = await Notification.requestPermission(); } catch {} }
+      if (perm !== 'granted') return;
+      localStorage.setItem('nutrichefia_aviso_soporte', hoy);
+      const opts = { body: `Tienes ${n} mensaje(s) de soporte sin leer.`, icon: '/img/favicon.png?v=2', tag: 'soporte' };
+      if (swReg && swReg.showNotification) swReg.showNotification('💬 Soporte NutriChefIA', opts);
+      else new Notification('💬 Soporte NutriChefIA', opts);
+    }
+
+    // ===== Usuarios =====
+    async function cargarUsuarios() {
+      const tbody = document.getElementById('tbody-usuarios');
+      tbody.innerHTML = '<tr><td colspan="6" class="muted">Cargando…</td></tr>';
+      const [{ usuarios }, { planes }] = await Promise.all([api('/api/admin/usuarios'), api('/api/admin/planes')]);
+      PLANES = planes;
+      tbody.innerHTML = usuarios.map((u) => {
+        const opts = planes.map((p) => `<option value="${p.id}" ${p.id === u.plan_id ? 'selected' : ''}>${p.nombre}</option>`).join('');
+        return `
+          <tr>
+            <td><b>${u.nombre}</b></td>
+            <td>${u.email}</td>
+            <td>${u.rol}</td>
+            <td>${u.plan_nombre || '—'}</td>
+            <td>${u.plan_analisis === null ? '∞' : u.analisis_restantes}</td>
+            <td>${u.rol === 'admin' ? '<span class="muted">—</span>' :
+              `<select class="input cambiar-plan" data-id="${u.id}" style="width:auto;padding:6px 10px">${opts}</select>`}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    document.getElementById('tbody-usuarios').addEventListener('change', async (e) => {
+      const sel = e.target;
+      if (!sel.classList.contains('cambiar-plan')) return;
+      sel.disabled = true;
+      try { await api(`/api/admin/usuarios/${sel.dataset.id}`, { method: 'PATCH', body: { plan_id: Number(sel.value) } }); cargarUsuarios(); cargarResumen(); }
+      catch (err) { alert(err.error || 'Error'); sel.disabled = false; }
+    });
+
+    // ===== Config =====
+    function pintarQrPreview(ruta) {
+      const box = document.getElementById('qr-preview');
+      const quitar = document.getElementById('btn-quitar-qr');
+      if (ruta) {
+        box.innerHTML = `<img src="${ruta}?t=${Date.now()}" alt="QR Yape" style="width:160px;height:160px;object-fit:contain;border:1px solid var(--line);border-radius:12px;background:#fff" />`;
+        quitar.style.display = '';
+      } else {
+        box.innerHTML = '<p class="muted" style="font-size:13px">No hay QR cargado.</p>';
+        quitar.style.display = 'none';
+      }
+    }
+
+    const aiModo = document.getElementById('c-ai_modo');
+    const campoPrioridad = document.getElementById('campo-prioridad');
+    const togglePrioridad = () => { campoPrioridad.style.display = aiModo.value === 'ambos' ? '' : 'none'; };
+    aiModo.onchange = togglePrioridad;
+
+    async function cargarConfig() {
+      const { config } = await api('/api/admin/config');
+      document.getElementById('c-yape_numero').value = config.yape_numero || '';
+      document.getElementById('c-yape_titular').value = config.yape_titular || '';
+      aiModo.value = config.ai_modo || 'ambos';
+      document.getElementById('c-ai_prioridad').value = config.ai_prioridad || 'gemini';
+      document.getElementById('c-credito_gemini').value = config.credito_gemini || '';
+      document.getElementById('c-credito_claude').value = config.credito_claude || '';
+      togglePrioridad();
+      pintarQrPreview(config.yape_qr_path);
+    }
+    document.getElementById('form-config').onsubmit = async (e) => {
+      e.preventDefault();
+      const al = document.getElementById('alerta-config');
+      try {
+        await api('/api/admin/config', { method: 'PUT', body: {
+          yape_numero: document.getElementById('c-yape_numero').value,
+          yape_titular: document.getElementById('c-yape_titular').value,
+          ai_modo: aiModo.value,
+          ai_prioridad: document.getElementById('c-ai_prioridad').value,
+          credito_gemini: document.getElementById('c-credito_gemini').value,
+          credito_claude: document.getElementById('c-credito_claude').value,
+        }});
+        alerta(al, 'Configuración guardada.', 'ok');
+        cargarResumen();
+      } catch (err) { alerta(al, err.error || 'Error al guardar.'); }
+    };
+
+    // ===== QR de Yape (subir / quitar) =====
+    const fileQr = document.getElementById('c-yape_qr');
+    const btnSubirQr = document.getElementById('btn-subir-qr');
+    fileQr.onchange = () => { btnSubirQr.disabled = !fileQr.files[0]; };
+    btnSubirQr.onclick = async () => {
+      const f = fileQr.files[0]; if (!f) return;
+      const al = document.getElementById('alerta-config');
+      btnSubirQr.disabled = true;
+      try {
+        const fd = new FormData(); fd.append('qr', f);
+        const res = await api('/api/admin/yape-qr', { method: 'POST', body: fd, isForm: true });
+        pintarQrPreview(res.yape_qr);
+        fileQr.value = '';
+        alerta(al, 'QR actualizado.', 'ok');
+      } catch (err) { alerta(al, err.error || 'No se pudo subir el QR.'); btnSubirQr.disabled = false; }
+    };
+    document.getElementById('btn-quitar-qr').onclick = async () => {
+      const al = document.getElementById('alerta-config');
+      try {
+        await api('/api/admin/yape-qr', { method: 'DELETE' });
+        pintarQrPreview('');
+        fileQr.value = ''; btnSubirQr.disabled = true;
+        alerta(al, 'QR eliminado.', 'ok');
+      } catch (err) { alerta(al, err.error || 'No se pudo quitar el QR.'); }
+    };
+
+    cargarResumen();
+    cargarPagos();
+  </script>
+</body>
+</html>

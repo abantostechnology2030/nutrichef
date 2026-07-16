@@ -1,0 +1,95 @@
+name: Deploy to Hetzner
+
+# Deploy manual desde la pestana "Actions" de GitHub (workflow_dispatch).
+# El trigger de push queda desactivado a proposito (deploy controlado).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-nutrichefia
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy NutriChefIA al VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Conectar por SSH y desplegar
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          command_timeout: 15m
+          script: |
+            set -e
+            export PATH="$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH"
+
+            PROJECT_PATH="${{ secrets.PROJECT_PATH }}"
+            PM2_NAME="${{ secrets.PM2_NAME }}"
+
+            echo "================================================"
+            echo "[Deploy] Inicio: $(date)"
+            echo "[Deploy] Proyecto: $PROJECT_PATH"
+            echo "[Deploy] PM2: $PM2_NAME"
+            echo "================================================"
+
+            cd "$PROJECT_PATH"
+
+            # ─── 1. Backup de BD (SQLite) ─────────────────────────────────────
+            # Se copia con la API de SQLite y no con "cp": la BD esta en modo WAL,
+            # y copiar solo el .db deja fuera los commits que aun viven en el -wal.
+            BACKUP_DIR="$HOME/backups/nutrichefia"
+            mkdir -p "$BACKUP_DIR"
+            STAMP=$(date +%Y%m%d-%H%M%S)
+            if [ -f "nutrichefia.db" ]; then
+              sqlite3 "nutrichefia.db" ".backup '$BACKUP_DIR/nutrichefia-$STAMP.db'" \
+                || cp "nutrichefia.db" "$BACKUP_DIR/nutrichefia-$STAMP.db"
+              ls -1tr "$BACKUP_DIR"/nutrichefia-*.db 2>/dev/null | head -n -10 | xargs -r rm -f
+              echo "[Deploy] Backup BD → $BACKUP_DIR/nutrichefia-$STAMP.db"
+            else
+              echo "[Deploy] (Sin BD que respaldar todavia)"
+            fi
+
+            # ─── 2. Pull del codigo ───────────────────────────────────────────
+            echo "[Deploy] git fetch + reset a origin/main"
+            git fetch origin
+            git reset --hard origin/main
+            COMMIT=$(git log --oneline -1)
+            echo "[Deploy] HEAD: $COMMIT"
+
+            # ─── 3. Dependencias de produccion ────────────────────────────────
+            # uploads/ guarda los comprobantes Yape y el QR: es persistente y
+            # gitignored, por eso se asegura la carpeta y NUNCA se borra.
+            mkdir -p uploads
+            echo "[Deploy] npm ci"
+            npm ci --no-audit --no-fund
+
+            # ─── 4. (Re)crear admin si hace falta — idempotente ───────────────
+            echo "[Deploy] npm run seed"
+            npm run seed || true
+
+            # ─── 5. Reiniciar proceso PM2 ─────────────────────────────────────
+            echo "[Deploy] pm2 restart $PM2_NAME"
+            pm2 restart "$PM2_NAME" --update-env
+
+            # ─── 6. Health check ──────────────────────────────────────────────
+            # OJO: el puerto debe ser el de NutriChefIA (4005). El workflow de
+            # NutriIA heredo el 4002 de MedicaIA por copy-paste y por eso daba
+            # verde aunque la app estuviera caida. No copiar ese error.
+            echo "[Deploy] Esperando 5s para que arranque..."
+            sleep 5
+            if curl -sf "http://localhost:4005/api/health" > /dev/null 2>&1; then
+              echo "[Deploy] ✅ NutriChefIA OK (puerto 4005)"
+            else
+              echo "[Deploy] ❌ HEALTH CHECK FAIL — ultimos logs:"
+              pm2 logs "$PM2_NAME" --lines 30 --nostream || true
+              exit 1
+            fi
+
+            echo "================================================"
+            echo "[Deploy] ✅ Despliegue completado: $(date)"
+            echo "[Deploy] HEAD: $COMMIT"
+            echo "================================================"

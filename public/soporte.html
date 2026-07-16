@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Soporte</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Soporte</h2>
+      </header>
+
+      <div class="content grid grid-2" style="align-items:start">
+        <!-- Nuevo mensaje -->
+        <div class="card">
+          <h3 style="margin-bottom:6px">💬 ¿Necesitas ayuda?</h3>
+          <p class="muted" style="font-size:13.5px;margin-bottom:14px">Escríbenos tu consulta, problema o sugerencia. El equipo la recibe y te responde.</p>
+          <div id="alerta-sop" class="alert"></div>
+          <div class="grid grid-2">
+            <div class="field"><label>Correo electrónico</label><input id="s-email" type="email" placeholder="tucorreo@ejemplo.com" /></div>
+            <div class="field"><label>Número de celular</label><input id="s-celular" type="tel" placeholder="Ej: 987654321" /></div>
+          </div>
+          <label class="row" style="font-weight:500;gap:8px;margin:-4px 0 14px"><input type="checkbox" id="s-whatsapp"> Este número tiene WhatsApp</label>
+          <div class="field"><label>Asunto <span class="muted" style="font-weight:400">(opcional)</span></label><input id="s-asunto" placeholder="Ej: Problema con mi pago" /></div>
+          <div class="field"><label>Mensaje</label><textarea id="s-mensaje" rows="5" placeholder="Cuéntanos con detalle…"></textarea></div>
+          <button class="btn btn-block" id="btn-enviar">Enviar mensaje</button>
+        </div>
+
+        <!-- Mis mensajes -->
+        <div class="card">
+          <h3 style="margin-bottom:12px">📨 Mis mensajes</h3>
+          <div id="lista-sop" class="stack"><p class="muted">Cargando…</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('soporte');
+    activarMenuMovil();
+
+    const al = document.getElementById('alerta-sop');
+    document.getElementById('s-email').value = Sesion.usuario?.email || '';
+
+    document.getElementById('btn-enviar').onclick = async () => {
+      limpiarAlerta(al);
+      const asunto = document.getElementById('s-asunto').value.trim();
+      const mensaje = document.getElementById('s-mensaje').value.trim();
+      const email = document.getElementById('s-email').value.trim();
+      const celular = document.getElementById('s-celular').value.trim();
+      const whatsapp = document.getElementById('s-whatsapp').checked;
+      if (!mensaje) { alerta(al, 'Escribe tu mensaje.'); return; }
+      const btn = document.getElementById('btn-enviar'); btn.disabled = true; btn.textContent = 'Enviando…';
+      try {
+        const r = await api('/api/soporte', { method: 'POST', body: { asunto, mensaje, email, celular, whatsapp } });
+        alerta(al, r.mensaje || 'Mensaje enviado.', 'ok');
+        document.getElementById('s-asunto').value = ''; document.getElementById('s-mensaje').value = '';
+        document.getElementById('s-celular').value = ''; document.getElementById('s-whatsapp').checked = false;
+        cargar();
+      } catch (err) { alerta(al, err.error || 'No se pudo enviar.'); }
+      finally { btn.disabled = false; btn.textContent = 'Enviar mensaje'; }
+    };
+
+    async function cargar() {
+      const cont = document.getElementById('lista-sop');
+      try {
+        const { mensajes } = await api('/api/soporte/mios');
+        if (!mensajes.length) { cont.innerHTML = '<p class="muted">Aún no has enviado mensajes.</p>'; return; }
+        cont.innerHTML = mensajes.map((m) => `
+          <div class="result-section">
+            <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+              <b>${m.asunto || '(sin asunto)'}</b>
+              <span class="badge ${m.estado === 'leido' ? 'badge-aprobado' : 'badge-free'}">${m.estado === 'leido' ? 'leído' : 'enviado'}</span>
+            </div>
+            <p style="margin-top:6px">${(m.mensaje || '').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</p>
+            <div class="muted" style="font-size:12px;margin-top:6px">${m.creado_local || ''}</div>
+          </div>`).join('');
+      } catch { cont.innerHTML = '<p class="muted">No se pudo cargar.</p>'; }
+    }
+    cargar();
+  </script>
+</body>
+</html>

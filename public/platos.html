@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Mis platos</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Mis platos</h2>
+        <div class="spacer"></div>
+        <span class="analisis-pill" id="pill-platos">…</span>
+      </header>
+
+      <div class="content stack">
+        <div class="card card-tint">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
+            <div>
+              <h3 style="margin-bottom:4px">Tu biblioteca de platos</h3>
+              <p class="muted" style="font-size:13px;max-width:60ch">
+                Aquí guardas las recetas que quieres reutilizar: las tuyas de siempre y las que
+                te gustaron del menú. Desde el calendario puedes ponerlas en cualquier casilla.
+              </p>
+            </div>
+            <button class="btn" id="btn-nuevo" type="button">+ Nuevo plato</button>
+          </div>
+          <div id="alerta" class="alert" style="margin-top:12px"></div>
+        </div>
+
+        <div class="card">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+            <h3>Guardados <span class="muted" id="cont" style="font-weight:400;font-size:14px"></span></h3>
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <input id="buscar" class="input" placeholder="Buscar por nombre…" style="width:auto" />
+              <select id="filtro-momento" class="input" style="width:auto">
+                <option value="">Todos los momentos</option>
+              </select>
+            </div>
+          </div>
+          <div id="lista" class="stack"><p class="muted">Cargando…</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('platos');
+    activarMenuMovil();
+
+    const al = document.getElementById('alerta');
+    let PLATOS = [];
+    let LIMITE = { max: null, usados: 0, ilimitado: true, restantes: null };
+    let MOMENTOS = [];
+    let DIFICULTADES = [];
+
+    const DIF_TXT = { facil: '🟢 Fácil', media: '🟡 Media', dificil: '🔴 Difícil' };
+    // esc() vive en api.js (helper compartido).
+
+    function avisar(msg, tipo = 'error') {
+      al.textContent = msg;
+      al.className = `alert alert-${tipo} show`;
+      setTimeout(() => al.classList.remove('show'), 4000);
+    }
+
+    // ===== Listado =====
+    function pintarPill() {
+      const p = document.getElementById('pill-platos');
+      p.innerHTML = LIMITE.ilimitado
+        ? `🍲 ${LIMITE.usados} platos`
+        : `🍲 ${LIMITE.usados} de ${LIMITE.max}`;
+    }
+
+    function tarjeta(p) {
+      const m = MOMENTO_INFO[p.momento];
+      const ings = p.ingredientes.slice(0, 6).map((i) => esc(i.nombre)).join(' · ');
+      const mas = p.ingredientes.length > 6 ? ` +${p.ingredientes.length - 6}` : '';
+      return `
+        <div class="result-section">
+          <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+            <div style="min-width:0;flex:1">
+              <h4 style="margin-bottom:6px">${esc(p.nombre)}</h4>
+              <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">
+                ${m ? `<span class="cat-chip">${m.ic} ${m.txt}</span>` : ''}
+                <span class="cat-chip">👥 ${p.porciones} porc.</span>
+                ${p.tiempo_min ? `<span class="cat-chip">⏱️ ${p.tiempo_min} min</span>` : ''}
+                ${p.dificultad ? `<span class="cat-chip">${DIF_TXT[p.dificultad] || p.dificultad}</span>` : ''}
+                ${p.origen === 'manual' ? '<span class="cat-chip">✍️ Tuyo</span>' : '<span class="cat-chip">✨ De la IA</span>'}
+                ${p.en_plan ? `<span class="cat-chip cat-verdura">📅 En el plan (${p.en_plan})</span>` : ''}
+              </div>
+              ${ings ? `<p class="muted" style="font-size:13px">${ings}${mas}</p>` : '<p class="muted" style="font-size:13px">Sin ingredientes anotados.</p>'}
+              ${p.nota ? `<p class="muted" style="font-size:13px;margin-top:6px">📝 ${esc(p.nota)}</p>` : ''}
+            </div>
+            <div class="row" style="gap:6px">
+              <button class="btn btn-ghost btn-sm" data-ver="${p.id}">Ver</button>
+              <button class="btn btn-ghost btn-sm" data-editar="${p.id}">Editar</button>
+              <button class="btn btn-danger btn-sm" data-borrar="${p.id}">Borrar</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function pintar() {
+      const cont = document.getElementById('lista');
+      document.getElementById('cont').textContent = PLATOS.length ? `· ${PLATOS.length}` : '';
+      pintarPill();
+
+      if (!PLATOS.length) {
+        cont.innerHTML = `<p class="muted">
+          Todavía no guardas ningún plato. Crea uno con “+ Nuevo plato”, o guarda los que te
+          gusten del <a href="/plan.html" style="color:var(--primary);font-weight:600">plan de comidas</a>.
+        </p>`;
+        return;
+      }
+      cont.innerHTML = PLATOS.map(tarjeta).join('');
+    }
+
+    async function cargar() {
+      const q = document.getElementById('buscar').value.trim();
+      const momento = document.getElementById('filtro-momento').value;
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (momento) params.set('momento', momento);
+
+      try {
+        const r = await api(`/api/platos${params.toString() ? '?' + params : ''}`);
+        PLATOS = r.platos;
+        LIMITE = r.limite;
+        if (!MOMENTOS.length) {
+          MOMENTOS = r.momentos;
+          DIFICULTADES = r.dificultades;
+          document.getElementById('filtro-momento').innerHTML =
+            '<option value="">Todos los momentos</option>' +
+            MOMENTOS.map((m) => `<option value="${m}">${MOMENTO_INFO[m].ic} ${MOMENTO_INFO[m].txt}</option>`).join('');
+        }
+        pintar();
+      } catch (e) {
+        if (e.status === 403 && e.upgrade) { location.href = e.redirect || '/mi-plan.html'; return; }
+        document.getElementById('lista').innerHTML = `<p class="muted">No se pudo cargar: ${esc(e.error || 'error')}</p>`;
+      }
+    }
+
+    let debounce;
+    document.getElementById('buscar').oninput = () => { clearTimeout(debounce); debounce = setTimeout(cargar, 250); };
+    document.getElementById('filtro-momento').onchange = cargar;
+
+    // ===== Acciones de cada tarjeta =====
+    document.getElementById('lista').addEventListener('click', async (e) => {
+      const ver = e.target.closest('[data-ver]');
+      const editar = e.target.closest('[data-editar]');
+      const borrar = e.target.closest('[data-borrar]');
+      if (ver) return verPlato(+ver.dataset.ver);
+      if (editar) return abrirForm(PLATOS.find((p) => p.id === +editar.dataset.editar));
+      if (borrar) return borrarPlato(+borrar.dataset.borrar);
+    });
+
+    function verPlato(id) {
+      const p = PLATOS.find((x) => x.id === id);
+      if (!p) return;
+      const ings = p.ingredientes.length
+        ? `<ul style="margin:0 0 14px 18px">${p.ingredientes.map((i) => `<li>${esc(i.nombre)}${i.cantidad ? ` — ${esc(i.cantidad)} ${esc(i.unidad)}` : ''}</li>`).join('')}</ul>`
+        : '<p class="muted" style="margin-bottom:14px">Sin ingredientes anotados.</p>';
+      const pasos = p.pasos?.length
+        ? `<h4 style="margin-bottom:6px">Preparación</h4><ol style="margin:0 0 14px 18px">${p.pasos.map((s) => `<li style="margin-bottom:4px">${esc(s)}</li>`).join('')}</ol>`
+        : '<p class="muted" style="margin-bottom:14px">Este plato todavía no tiene pasos de preparación.</p>';
+
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:560px">
+        <h3>${esc(p.nombre)}</h3>
+        <div class="modal-body">
+          <h4 style="margin-bottom:6px">Ingredientes</h4>
+          ${ings}
+          ${pasos}
+          ${p.nota ? `<div class="reco-foto">📝 ${esc(p.nota)}</div>` : ''}
+        </div>
+        <div class="row"><button class="btn btn-ghost btn-sm" data-cerrar>Cerrar</button></div>
+      </div>`;
+      document.body.appendChild(back);
+      back.querySelector('[data-cerrar]').onclick = () => back.remove();
+      back.onclick = (ev) => { if (ev.target === back) back.remove(); };
+    }
+
+    async function borrarPlato(id) {
+      const p = PLATOS.find((x) => x.id === id);
+      if (!p) return;
+      // Aviso honesto: la FK de plan_comidas es ON DELETE CASCADE, asi que borrar el plato
+      // tambien lo saca de las casillas del calendario donde este puesto.
+      const extra = p.en_plan
+        ? `<br><br>⚠️ Está puesto en <b>${p.en_plan} casilla(s)</b> de tu plan de comidas. Al borrarlo también se quitará de ahí.`
+        : '';
+      const si = await confirmar(`¿Borrar <b>${esc(p.nombre)}</b>?${extra}`, { titulo: 'Borrar plato', ok: 'Borrar', peligro: true });
+      if (!si) return;
+      try {
+        const r = await api(`/api/platos/${id}`, { method: 'DELETE' });
+        avisar(r.quitado_del_plan ? `Plato borrado (se quitó de ${r.quitado_del_plan} casilla/s del plan).` : 'Plato borrado.', 'ok');
+        cargar();
+      } catch (e) { avisar(e.error || 'No se pudo borrar'); }
+    }
+
+    // ===== Formulario (crear / editar) =====
+    function filaIngrediente(i = { nombre: '', cantidad: '', unidad: '' }) {
+      return `<div class="row" data-fila style="gap:6px;margin-bottom:6px">
+        <input class="input" data-i-nombre placeholder="Ingrediente" value="${esc(i.nombre)}" style="flex:2" />
+        <input class="input" data-i-cant placeholder="Cant." value="${esc(i.cantidad)}" style="flex:.6" />
+        <input class="input" data-i-uni placeholder="Unidad" value="${esc(i.unidad)}" style="flex:.8" />
+        <button class="btn btn-ghost btn-sm" type="button" data-quitar>✕</button>
+      </div>`;
+    }
+
+    function abrirForm(plato = null) {
+      // El tope solo bloquea CREAR: editar un plato que ya esta guardado no suma uno nuevo.
+      if (!plato && !LIMITE.ilimitado && LIMITE.restantes <= 0) {
+        confirmar(
+          `Tu plan permite guardar <b>${LIMITE.max} plato(s)</b> y ya los usaste.<br><br>Puedes borrar uno para hacer espacio, o pasar a un plan superior.`,
+          { titulo: 'Biblioteca llena', ok: 'Ver planes' }
+        ).then((si) => { if (si) location.href = '/mi-plan.html'; });
+        return;
+      }
+
+      const p = plato || { nombre: '', momento: '', porciones: 2, tiempo_min: '', dificultad: '', nota: '', ingredientes: [], pasos: [] };
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:620px">
+        <h3>${plato ? 'Editar plato' : 'Nuevo plato'}</h3>
+        <div class="modal-body">
+          <div id="alerta-form" class="alert"></div>
+          <div class="field">
+            <label>Nombre del plato *</label>
+            <input id="f-nombre" placeholder="Ej: Ají de gallina de la abuela" value="${esc(p.nombre)}" />
+          </div>
+          <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div class="field" style="margin:0;flex:1;min-width:130px">
+              <label>Momento</label>
+              <select id="f-momento" class="input">
+                <option value="">—</option>
+                ${MOMENTOS.map((m) => `<option value="${m}" ${p.momento === m ? 'selected' : ''}>${MOMENTO_INFO[m].ic} ${MOMENTO_INFO[m].txt}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field" style="margin:0;width:100px">
+              <label>Porciones</label>
+              <input id="f-porciones" type="number" min="1" value="${p.porciones || 2}" />
+            </div>
+            <div class="field" style="margin:0;width:110px">
+              <label>Minutos</label>
+              <input id="f-tiempo" type="number" min="1" placeholder="30" value="${p.tiempo_min || ''}" />
+            </div>
+            <div class="field" style="margin:0;flex:1;min-width:130px">
+              <label>Dificultad</label>
+              <select id="f-dificultad" class="input">
+                <option value="">—</option>
+                ${DIFICULTADES.map((d) => `<option value="${d}" ${p.dificultad === d ? 'selected' : ''}>${DIF_TXT[d] || d}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Ingredientes</label>
+            <div id="f-ings">${(p.ingredientes.length ? p.ingredientes : [{}, {}]).map(filaIngrediente).join('')}</div>
+            <button class="btn btn-ghost btn-sm" type="button" id="f-add-ing">+ Agregar ingrediente</button>
+          </div>
+
+          <div class="field">
+            <label>Preparación <span class="muted" style="font-weight:400">(un paso por línea)</span></label>
+            <textarea id="f-pasos" rows="5" placeholder="Sancochar la papa&#10;Licuar el ají con la leche">${esc((p.pasos || []).join('\n'))}</textarea>
+          </div>
+
+          <div class="field" style="margin-bottom:0">
+            <label>Nota <span class="muted" style="font-weight:400">(adaptaciones, avisos)</span></label>
+            <input id="f-nota" placeholder="Ej: sin sal para la hipertensión de papá" value="${esc(p.nota || '')}" />
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" data-cancelar>Cancelar</button>
+          <button class="btn btn-sm" data-guardar>${plato ? 'Guardar cambios' : 'Crear plato'}</button>
+        </div>
+      </div>`;
+      document.body.appendChild(back);
+
+      const cerrar = () => back.remove();
+      back.querySelector('[data-cancelar]').onclick = cerrar;
+      back.onclick = (ev) => { if (ev.target === back) cerrar(); };
+      back.querySelector('#f-add-ing').onclick = () => {
+        back.querySelector('#f-ings').insertAdjacentHTML('beforeend', filaIngrediente());
+      };
+      back.querySelector('#f-ings').addEventListener('click', (ev) => {
+        if (ev.target.closest('[data-quitar]')) ev.target.closest('[data-fila]').remove();
+      });
+
+      back.querySelector('[data-guardar]').onclick = async () => {
+        const nombre = back.querySelector('#f-nombre').value.trim();
+        const alF = back.querySelector('#alerta-form');
+        if (!nombre) {
+          alF.textContent = 'Ponle un nombre al plato.';
+          alF.className = 'alert alert-error show';
+          return;
+        }
+        const ingredientes = [...back.querySelectorAll('[data-fila]')].map((f) => ({
+          nombre: f.querySelector('[data-i-nombre]').value.trim(),
+          cantidad: f.querySelector('[data-i-cant]').value.trim(),
+          unidad: f.querySelector('[data-i-uni]').value.trim(),
+        })).filter((i) => i.nombre);
+
+        const cuerpo = {
+          nombre,
+          momento: back.querySelector('#f-momento').value || null,
+          porciones: +back.querySelector('#f-porciones').value || 1,
+          tiempo_min: +back.querySelector('#f-tiempo').value || null,
+          dificultad: back.querySelector('#f-dificultad').value || null,
+          nota: back.querySelector('#f-nota').value.trim() || null,
+          ingredientes,
+          pasos: back.querySelector('#f-pasos').value.split('\n').map((s) => s.trim()).filter(Boolean),
+        };
+
+        try {
+          if (plato) await api(`/api/platos/${plato.id}`, { method: 'PUT', body: cuerpo });
+          else await api('/api/platos', { method: 'POST', body: cuerpo });
+          cerrar();
+          avisar(plato ? 'Plato actualizado.' : 'Plato creado.', 'ok');
+          cargar();
+        } catch (e) {
+          if (e.status === 403 && e.upgrade) { cerrar(); location.href = e.redirect || '/mi-plan.html'; return; }
+          alF.textContent = e.error || 'No se pudo guardar';
+          alF.className = 'alert alert-error show';
+        }
+      };
+    }
+
+    document.getElementById('btn-nuevo').onclick = () => abrirForm();
+
+    cargar();
+  </script>
+</body>
+</html>

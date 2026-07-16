@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Tu chef inteligente para una alimentación saludable</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card card">
+      <div class="brand" style="justify-content:center;width:100%">
+        <img src="/img/logo.png?v=2" alt="NutriChefIA" class="brand-logo" />
+      </div>
+
+      <!-- LOGIN -->
+      <div id="vista-login">
+        <h1 style="margin-top:18px">Bienvenido de vuelta</h1>
+        <p class="sub">Planifica las comidas de tu familia con IA</p>
+        <div id="alerta-login" class="alert"></div>
+        <form id="form-login">
+          <div class="field">
+            <label>Email</label>
+            <input type="email" id="login-email" placeholder="tucorreo@ejemplo.com" required />
+          </div>
+          <div class="field">
+            <label>Contraseña</label>
+            <input type="password" id="login-password" placeholder="••••••••" required />
+          </div>
+          <button class="btn btn-block" type="submit" id="btn-login">Ingresar</button>
+        </form>
+        <p class="auth-switch">¿No tienes cuenta? <a href="#" id="ir-registro">Crear cuenta gratis</a></p>
+      </div>
+
+      <!-- REGISTRO -->
+      <div id="vista-registro" class="hidden">
+        <h1 style="margin-top:18px">Crea tu cuenta</h1>
+        <p class="sub">Incluye 3 análisis gratis para empezar 🎁</p>
+        <div id="alerta-registro" class="alert"></div>
+        <form id="form-registro">
+          <div class="field">
+            <label>Nombre</label>
+            <input type="text" id="reg-nombre" placeholder="Tu nombre" required />
+          </div>
+          <div class="field">
+            <label>Email</label>
+            <input type="email" id="reg-email" placeholder="tucorreo@ejemplo.com" required />
+          </div>
+          <div class="field">
+            <label>Contraseña</label>
+            <input type="password" id="reg-password" placeholder="Mínimo 6 caracteres" required />
+          </div>
+          <button class="btn btn-block" type="submit" id="btn-registro">Crear cuenta</button>
+        </form>
+        <p class="auth-switch">¿Ya tienes cuenta? <a href="#" id="ir-login">Inicia sesión</a></p>
+      </div>
+
+      <!-- Instalar app (PWA) — aparece solo si no está instalada y el navegador lo permite -->
+      <div id="install-banner" class="hidden" style="margin-top:18px;border-top:1px solid var(--line);padding-top:16px;text-align:center">
+        <p class="muted" style="font-size:13px;margin-bottom:10px">📲 Instala <b>NutriChefIA</b> en tu teléfono para acceso rápido, como una app.</p>
+        <button class="btn btn-block" id="btn-instalar" type="button" style="background:var(--logo-green);color:#fff">Instalar la app</button>
+      </div>
+      <div id="ios-hint" class="hidden" style="margin-top:18px;border-top:1px solid var(--line);padding-top:16px">
+        <p class="muted" style="font-size:13px;text-align:center">📲 Para instalar en iPhone: toca <b>Compartir</b> y luego <b>"Agregar a inicio"</b>.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    // Si ya hay sesion, ir directo a la app.
+    if (Sesion.token && Sesion.usuario) {
+      location.href = Sesion.usuario.rol === 'admin' ? '/admin.html' : '/app.html';
+    }
+
+    // ===== Instalar PWA (solo si NO está instalada) =====
+    (function instalarPWA() {
+      const yaInstalada = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      if (yaInstalada) return; // ya está instalada -> no mostrar nada
+
+      const banner = document.getElementById('install-banner');
+      const btn = document.getElementById('btn-instalar');
+      let deferido = null;
+
+      // Chrome/Edge/Android: guarda el evento y muestra el botón de instalar.
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferido = e;
+        banner.classList.remove('hidden');
+      });
+      btn.onclick = async () => {
+        if (!deferido) return;
+        btn.disabled = true;
+        deferido.prompt();
+        try { await deferido.userChoice; } catch {}
+        deferido = null;
+        banner.classList.add('hidden');
+      };
+      window.addEventListener('appinstalled', () => banner.classList.add('hidden'));
+
+      // iOS Safari no dispara beforeinstallprompt -> mostrar instrucciones manuales.
+      const ua = navigator.userAgent;
+      const esIOS = /iphone|ipad|ipod/i.test(ua);
+      const esSafari = /safari/i.test(ua) && !/crios|fxios|chrome|android/i.test(ua);
+      if (esIOS && esSafari) document.getElementById('ios-hint').classList.remove('hidden');
+    })();
+
+    const vLogin = document.getElementById('vista-login');
+    const vReg = document.getElementById('vista-registro');
+    document.getElementById('ir-registro').onclick = (e) => { e.preventDefault(); vLogin.classList.add('hidden'); vReg.classList.remove('hidden'); };
+    document.getElementById('ir-login').onclick = (e) => { e.preventDefault(); vReg.classList.add('hidden'); vLogin.classList.remove('hidden'); };
+
+    function redirigir(u) { location.href = u.rol === 'admin' ? '/admin.html' : '/app.html'; }
+
+    document.getElementById('form-login').onsubmit = async (e) => {
+      e.preventDefault();
+      const al = document.getElementById('alerta-login');
+      const btn = document.getElementById('btn-login');
+      limpiarAlerta(al); btn.disabled = true; btn.textContent = 'Ingresando...';
+      try {
+        const { token, usuario } = await api('/api/auth/login', {
+          method: 'POST',
+          body: { email: document.getElementById('login-email').value, password: document.getElementById('login-password').value },
+        });
+        Sesion.guardar(token, usuario);
+        redirigir(usuario);
+      } catch (err) {
+        alerta(al, err.error || 'No pudimos iniciar sesión.');
+      } finally { btn.disabled = false; btn.textContent = 'Ingresar'; }
+    };
+
+    document.getElementById('form-registro').onsubmit = async (e) => {
+      e.preventDefault();
+      const al = document.getElementById('alerta-registro');
+      const btn = document.getElementById('btn-registro');
+      limpiarAlerta(al); btn.disabled = true; btn.textContent = 'Creando...';
+      try {
+        const { token, usuario } = await api('/api/auth/registro', {
+          method: 'POST',
+          body: {
+            nombre: document.getElementById('reg-nombre').value,
+            email: document.getElementById('reg-email').value,
+            password: document.getElementById('reg-password').value,
+          },
+        });
+        Sesion.guardar(token, usuario);
+        redirigir(usuario);
+      } catch (err) {
+        alerta(al, err.error || 'No pudimos crear la cuenta.');
+      } finally { btn.disabled = false; btn.textContent = 'Crear cuenta'; }
+    };
+  </script>
+</body>
+</html>

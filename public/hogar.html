@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Mi hogar</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Mi hogar</h2>
+      </header>
+
+      <div class="content stack">
+        <!-- Aviso de onboarding incompleto -->
+        <div class="card hidden" id="aviso-config" style="border-color:#ffe2b8;background:var(--amber-soft)">
+          <h3 style="color:var(--amber)">👋 Completa tu hogar para empezar</h3>
+          <p class="muted">Necesitamos saber <b>quiénes son</b> y <b>dónde cocinan</b> para proponerte platos que les caigan bien. Agrega al menos un integrante.</p>
+        </div>
+
+        <!-- Datos del hogar -->
+        <div class="card card-tint">
+          <h3 style="margin-bottom:4px">Datos del hogar</h3>
+          <p class="muted" style="font-size:13px;margin-bottom:14px">La región define el estilo de cocina que te propondremos; la dieta y el presupuesto acotan los platos.</p>
+          <div id="alerta-hogar" class="alert"></div>
+
+          <div class="grid grid-2">
+            <div class="field"><label>Nombre del hogar (opcional)</label><input id="h-nombre" placeholder="Ej: Casa Abanto" /></div>
+            <div class="field"><label>Ciudad (opcional)</label><input id="h-ciudad" placeholder="Ej: Cusco" /></div>
+          </div>
+          <div class="grid grid-2">
+            <div class="field"><label>Región de cocina</label><select id="h-region" class="input"></select></div>
+            <div class="field"><label>Dieta del hogar</label><select id="h-dieta" class="input"></select></div>
+          </div>
+          <div class="grid grid-2">
+            <div class="field"><label>Presupuesto</label><select id="h-presupuesto" class="input"></select></div>
+            <div class="field"><label>Comensales</label>
+              <input id="h-comensales" disabled />
+              <span class="muted" style="font-size:12px">Se calcula solo: es el número de integrantes que registres abajo.</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Notas para la IA (opcional)</label>
+            <textarea id="h-notas" class="input" rows="2" placeholder="Ej: no nos gusta el pescado, cocinamos rápido entre semana..."></textarea>
+          </div>
+          <button class="btn" id="btn-guardar-hogar">Guardar datos del hogar</button>
+        </div>
+
+        <!-- Integrantes -->
+        <div class="card">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:4px">
+            <h3>Integrantes <span class="muted" id="cont-integrantes" style="font-weight:400;font-size:14px"></span></h3>
+            <button class="btn btn-sm" id="btn-nuevo-int">+ Agregar integrante</button>
+          </div>
+          <p class="muted" style="font-size:13px;margin-bottom:14px">
+            Registra a cada persona con sus condiciones médicas y alergias.
+            <b>Las alergias se excluyen siempre</b> de los platos que proponemos; las condiciones los adaptan.
+          </p>
+
+          <!-- Formulario integrante -->
+          <div id="form-int" class="hidden" style="border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px">
+            <h4 id="form-int-titulo" style="margin-bottom:10px">Nuevo integrante</h4>
+            <div id="alerta-int" class="alert"></div>
+            <input type="hidden" id="i-id" />
+            <div class="grid grid-2">
+              <div class="field"><label>Nombre</label><input id="i-nombre" placeholder="Ej: Rosa" /></div>
+              <div class="field"><label>Edad (opcional)</label><input id="i-edad" type="number" min="0" max="120" placeholder="Ej: 58" /></div>
+            </div>
+
+            <div class="field">
+              <label>Condiciones médicas</label>
+              <span class="muted" style="font-size:12px;display:block;margin-bottom:8px">La IA adapta el plato (menos sal, menos azúcar, etc.).</span>
+              <div class="row" id="chips-cond" style="flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+              <div class="row" style="gap:8px">
+                <input id="i-cond-otra" placeholder="Otra condición..." style="flex:1" />
+                <button class="btn btn-ghost btn-sm" type="button" id="btn-cond-otra">+ Añadir</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Alergias</label>
+              <span class="muted" style="font-size:12px;display:block;margin-bottom:8px">⚠️ Se excluyen por completo. Nunca aparecerán en un plato propuesto.</span>
+              <div class="row" id="chips-alerg" style="flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+              <div class="row" style="gap:8px">
+                <input id="i-alerg-otra" placeholder="Otra alergia..." style="flex:1" />
+                <button class="btn btn-ghost btn-sm" type="button" id="btn-alerg-otra">+ Añadir</button>
+              </div>
+            </div>
+
+            <div class="field"><label>Notas (opcional)</label><input id="i-notas" placeholder="Ej: come poco en las noches" /></div>
+            <div class="row">
+              <button class="btn btn-sm" id="btn-guardar-int">Guardar integrante</button>
+              <button class="btn btn-ghost btn-sm" id="btn-cancelar-int">Cancelar</button>
+            </div>
+          </div>
+
+          <div id="lista-integrantes" class="stack"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('hogar');
+    activarMenuMovil();
+
+    const alHogar = document.getElementById('alerta-hogar');
+    const alInt = document.getElementById('alerta-int');
+    const formInt = document.getElementById('form-int');
+    let OPC = null;          // opciones del backend (regiones, dietas, sugerencias)
+    let condSel = [];        // condiciones elegidas del integrante en edicion
+    let alergSel = [];       // alergias elegidas del integrante en edicion
+
+    const REGION_TXT = { costa: '🌊 Costa', sierra: '⛰️ Sierra', selva: '🌴 Selva' };
+    const DIETA_TXT = { omnivora: 'Omnívora', vegetariana: 'Vegetariana', vegana: 'Vegana', pescetariana: 'Pescetariana' };
+    const PRES_TXT = { bajo: 'Económico', medio: 'Medio', alto: 'Holgado' };
+    const opts = (lista, txt) => lista.map((v) => `<option value="${v}">${txt[v] || v}</option>`).join('');
+
+    // ===== Chips de seleccion (condiciones / alergias) =====
+    // Muestran las sugerencias del backend + lo que el usuario haya escrito a mano.
+    function pintarChips(cont, sugerencias, seleccionadas, onToggle) {
+      const todas = [...new Set([...sugerencias, ...seleccionadas])];
+      cont.innerHTML = todas.map((s) => {
+        const on = seleccionadas.some((x) => x.toLowerCase() === s.toLowerCase());
+        return `<button type="button" class="btn btn-sm ${on ? '' : 'btn-ghost'}" data-chip="${s.replace(/"/g, '&quot;')}"
+          style="${on ? '' : 'opacity:.72'};padding:5px 11px;font-size:12.5px">${on ? '✓ ' : ''}${s}</button>`;
+      }).join('');
+      cont.querySelectorAll('[data-chip]').forEach((b) => { b.onclick = () => onToggle(b.dataset.chip); });
+    }
+    const toggle = (arr, v) => {
+      const i = arr.findIndex((x) => x.toLowerCase() === v.toLowerCase());
+      if (i >= 0) arr.splice(i, 1); else arr.push(v);
+    };
+    function repintarChips() {
+      pintarChips(document.getElementById('chips-cond'), OPC.condiciones_comunes, condSel, (v) => { toggle(condSel, v); repintarChips(); });
+      pintarChips(document.getElementById('chips-alerg'), OPC.alergias_comunes, alergSel, (v) => { toggle(alergSel, v); repintarChips(); });
+    }
+
+    // ===== Pintado =====
+    function pintarHogar(d) {
+      const h = d.hogar;
+      OPC = d.opciones;
+      document.getElementById('h-region').innerHTML = opts(OPC.regiones, REGION_TXT);
+      document.getElementById('h-dieta').innerHTML = opts(OPC.dietas, DIETA_TXT);
+      document.getElementById('h-presupuesto').innerHTML = opts(OPC.presupuestos, PRES_TXT);
+
+      document.getElementById('h-nombre').value = h.nombre || '';
+      document.getElementById('h-ciudad').value = h.ciudad || '';
+      document.getElementById('h-region').value = h.region;
+      document.getElementById('h-dieta').value = h.dieta;
+      document.getElementById('h-presupuesto').value = h.presupuesto;
+      document.getElementById('h-notas').value = h.notas || '';
+      document.getElementById('h-comensales').value = `${d.integrantes.length} persona${d.integrantes.length === 1 ? '' : 's'}`;
+
+      document.getElementById('aviso-config').classList.toggle('hidden', !!h.configurado);
+      document.getElementById('cont-integrantes').textContent = d.integrantes.length ? `· ${d.integrantes.length}` : '';
+
+      const cont = document.getElementById('lista-integrantes');
+      if (!d.integrantes.length) {
+        cont.innerHTML = '<p class="muted">Aún no hay integrantes. Agrega al menos uno para activar el plan de comidas.</p>';
+        return;
+      }
+      cont.innerHTML = d.integrantes.map((i) => {
+        const cond = i.condiciones.map((c) => `<span class="cat-chip">🩺 ${c}</span>`).join(' ');
+        const alerg = i.alergias.map((a) => `<span class="cat-chip" style="background:var(--primary-soft);color:var(--primary-dark)">⚠️ ${a}</span>`).join(' ');
+        const nada = !cond && !alerg ? '<span class="muted" style="font-size:13px">Sin condiciones ni alergias</span>' : '';
+        return `
+          <div class="card" style="padding:14px">
+            <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
+              <div style="flex:1;min-width:200px">
+                <b>${i.nombre}</b> ${i.edad != null ? `<span class="muted">· ${i.edad} años</span>` : ''}
+                <div class="row" style="flex-wrap:wrap;gap:5px;margin-top:7px">${cond} ${alerg} ${nada}</div>
+                ${i.notas ? `<p class="muted" style="font-size:12.5px;margin-top:7px">${i.notas}</p>` : ''}
+              </div>
+              <div class="row" style="gap:6px">
+                <button class="btn btn-ghost btn-sm" data-editar="${i.id}">Editar</button>
+                <button class="btn btn-danger btn-sm" data-eliminar="${i.id}">Eliminar</button>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // Refresca la sesion local: hogar_configurado cambia el estado del planificador.
+    function sincronizarUsuario(d) {
+      if (d.usuario) Sesion.actualizarUsuario(d.usuario);
+      pintarHogar(d);
+    }
+
+    async function cargar() {
+      try { pintarHogar(await api('/api/hogar')); }
+      catch (err) {
+        if (err.status === 403) { location.href = '/mi-plan.html?upgrade=1'; return; }
+        alerta(alHogar, err.error || 'No pudimos cargar tu hogar.');
+      }
+    }
+
+    // ===== Hogar =====
+    document.getElementById('btn-guardar-hogar').onclick = async () => {
+      limpiarAlerta(alHogar);
+      try {
+        const d = await api('/api/hogar', { method: 'PUT', body: {
+          nombre: document.getElementById('h-nombre').value,
+          ciudad: document.getElementById('h-ciudad').value,
+          region: document.getElementById('h-region').value,
+          dieta: document.getElementById('h-dieta').value,
+          presupuesto: document.getElementById('h-presupuesto').value,
+          notas: document.getElementById('h-notas').value,
+        } });
+        sincronizarUsuario(d);
+        alerta(alHogar, 'Datos del hogar guardados.', 'ok');
+      } catch (err) { alerta(alHogar, err.error || 'No pudimos guardar.'); }
+    };
+
+    // ===== Integrantes =====
+    function abrirFormInt(it) {
+      limpiarAlerta(alInt);
+      document.getElementById('form-int-titulo').textContent = it ? `Editar a ${it.nombre}` : 'Nuevo integrante';
+      document.getElementById('i-id').value = it ? it.id : '';
+      document.getElementById('i-nombre').value = it ? it.nombre : '';
+      document.getElementById('i-edad').value = it && it.edad != null ? it.edad : '';
+      document.getElementById('i-notas').value = it && it.notas ? it.notas : '';
+      condSel = it ? [...it.condiciones] : [];
+      alergSel = it ? [...it.alergias] : [];
+      repintarChips();
+      formInt.classList.remove('hidden');
+      formInt.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    document.getElementById('btn-nuevo-int').onclick = () => abrirFormInt(null);
+    document.getElementById('btn-cancelar-int').onclick = () => formInt.classList.add('hidden');
+
+    // Añadir una condicion/alergia escrita a mano (no está en las sugerencias).
+    const agregarOtra = (inputId, arr) => {
+      const el = document.getElementById(inputId);
+      const v = el.value.trim();
+      if (!v) return;
+      if (!arr.some((x) => x.toLowerCase() === v.toLowerCase())) arr.push(v);
+      el.value = '';
+      repintarChips();
+    };
+    document.getElementById('btn-cond-otra').onclick = () => agregarOtra('i-cond-otra', condSel);
+    document.getElementById('btn-alerg-otra').onclick = () => agregarOtra('i-alerg-otra', alergSel);
+    document.getElementById('i-cond-otra').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); agregarOtra('i-cond-otra', condSel); } };
+    document.getElementById('i-alerg-otra').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); agregarOtra('i-alerg-otra', alergSel); } };
+
+    document.getElementById('btn-guardar-int').onclick = async () => {
+      limpiarAlerta(alInt);
+      const id = document.getElementById('i-id').value;
+      const body = {
+        nombre: document.getElementById('i-nombre').value,
+        edad: document.getElementById('i-edad').value,
+        condiciones: condSel,
+        alergias: alergSel,
+        notas: document.getElementById('i-notas').value,
+      };
+      if (!body.nombre.trim()) { alerta(alInt, 'Escribe el nombre del integrante.'); return; }
+      try {
+        const d = id
+          ? await api(`/api/hogar/integrantes/${id}`, { method: 'PATCH', body })
+          : await api('/api/hogar/integrantes', { method: 'POST', body });
+        formInt.classList.add('hidden');
+        sincronizarUsuario(d);
+      } catch (err) { alerta(alInt, err.error || 'No pudimos guardar el integrante.'); }
+    };
+
+    document.getElementById('lista-integrantes').addEventListener('click', async (e) => {
+      const t = e.target;
+      if (t.dataset.editar) {
+        const d = await api('/api/hogar');
+        abrirFormInt(d.integrantes.find((i) => i.id === Number(t.dataset.editar)));
+      }
+      if (t.dataset.eliminar) {
+        const ok = await confirmar('¿Quitar a esta persona del hogar?', { titulo: 'Eliminar integrante', ok: 'Eliminar', peligro: true });
+        if (!ok) return;
+        try { sincronizarUsuario(await api(`/api/hogar/integrantes/${t.dataset.eliminar}`, { method: 'DELETE' })); }
+        catch (err) { alerta(alHogar, err.error || 'No pudimos eliminar.'); }
+      }
+    });
+
+    cargar();
+  </script>
+</body>
+</html>

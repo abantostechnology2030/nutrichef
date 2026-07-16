@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Plan de comidas</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Plan de comidas</h2>
+        <div class="spacer"></div>
+        <span class="analisis-pill" id="pill-gen">…</span>
+      </header>
+
+      <div class="content stack">
+        <div id="alerta-plan" class="alert"></div>
+
+        <!-- Falta configurar hogar o despensa -->
+        <div class="card hidden" id="aviso-setup" style="border-color:#ffe2b8;background:var(--amber-soft)">
+          <h3 style="color:var(--amber)" id="setup-titulo"></h3>
+          <p class="muted" id="setup-texto"></p>
+          <a class="btn btn-sm" id="setup-link" style="margin-top:10px">Configurar</a>
+        </div>
+
+        <!-- Selector de semana -->
+        <div class="card card-tint">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px">
+            <div class="row" style="gap:8px;align-items:center">
+              <button class="btn btn-ghost btn-sm" id="btn-prev">‹</button>
+              <div style="text-align:center;min-width:190px">
+                <b id="lbl-semana">…</b>
+                <div class="muted" style="font-size:12px" id="lbl-semana-sub"></div>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="btn-next">›</button>
+              <button class="btn btn-ghost btn-sm" id="btn-hoy">Hoy</button>
+            </div>
+            <!-- No hay boton de "generar la semana": la unidad es el DIA y su boton vive
+                 en la cabecera de cada dia del calendario. -->
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm hidden" id="btn-detallar">🍳 Completar platos</button>
+              <button class="btn btn-ghost btn-sm" id="btn-copiar">📋 Copiar otra semana</button>
+            </div>
+          </div>
+          <p class="muted" style="font-size:12.5px;margin-top:10px" id="lbl-limites"></p>
+        </div>
+
+        <!-- Calendario -->
+        <div id="calendario" class="stack"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const U = exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('plan');
+    activarMenuMovil();
+
+    const alPlan = document.getElementById('alerta-plan');
+    let DATA = null;
+    let semana = null; // lunes YYYY-MM-DD
+    // Cupo de IA agotado para la semana que se esta viendo. Lo fija pintarLimites() y lo
+    // leen los botones de generar de cada dia/casilla, que se pintan despues.
+    let sinCupo = false;
+    // Falta hogar o despensa: sin eso la IA no puede proponer nada (el backend responde
+    // 409). Lo fija avisoSetup(), que corre DESPUES del primer pintado.
+    let setupPendiente = false;
+
+    // Motivo por el que no se puede generar ahora, o null si se puede. Fuente unica para
+    // todos los botones de IA del calendario.
+    function bloqueoGen() {
+      if (setupPendiente) return 'Configura tu hogar y tu despensa antes de generar';
+      if (sinCupo) return 'Agotaste las generaciones de IA de esta semana';
+      return null;
+    }
+
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const sumar = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    const fmtCorto = (iso) => { const [y, m, d] = iso.split('-'); return `${parseInt(d, 10)} ${MESES[+m - 1]}`; };
+    // Fecha real de un dia de la semana. El array del backend es 0=Domingo, pero la
+    // semana empieza el lunes: el domingo (0) es el septimo dia, no el primero.
+    const fechaDe = (dia) => sumar(semana, dia === 0 ? 6 : dia - 1);
+    const hoyISO = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10); // Peru UTC-5
+
+    // ===== Pintado =====
+    function pintarLimites(l) {
+      const g = l.generaciones_max == null ? '∞' : `${l.generaciones_usadas}/${l.generaciones_max}`;
+      document.getElementById('pill-gen').innerHTML = `✨ ${g} generaciones`;
+      const partes = [
+        l.generaciones_max == null
+          ? 'Generaciones de IA ilimitadas.'
+          : `Usaste ${l.generaciones_usadas} de ${l.generaciones_max} generación(es) de IA para esta semana. Generar un día cuesta una.`,
+      ];
+      if (l.semanas_max != null) partes.push(`Semanas programables: ${l.semanas_usadas}/${l.semanas_max}.`);
+      document.getElementById('lbl-limites').textContent = partes.join(' ');
+
+      sinCupo = l.generaciones_max != null && l.generaciones_usadas >= l.generaciones_max;
+    }
+
+    // ===== Aporte nutricional (plato.info) =====
+    // El semaforo usa las mismas clases del escaner. Ojo: la BD dice "ambar" y la clase
+    // del CSS se llama "amarillo" (viene del escaner) — de ahi el mapeo.
+    const SEM_CLASE = { verde: 'sem-verde-bn', ambar: 'sem-amarillo-bn', rojo: 'sem-rojo-bn' };
+    const SEM_TXT = { verde: 'Saludable', ambar: 'Ocasional', rojo: 'No le conviene' };
+    const NIVEL_TXT = { alto: 'alto', medio: 'medio', bajo: 'bajo' };
+
+    // Tag compacto para la casilla: punto de color + kcal. Si la IA no dio semaforo pero
+    // si calorias (o al reves), se pinta lo que haya en vez de no pintar nada.
+    function tagNutri(info) {
+      if (!info) return '';
+      const clase = SEM_CLASE[info.semaforo] || '';
+      const kcal = info.calorias ? `${info.calorias} kcal` : (SEM_TXT[info.semaforo] || '');
+      if (!clase && !kcal) return '';
+      const titulo = [SEM_TXT[info.semaforo], info.resumen].filter(Boolean).join(' · ');
+      return `<span class="tag ${clase}" title="${esc(titulo)}">${clase ? '<span class="sem-dot"></span>' : ''}${esc(kcal)}</span>`;
+    }
+
+    // Bloque completo para el modal: semaforo + macros + micronutrientes + resumen.
+    // Si el plato aun no tiene info (lo genero un menu viejo), invita a analizarlo.
+    function bloqueNutri(info) {
+      if (!info) {
+        return `<div class="reco-foto" style="margin-top:12px">
+          🥗 Este plato todavía no tiene su información nutricional.
+          Usa <b>“Analizar nutrición”</b> arriba para calcularla con IA.
+        </div>`;
+      }
+      const macro = (etiqueta, nivel) =>
+        nivel ? `<span class="tag">${etiqueta}: ${NIVEL_TXT[nivel] || nivel}</span>` : '';
+      const macros = [
+        macro('Carbohidratos', info.carbohidratos),
+        macro('Proteínas', info.proteinas),
+        macro('Grasas', info.grasas),
+      ].filter(Boolean).join('');
+
+      const clase = SEM_CLASE[info.semaforo] || '';
+      const banner = info.semaforo
+        ? `<div class="sem-banner ${clase}" style="margin-bottom:10px">
+             <span class="sem-dot"></span>
+             <span>${SEM_TXT[info.semaforo]}${info.calorias ? ` · ~${info.calorias} kcal por porción` : ''}</span>
+           </div>`
+        : (info.calorias ? `<p style="font-size:13px;margin-bottom:10px"><b>~${info.calorias} kcal</b> por porción</p>` : '');
+
+      return `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <b style="font-size:13px">Aporte nutricional aproximado</b>
+        <div style="margin-top:8px">${banner}</div>
+        ${macros ? `<div class="row" style="gap:5px;flex-wrap:wrap;margin-bottom:8px">${macros}</div>` : ''}
+        ${info.destacados?.length
+          ? `<p style="font-size:12.5px;margin-bottom:6px">✨ <b>Aporta:</b> ${info.destacados.map(esc).join(', ')}</p>`
+          : ''}
+        ${info.resumen ? `<p class="muted" style="font-size:12.5px">${esc(info.resumen)}</p>` : ''}
+        <p class="muted" style="font-size:11.5px;margin-top:8px">
+          🥗 Estimación orientativa por porción. No reemplaza la consulta con un nutricionista.
+        </p>
+      </div>`;
+    }
+
+    function casillaHTML(dia, momento, it) {
+      const mi = MOMENTO_INFO[momento];
+      const bloqueo = bloqueoGen();
+      if (!it) {
+        // Dos vias para llenar una casilla: que la proponga la IA, o elegirla de tu
+        // biblioteca. "Mis platos" NO se bloquea por cupo: no llama a la IA.
+        const t = bloqueo ? ` disabled title="${bloqueo}"` : '';
+        return `<div class="casilla vacia">
+          <span class="casilla-momento">${mi.ic} ${mi.txt}</span>
+          <span class="muted" style="font-size:12px">Sin plato</span>
+          <div class="row" style="gap:5px;flex-wrap:wrap;justify-content:center">
+            <button class="btn btn-ghost btn-sm" data-gen="${dia}:${momento}" style="padding:3px 9px;font-size:11px"${t}>✨ Proponer</button>
+            <button class="btn btn-ghost btn-sm" data-lib="${dia}:${momento}" style="padding:3px 9px;font-size:11px" title="Elegir uno de mis platos">📋 Mis platos</button>
+          </div>
+        </div>`;
+      }
+      const p = it.plato;
+      const falta = p.faltantes.length
+        ? `<span class="tag tag-falta" title="${p.faltantes.join(', ')}">🛒 falta ${p.faltantes.length}</span>`
+        : '<span class="tag tag-ok">✓ tengo todo</span>';
+      const tiempo = p.tiempo_min ? `<span class="tag">⏱ ${p.tiempo_min}′</span>` : '';
+      return `<div class="casilla ${it.cocinado ? 'cocinado' : ''}">
+        <span class="casilla-momento">${mi.ic} ${mi.txt}</span>
+        <span class="casilla-plato">${p.nombre}</span>
+        <div class="casilla-meta">${tagNutri(p.info)}${tiempo}${falta}</div>
+        <div class="casilla-acciones">
+          <button class="btn btn-ghost btn-sm" data-ver="${it.id}">Ver</button>
+          <button class="btn btn-ghost btn-sm" data-gen="${dia}:${momento}" title="${bloqueo || 'Cambiar este plato por otro'}"${bloqueo ? ' disabled' : ''}>✨</button>
+          <button class="btn btn-ghost btn-sm" data-cocinado="${it.id}" title="${it.cocinado ? 'Marcar como no cocinado' : 'Marcar como cocinado'}">${it.cocinado ? '✓' : '○'}</button>
+          <button class="btn btn-danger btn-sm" data-del="${it.id}" title="Quitar">✕</button>
+        </div>
+      </div>`;
+    }
+
+    function pintar() {
+      const d = DATA;
+      document.getElementById('lbl-semana').textContent = `${fmtCorto(semana)} — ${fmtCorto(sumar(semana, 6))}`;
+      document.getElementById('lbl-semana-sub').textContent = semana === d.semana_actual ? 'Semana actual' : '';
+      pintarLimites(d.limites);
+
+      // "Completar platos" es BACKFILL: los platos nuevos ya nacen con receta y nutricion,
+      // asi que el boton solo aparece si hay alguno al que le falte algo (los genero una
+      // version anterior). Es una llamada a la IA y consume cupo: no se ofrece si no haria
+      // nada. El backend ademas responde gratis si no hay pendientes.
+      const incompletos = d.dia_orden.reduce((n, dia) => n + d.momentos.filter((m) => {
+        const it = d.plan[dia][m];
+        return it && (!it.plato.info || !it.plato.pasos);
+      }).length, 0);
+      const btnDet = document.getElementById('btn-detallar');
+      btnDet.classList.toggle('hidden', incompletos === 0 || !!bloqueoGen());
+      btnDet.textContent = `🍳 Completar platos (${incompletos})`;
+      btnDet.title = 'Pide a la IA la receta y el aporte nutricional que les falte';
+
+      const hoy = hoyISO();
+      document.getElementById('calendario').innerHTML = d.dia_orden.map((dia) => {
+        const fecha = fechaDe(dia);
+        const llenas = d.momentos.filter((m) => d.plan[dia][m]).length;
+
+        // El boton del dia es la via principal de generacion. Su texto dice lo que va a
+        // hacer de verdad: con casillas libres las LLENA (sin tocar lo que ya hay, sea
+        // manual o generado); con el dia lleno solo puede rehacerlo, y eso se confirma.
+        const bloqueoDia = bloqueoGen();
+        const btnDia = bloqueoDia
+          ? `<button class="btn btn-sm" disabled title="${bloqueoDia}" style="padding:3px 9px;font-size:11px">✨ Generar día</button>`
+          : `<button class="btn ${llenas === 0 ? '' : 'btn-ghost '}btn-sm" data-gen-dia="${dia}" style="padding:3px 9px;font-size:11px"
+               title="${llenas === 3 ? 'Rehacer los 3 platos de este día' : `Generar ${3 - llenas} plato(s) con IA`}">
+               ✨ ${llenas === 3 ? 'Rehacer día' : 'Generar día'}</button>`;
+
+        return `
+          <div class="dia-fila ${fecha === hoy ? 'hoy' : ''}">
+            <div class="dia-cab">
+              <div>
+                <span class="dia-nombre">${d.dias[dia]}</span>
+                <span class="dia-fecha">· ${fmtCorto(fecha)}${fecha === hoy ? ' · hoy' : ''}</span>
+              </div>
+              <div class="row" style="gap:8px">
+                <span class="tag">${llenas}/3</span>
+                ${btnDia}
+              </div>
+            </div>
+            <div class="grid grid-3" style="gap:10px">
+              ${d.momentos.map((m) => casillaHTML(dia, m, d.plan[dia][m])).join('')}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // ===== Carga =====
+    async function cargar(s) {
+      limpiarAlerta(alPlan);
+      try {
+        DATA = await api('/api/plan' + (s ? `?semana=${s}` : ''));
+        semana = DATA.semana;
+        pintar();
+        avisoSetup();
+      } catch (err) {
+        if (err.status === 403) { location.href = '/mi-plan.html?upgrade=1'; return; }
+        alerta(alPlan, err.error || 'No pudimos cargar tu plan.');
+      }
+    }
+
+    // Antes de generar hace falta hogar y despensa: se avisa arriba en vez de
+    // dejar que el usuario descubra el problema al apretar "Generar día".
+    //
+    // Corre DESPUES del primer pintado (necesita consultar la despensa), asi que cuando
+    // cambia el veredicto vuelve a pintar: los botones de IA de cada dia se pintan segun
+    // setupPendiente y ya estan en pantalla para entonces.
+    async function avisoSetup() {
+      const box = document.getElementById('aviso-setup');
+      if (!DATA.hogar_configurado) {
+        mostrarSetup('👋 Configura tu hogar primero',
+          'Necesitamos saber quiénes son y qué pueden comer para proponerte platos.', '/hogar.html', 'Ir a Mi hogar');
+        return;
+      }
+      try {
+        const { despensa } = await api('/api/despensa');
+        if (!despensa.length) {
+          mostrarSetup('🛒 Tu despensa está vacía',
+            'Registra tu compra de la semana para que la IA proponga platos con lo que ya tienes.', '/despensa.html', 'Ir a Mi despensa');
+          return;
+        }
+      } catch { /* el aviso es orientativo: si falla, el backend igual valida */ }
+      box.classList.add('hidden');
+      if (setupPendiente) { setupPendiente = false; pintar(); }
+    }
+    function mostrarSetup(titulo, texto, href, cta) {
+      document.getElementById('setup-titulo').textContent = titulo;
+      document.getElementById('setup-texto').textContent = texto;
+      const a = document.getElementById('setup-link');
+      a.href = href; a.textContent = cta;
+      document.getElementById('aviso-setup').classList.remove('hidden');
+      if (!setupPendiente) { setupPendiente = true; pintar(); }
+    }
+
+    // ===== Navegacion de semanas =====
+    document.getElementById('btn-prev').onclick = () => cargar(sumar(semana, -7));
+    document.getElementById('btn-next').onclick = () => cargar(sumar(semana, 7));
+    document.getElementById('btn-hoy').onclick = () => cargar(DATA.semana_actual);
+
+    // ===== Generar =====
+    function cargando(btn, on, txt) {
+      btn.disabled = on;
+      if (on) { btn.dataset.txt = btn.textContent; btn.textContent = txt; }
+      else if (btn.dataset.txt) btn.textContent = btn.dataset.txt;
+    }
+
+    // Completa la receta y/o el aporte nutricional de los platos de la semana que no los
+    // tengan. Los platos nuevos ya nacen con los dos; esto es backfill de los viejos.
+    document.getElementById('btn-detallar').onclick = async () => {
+      const btn = document.getElementById('btn-detallar');
+      cargando(btn, true, '🍳 Completando…');
+      limpiarAlerta(alPlan);
+      alerta(alPlan, '🍳 Pidiendo a la IA las recetas que faltan. Puede tardar medio minuto', 'info');
+      try {
+        const d = await api('/api/plan/detallar', { method: 'POST', body: { semana } });
+        if (d.plan) DATA.plan = d.plan;
+        if (d.limites) DATA.limites = { ...DATA.limites, ...d.limites };
+        pintar();
+        alerta(alPlan, d.mensaje, 'ok');
+      } catch (err) { manejar(err); }
+      finally { cargando(btn, false); }
+    };
+
+    // Pide platos a la IA para unas casillas. Es la unica via de generacion: un dia (3
+    // casillas) o un plato suelto (1). Cuesta una generacion, sea 1 o 3.
+    async function generar(casillas, btn) {
+      limpiarAlerta(alPlan);
+      if (btn) cargando(btn, true, casillas.length > 1 ? '✨ Cocinando…' : '✨…');
+      // AVISO OBLIGATORIO: la IA tarda ~25s por plato y ~30s por dia (medido). El boton de
+      // la casilla mide 11px y solo puede mostrar "✨…": sin este mensaje el usuario se
+      // queda medio minuto mirando una pantalla sin señales y cree que la app no responde.
+      // Ya paso. Si tocas esto, deja algo que diga que se esta trabajando Y cuanto tarda.
+      alerta(alPlan, casillas.length > 1
+        ? '✨ Cocinando los platos del día. La IA tarda unos 30 segundos'
+        : '✨ Pensando tu plato. La IA tarda unos 25 segundos', 'info');
+      try {
+        const d = await api('/api/plan/generar', { method: 'POST', body: { semana, casillas } });
+        DATA.plan = d.plan; DATA.limites = { ...DATA.limites, ...d.limites };
+        pintar();
+        alerta(alPlan, d.mensaje, 'ok');
+      } catch (err) { manejar(err); }
+      finally { if (btn) cargando(btn, false); }
+    }
+
+    // El boton del dia. Por defecto llena SOLO las casillas vacias: el usuario mezcla
+    // platos suyos con generados, y pisarle un plato que eligio a mano seria destruir su
+    // trabajo. Si el dia ya esta lleno no hay nada que llenar, y rehacerlo se confirma.
+    async function generarDia(dia, btn) {
+      const vacias = DATA.momentos.filter((m) => !DATA.plan[dia][m]);
+      if (vacias.length) {
+        await generar(vacias.map((momento) => ({ dia, momento })), btn);
+        return;
+      }
+      const ok = await confirmar(
+        `Los 3 platos del <b>${DATA.dias[dia]}</b> ya están puestos. Esto los reemplaza por otros nuevos. ` +
+        'Los platos que guardaste en tu biblioteca no se pierden.',
+        { titulo: 'Rehacer el día completo', ok: 'Rehacer', peligro: true });
+      if (!ok) return;
+      await generar(DATA.momentos.map((momento) => ({ dia, momento })), btn);
+    }
+
+    function manejar(err) {
+      if (err.status === 403 && err.upgrade) {
+        alerta(alPlan, err.error + ' ');
+        setTimeout(() => { location.href = '/mi-plan.html?upgrade=1'; }, 1800);
+        return;
+      }
+      if (err.status === 409 && err.redirect) {
+        alerta(alPlan, err.error);
+        setTimeout(() => { location.href = err.redirect; }, 1800);
+        return;
+      }
+      alerta(alPlan, err.error || 'Ocurrió un error.');
+    }
+
+    // ===== Acciones del calendario =====
+    document.getElementById('calendario').addEventListener('click', async (e) => {
+      const t = e.target.closest('button');
+      if (!t) return;
+
+      if (t.dataset.genDia) {
+        await generarDia(Number(t.dataset.genDia), t);
+        return;
+      }
+      if (t.dataset.gen) {
+        const [dia, momento] = t.dataset.gen.split(':');
+        await generar([{ dia: Number(dia), momento }], t);
+        return;
+      }
+      if (t.dataset.lib) {
+        const [dia, momento] = t.dataset.lib.split(':');
+        await elegirDeBiblioteca(Number(dia), momento);
+        return;
+      }
+      if (t.dataset.cocinado) {
+        const it = buscarItem(Number(t.dataset.cocinado));
+        try { DATA.plan = (await api(`/api/plan/${t.dataset.cocinado}`, { method: 'PATCH', body: { cocinado: !it.cocinado } })).plan; pintar(); }
+        catch (err) { manejar(err); }
+        return;
+      }
+      if (t.dataset.del) {
+        const ok = await confirmar('¿Quitar este plato del día?', { titulo: 'Vaciar casilla', ok: 'Quitar', peligro: true });
+        if (!ok) return;
+        try { DATA.plan = (await api(`/api/plan/${t.dataset.del}`, { method: 'DELETE' })).plan; pintar(); }
+        catch (err) { manejar(err); }
+        return;
+      }
+      if (t.dataset.ver) verPlato(buscarItem(Number(t.dataset.ver)));
+    });
+
+    const buscarItem = (id) => {
+      for (const d of DATA.dia_orden) for (const m of DATA.momentos) {
+        const it = DATA.plan[d][m];
+        if (it && it.id === id) return it;
+      }
+      return null;
+    };
+
+    // Detalle del plato. Los PASOS de preparacion se generan aparte (fase 4): por ahora
+    // se muestran los ingredientes, los faltantes y la nota de adaptacion.
+    function verPlato(it) {
+      if (!it) return;
+      const p = it.plato;
+      const ing = p.ingredientes.map((i) => {
+        const falta = p.faltantes.some((f) => f.toLowerCase() === String(i.nombre).toLowerCase());
+        return `<li${falta ? ' style="color:var(--amber);font-weight:700"' : ''}>${[i.cantidad, i.unidad, i.nombre].filter(Boolean).join(' ')}${falta ? ' 🛒' : ''}</li>`;
+      }).join('');
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:520px;text-align:left">
+        <h3>${p.nombre}</h3>
+        <div class="modal-body">
+          <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
+            <span class="tag">${MOMENTO_INFO[it.momento].ic} ${MOMENTO_INFO[it.momento].txt}</span>
+            ${p.tiempo_min ? `<span class="tag">⏱ ${p.tiempo_min}′</span>` : ''}
+            ${p.dificultad ? `<span class="tag">${p.dificultad}</span>` : ''}
+            <span class="tag">🍽 ${p.porciones} porciones</span>
+          </div>
+          ${p.nota ? `<p style="background:var(--green-soft);border-radius:10px;padding:10px;font-size:13px;margin-bottom:12px">💡 ${p.nota}</p>` : ''}
+          <b style="font-size:13px">Ingredientes</b>
+          <ul style="margin:8px 0 12px 18px;font-size:13.5px;line-height:1.7">${ing || '<li class="muted">Sin detalle</li>'}</ul>
+          ${p.faltantes.length
+            ? `<p class="muted" style="font-size:12.5px">🛒 <b>Te falta comprar:</b> ${p.faltantes.join(', ')}</p>`
+            : '<p class="muted" style="font-size:12.5px">✓ Tienes todo en tu despensa.</p>'}
+          ${bloqueNutri(p.info)}
+          ${p.pasos && p.pasos.length
+            ? `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+                 <b style="font-size:13px">🍳 Cómo prepararlo</b>
+                 <ol style="margin:8px 0 0 18px;font-size:13.5px;line-height:1.7">${p.pasos.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
+               </div>`
+            : `<div class="reco-foto" style="margin-top:12px">🍳 Este plato todavía no tiene su receta.
+                 Usa <b>“Completar platos”</b> arriba para pedírsela a la IA.</div>`}
+        </div>
+        <div class="row"><button class="btn btn-ghost btn-sm" data-cerrar>Cerrar</button></div>
+      </div>`;
+      document.body.appendChild(back);
+      back.querySelector('[data-cerrar]').onclick = () => back.remove();
+      back.onclick = (e) => { if (e.target === back) back.remove(); };
+    }
+
+    // ===== Poner un plato de MI BIBLIOTECA en una casilla =====
+    // La 2a via para llenar el calendario, junto a la IA. No gasta cupo ni llama a la IA:
+    // apunta la casilla a un plato que el usuario ya curo en "Mis platos".
+    //
+    // Un plato SIN momento encaja en cualquier casilla (el formulario lo permite vacio);
+    // por eso el filtro por defecto es "los de este momento + los que no tienen momento",
+    // con un interruptor para ver la biblioteca entera.
+    async function elegirDeBiblioteca(dia, momento) {
+      let datos;
+      try { datos = await api('/api/platos'); }
+      catch (err) { manejar(err); return; }
+
+      const mi = MOMENTO_INFO[momento];
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:520px;text-align:left">
+        <h3>Poner un plato en ${DATA.dias[dia]}</h3>
+        <p class="muted" style="font-size:13px;margin-bottom:12px">${mi.ic} ${mi.txt} · elige uno de tus platos guardados.</p>
+        <div class="modal-body">
+          <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap">
+            <input class="input" id="lib-q" placeholder="Buscar en mis platos…" style="flex:1;min-width:160px" />
+            <label class="row" style="gap:6px;font-size:13px;font-weight:500;white-space:nowrap">
+              <input type="checkbox" id="lib-todos" /> Ver todos
+            </label>
+          </div>
+          <div id="lib-lista" class="stack" style="gap:8px;max-height:320px;overflow-y:auto"></div>
+        </div>
+        <div class="row"><button class="btn btn-ghost btn-sm" data-cerrar>Cancelar</button></div>
+      </div>`;
+      document.body.appendChild(back);
+      const cerrar = () => back.remove();
+      back.querySelector('[data-cerrar]').onclick = cerrar;
+      back.onclick = (e) => { if (e.target === back) cerrar(); };
+
+      const lista = back.querySelector('#lib-lista');
+      const inputQ = back.querySelector('#lib-q');
+      const chkTodos = back.querySelector('#lib-todos');
+
+      function pintarLista() {
+        const q = inputQ.value.trim().toLowerCase();
+        const platos = datos.platos
+          .filter((p) => chkTodos.checked || !p.momento || p.momento === momento)
+          .filter((p) => !q || p.nombre.toLowerCase().includes(q));
+
+        if (!datos.platos.length) {
+          lista.innerHTML = `<div class="reco-foto">
+            📋 Todavía no tienes platos guardados. Créalos en <a href="/platos.html"><b>Mis platos</b></a>,
+            o guarda ahí los que te proponga la IA.</div>`;
+          return;
+        }
+        if (!platos.length) {
+          lista.innerHTML = `<p class="muted" style="font-size:13px">Ninguno de tus platos coincide.
+            ${!chkTodos.checked ? 'Prueba con <b>Ver todos</b>.' : ''}</p>`;
+          return;
+        }
+        lista.innerHTML = platos.map((p) => {
+          const tags = [
+            p.momento ? `<span class="tag">${MOMENTO_INFO[p.momento].ic} ${MOMENTO_INFO[p.momento].txt}</span>` : '',
+            p.tiempo_min ? `<span class="tag">⏱ ${p.tiempo_min}′</span>` : '',
+            p.pasos && p.pasos.length ? '<span class="tag">🍳 con pasos</span>' : '',
+          ].filter(Boolean).join('');
+          return `<button class="card" data-plato="${p.id}" style="cursor:pointer;text-align:left;width:100%;border:1px solid var(--line);padding:10px 12px">
+            <b style="font-size:14px">${esc(p.nombre)}</b>
+            <div class="casilla-meta" style="margin-top:6px">${tags}</div>
+          </button>`;
+        }).join('');
+      }
+      pintarLista();
+      inputQ.oninput = pintarLista;
+      chkTodos.onchange = pintarLista;
+
+      lista.addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-plato]');
+        if (!b) return;
+        cerrar();
+        limpiarAlerta(alPlan);
+        try {
+          const d = await api('/api/plan', { method: 'POST', body: { semana, dia, momento, plato_id: Number(b.dataset.plato) } });
+          DATA.plan = d.plan;
+          pintar();
+          alerta(alPlan, 'Plato puesto en tu calendario.', 'ok');
+        } catch (err) { manejar(err); }
+      });
+    }
+
+    // ===== Copiar semana =====
+    document.getElementById('btn-copiar').onclick = async () => {
+      let semanas = [];
+      try { semanas = (await api('/api/plan/semanas')).semanas.filter((s) => s.semana !== semana); }
+      catch { /* se maneja abajo */ }
+      if (!semanas.length) { alerta(alPlan, 'No tienes otra semana con platos para copiar.'); return; }
+
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" style="text-align:left">
+        <h3>Copiar una semana</h3>
+        <div class="modal-body">
+          <p class="muted" style="font-size:13px;margin-bottom:10px">Se copiarán sus platos a la semana del ${fmtCorto(semana)}, reemplazando lo que haya.</p>
+          <select class="input" id="sel-copiar">${semanas.map((s) => `<option value="${s.semana}">${fmtCorto(s.semana)} — ${fmtCorto(sumar(s.semana, 6))} (${s.items} platos)</option>`).join('')}</select>
+        </div>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" data-no>Cancelar</button>
+          <button class="btn btn-sm" data-si>Copiar aquí</button>
+        </div>
+      </div>`;
+      document.body.appendChild(back);
+      back.querySelector('[data-no]').onclick = () => back.remove();
+      back.onclick = (e) => { if (e.target === back) back.remove(); };
+      back.querySelector('[data-si]').onclick = async () => {
+        const desde = back.querySelector('#sel-copiar').value;
+        back.remove();
+        try {
+          const d = await api('/api/plan/copiar', { method: 'POST', body: { desde, hacia: semana } });
+          DATA.plan = d.plan; pintar();
+          alerta(alPlan, `${d.copiados} plato(s) copiados.`, 'ok');
+        } catch (err) { manejar(err); }
+      };
+    };
+
+    cargar();
+  </script>
+</body>
+</html>

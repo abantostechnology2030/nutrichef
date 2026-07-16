@@ -1,0 +1,37 @@
+{
+  "name": "nutrichefia",
+  "version": "1.0.0",
+  "description": "NutriChefIA - Planificador de comidas familiares con IA: escanea productos y arma el menu semanal segun tu despensa, tu familia y tu region (mercado peruano)",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch-path=src src/server.js",
+    "seed": "node src/seed.js",
+    "smoke": "node pruebas/smoke-hogar-despensa.js",
+    "smoke:platos": "node pruebas/smoke-platos.js",
+    "smoke:plan": "node pruebas/smoke-plan.js"
+  },
+  "keywords": [
+    "nutricion",
+    "recetas",
+    "menu-semanal",
+    "ia",
+    "peru"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.1",
+    "@google/genai": "^2.9.0",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.2.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "jsdom": "^28.0.2"
+  }
+}

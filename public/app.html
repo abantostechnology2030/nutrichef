@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Analizar producto</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <!-- Aqui flotaba p1.png: era el superheroe "N" de NutriIA, otra marca. Se retiro
+           junto con los personajes del semaforo (si/regular/no.png). Cuando haya arte
+           propio del chef, este es su sitio. -->
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Analizar producto</h2>
+        <div class="spacer"></div>
+        <span class="analisis-pill" id="pill-analisis">…</span>
+      </header>
+
+      <div class="content stack">
+        <!-- Buscador -->
+        <div class="card card-tint">
+          <div class="scan-tabs">
+            <button id="tab-texto" class="active">✍️ Escribir nombre</button>
+            <button id="tab-imagen">📷 Escanear producto</button>
+          </div>
+
+          <!-- Modo texto -->
+          <div id="modo-texto">
+            <form id="form-texto">
+              <div class="field">
+                <label>Nombre del producto a analizar</label>
+                <input type="text" id="input-producto" placeholder="Ej: Manzana, Pechuga de pollo, Galletas Oreo, Coca-Cola..." />
+              </div>
+              <button class="btn btn-block btn-lg" type="submit" id="btn-buscar">🔍 Analizar producto</button>
+            </form>
+          </div>
+
+          <!-- Modo imagen (2 fotos: nombre opcional + ingredientes obligatoria) -->
+          <div id="modo-imagen" class="hidden">
+            <div class="reco-foto">
+              📸 <b>Para un buen análisis:</b> la foto de <b>ingredientes</b> es obligatoria; que el texto se vea <b>claro</b> y bien iluminado. La del <b>nombre/marca</b> es opcional.
+            </div>
+            <div class="grid grid-2">
+              <div>
+                <label style="display:block;font-weight:600;font-size:13.5px;margin-bottom:6px">Nombre / marca (opcional)</label>
+                <div class="dropzone" id="dz-nombre" style="padding:22px 14px">
+                  <div class="big">🏷️</div>
+                  <b id="dz-nombre-txt">Foto del nombre</b>
+                  <img id="prev-nombre" class="preview-img hidden" />
+                </div>
+              </div>
+              <div>
+                <label style="display:block;font-weight:600;font-size:13.5px;margin-bottom:6px">Ingredientes (obligatoria)</label>
+                <div class="dropzone" id="dz-ing" style="padding:22px 14px">
+                  <div class="big">📋</div>
+                  <b id="dz-ing-txt">Foto de ingredientes</b>
+                  <img id="prev-ing" class="preview-img hidden" />
+                </div>
+              </div>
+            </div>
+            <div class="row" style="margin-top:14px;gap:10px">
+              <button class="btn btn-lg" id="btn-buscar-img" style="flex:1" disabled>🔍 Analizar producto</button>
+              <button class="btn btn-danger hidden" id="btn-limpiar-img" type="button">🗑️ Limpiar</button>
+            </div>
+          </div>
+          <input type="file" id="file-nombre" accept="image/*" capture="environment" class="hidden" />
+          <input type="file" id="file-ing" accept="image/*" capture="environment" class="hidden" />
+        </div>
+
+        <!-- Cargando -->
+        <div class="card hidden" id="cargando" style="text-align:center">
+          <div class="spinner"></div>
+          <p class="muted" style="margin-top:12px">Analizando el producto con IA…</p>
+        </div>
+
+        <!-- Resultado -->
+        <div id="resultado" class="hidden"></div>
+
+        <!-- Historial guardado -->
+        <div class="card hidden" id="historial-card">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+            <h3>📚 Mis productos guardados</h3>
+            <span class="muted" id="historial-info" style="font-size:13px"></span>
+          </div>
+          <p class="muted" style="font-size:13px;margin-bottom:10px">Tocá uno para verlo al instante (no gasta analisis).</p>
+          <div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
+            <input type="date" id="hist-desde" class="input" style="width:auto" title="Desde" />
+            <input type="date" id="hist-hasta" class="input" style="width:auto" title="Hasta" />
+            <button class="btn btn-ghost btn-sm" id="btn-hist-todos" type="button">Ver todos</button>
+          </div>
+          <div id="historial-lista" class="stack"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de confirmación de borrado -->
+  <div class="overlay" id="modal-confirm" style="z-index:40;display:none;place-items:center;padding:20px">
+    <div class="card" style="max-width:380px;text-align:center">
+      <h3>Eliminar producto</h3>
+      <p class="muted" id="confirm-texto" style="margin:8px 0 18px">¿Seguro?</p>
+      <div class="row" style="gap:10px;justify-content:center">
+        <button class="btn btn-ghost" id="confirm-cancelar" type="button">Cancelar</button>
+        <button class="btn btn-danger" id="confirm-ok" type="button">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const u = exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('inicio');
+    activarMenuMovil();
+
+    const pill = document.getElementById('pill-analisis');
+    function pintarPill(usuario) {
+      if (usuario.ilimitado) {
+        pill.innerHTML = `⭐ ${usuario.plan_nombre || 'Premium'} · ilimitado`;
+        pill.style.background = 'var(--green-soft)'; pill.style.color = 'var(--green)';
+      } else {
+        pill.innerHTML = `🎁 ${usuario.analisis_restantes} analisis`;
+        pill.style.background = 'var(--primary-soft)'; pill.style.color = 'var(--primary-dark)';
+      }
+    }
+
+    // Refrescar datos del usuario al entrar (plan/analisis).
+    // Service worker para notificaciones (mobile-friendly)
+    let swReg = null;
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').then((r) => swReg = r).catch(() => {});
+    function notificar(titulo, cuerpo) {
+      const opts = { body: cuerpo, icon: '/img/favicon.png?v=2', tag: 'venc-plan' };
+      if (swReg && swReg.showNotification) swReg.showNotification(titulo, opts);
+      else if (Notification.permission === 'granted') new Notification(titulo, opts);
+    }
+    // Aviso de vencimiento del plan: notificacion del navegador (1 vez al dia) si quedan <=5 dias.
+    async function avisarVencimiento(usuario) {
+      if (!usuario || !usuario.plan_expira || usuario.dias_restantes == null || usuario.dias_restantes > 5) return;
+      if (!('Notification' in window)) return;
+      const hoy = new Date().toISOString().slice(0, 10);
+      if (localStorage.getItem('nutrichefia_aviso_venc') === hoy) return; // ya avisado hoy
+      let perm = Notification.permission;
+      if (perm === 'default') { try { perm = await Notification.requestPermission(); } catch {} }
+      if (perm !== 'granted') return;
+      localStorage.setItem('nutrichefia_aviso_venc', hoy);
+      const d = usuario.dias_restantes;
+      notificar('⏰ Tu plan está por vencer',
+        `Te queda${d === 1 ? '' : 'n'} ${d} día${d === 1 ? '' : 's'} de tu plan ${usuario.plan_nombre}. Renueva para no volver al plan Free.`);
+    }
+
+    async function refrescar() {
+      try {
+        const { usuario } = await api('/api/auth/yo');
+        Sesion.actualizarUsuario(usuario); pintarPill(usuario);
+        avisarVencimiento(usuario);
+      } catch {}
+    }
+    pintarPill(u); refrescar();
+
+    // ===== Tabs =====
+    const tabTexto = document.getElementById('tab-texto');
+    const tabImg = document.getElementById('tab-imagen');
+    const modoTexto = document.getElementById('modo-texto');
+    const modoImg = document.getElementById('modo-imagen');
+    tabTexto.onclick = () => { tabTexto.classList.add('active'); tabImg.classList.remove('active'); modoTexto.classList.remove('hidden'); modoImg.classList.add('hidden'); };
+    tabImg.onclick = () => { tabImg.classList.add('active'); tabTexto.classList.remove('active'); modoImg.classList.remove('hidden'); modoTexto.classList.add('hidden'); };
+
+    // ===== Imagen (2 fotos: nombre opcional + ingredientes obligatoria) =====
+    const btnImg = document.getElementById('btn-buscar-img');
+    const btnLimpiar = document.getElementById('btn-limpiar-img');
+    let archivoNombre = null, archivoIng = null;
+
+    function actualizarBotones() {
+      btnImg.disabled = !archivoIng;
+      btnLimpiar.classList.toggle('hidden', !archivoNombre && !archivoIng);
+    }
+    function conectarDropzone(dzId, fileId, prevId, txtId, setFile, textoDefault) {
+      const dz = document.getElementById(dzId);
+      const file = document.getElementById(fileId);
+      const prev = document.getElementById(prevId);
+      const txt = document.getElementById(txtId);
+      const poner = (f) => {
+        if (!f || !f.type.startsWith('image/')) return;
+        setFile(f);
+        prev.src = URL.createObjectURL(f); prev.classList.remove('hidden');
+        if (txt) txt.textContent = 'Toca para cambiar';
+        actualizarBotones();
+      };
+      dz.onclick = () => file.click();
+      file.onchange = () => poner(file.files[0]);
+      ['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
+      ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
+      dz.addEventListener('drop', (e) => poner(e.dataTransfer.files[0]));
+      return { reset: () => { file.value = ''; prev.src = ''; prev.classList.add('hidden'); if (txt) txt.textContent = textoDefault; } };
+    }
+    const dzNombre = conectarDropzone('dz-nombre', 'file-nombre', 'prev-nombre', 'dz-nombre-txt', (f) => archivoNombre = f, 'Foto del nombre');
+    const dzIng = conectarDropzone('dz-ing', 'file-ing', 'prev-ing', 'dz-ing-txt', (f) => archivoIng = f, 'Foto de ingredientes');
+    function limpiarFoto() { archivoNombre = null; archivoIng = null; dzNombre.reset(); dzIng.reset(); actualizarBotones(); }
+    btnLimpiar.onclick = (e) => { e.stopPropagation(); limpiarFoto(); };
+
+    // ===== Estados de UI =====
+    const cargando = document.getElementById('cargando');
+    const cont = document.getElementById('resultado');
+
+    function setCargando(v) {
+      cargando.classList.toggle('hidden', !v);
+      if (v) cont.classList.add('hidden');
+    }
+
+    function manejarError(err) {
+      setCargando(false);
+      if (err.status === 402 || err.paywall) {
+        // Sin analisis -> al paywall
+        location.href = '/mi-plan.html?paywall=1';
+        return;
+      }
+      cont.classList.remove('hidden');
+      cont.innerHTML = `<div class="card"><div class="alert show alert-error">${err.error || 'Ocurrió un error.'}</div></div>`;
+    }
+
+    // El banner del semaforo se sostiene con el color, el icono y el texto: los personajes
+    // (si/regular/no.png) se retiraron porque llevaban el logo "N" de NutriIA en el pecho.
+    // El campo "img" sigue soportado (el banner lo pinta si existe): cuando haya un chef
+    // propio en sus 3 versiones, basta con volver a ponerlo aqui.
+    const SEM = {
+      verde:    { cls: 'sem-verde',    boton: 'verde',    ic: '✓', txt: 'Producto recomendado' },
+      amarillo: { cls: 'sem-amarillo', boton: 'amarillo', ic: '!', txt: 'Regular · consumo ocasional' },
+      rojo:     { cls: 'sem-rojo',     boton: 'rojo',     ic: '✕', txt: 'Nada recomendable' },
+    };
+
+    function pintarResultado(r, consulta, cacheado = false) {
+      cont.classList.remove('hidden');
+      if (r.error) {
+        cont.innerHTML = `<div class="card"><div class="alert show alert-error">${r.error}</div></div>`;
+        return;
+      }
+      const sec = (ic, titulo, texto) => texto ? `
+        <div class="result-section">
+          <h4><span class="ic">${ic}</span>${titulo}</h4>
+          <p>${String(texto).replace(/\n/g, '<br>')}</p>
+        </div>` : '';
+      const badge = cacheado ? ' <span class="badge badge-premium">✓ guardado</span>' : '';
+      const s = SEM[String(r.semaforo || '').toLowerCase()];
+      const esVerde = String(r.semaforo || '').toLowerCase() === 'verde';
+      const organosIc = esVerde ? '💚' : '🩺';
+      const organosTit = esVerde ? 'Órganos a los que ayuda' : 'Órganos que puede afectar';
+      const banner = s ? `<div class="sem-luz ${s.boton}">
+          <div class="sem-luz-info"><div class="circulo">${s.ic}</div><div class="etiqueta">${s.txt}</div></div>
+          ${s.img ? `<img class="sem-personaje" src="${s.img}" alt="" />` : ''}
+        </div>` : '';
+      cont.innerHTML = `
+        <div class="card${s ? ' ' + s.cls : ''}">
+          ${banner}
+          <div class="row" style="justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+            <h3>🛒 ${consulta}${badge}</h3>
+          </div>
+          ${sec('📝', 'Resumen', r.resumen)}
+          ${sec('✅', 'Lo bueno', r.lo_bueno)}
+          ${sec('⚠️', 'Lo malo', r.lo_malo)}
+          ${sec(organosIc, organosTit, r.organos_afectados)}
+          ${sec('🥗', 'Alternativas más saludables', r.alternativas_saludables)}
+          <p class="muted center" style="margin-top:16px;font-size:12.5px">🥗 Información orientativa. No reemplaza la consulta con un nutricionista o profesional de salud.</p>
+        </div>`;
+    }
+
+    function actualizarTrasLectura(data) {
+      const usuario = Sesion.usuario;
+      if (typeof data.ilimitado === 'boolean') usuario.ilimitado = data.ilimitado;
+      if (typeof data.analisis_restantes === 'number') usuario.analisis_restantes = data.analisis_restantes;
+      Sesion.actualizarUsuario(usuario);
+      pintarPill(usuario);
+    }
+
+    // ===== Buscar por texto =====
+    document.getElementById('form-texto').onsubmit = async (e) => {
+      e.preventDefault();
+      const prod = document.getElementById('input-producto').value.trim();
+      if (!prod) return;
+      setCargando(true);
+      try {
+        const data = await api('/api/analisis/texto', { method: 'POST', body: { producto: prod } });
+        setCargando(false);
+        actualizarTrasLectura(data);
+        pintarResultado(data.resultado, prod, data.cacheado);
+        cargarHistorial();
+      } catch (err) { manejarError(err); }
+    };
+
+    // Redimensiona/comprime la imagen antes de enviarla a la IA.
+    // El gateway cobra el base64 de la imagen como tokens de entrada, así que una
+    // foto full de celular (varios MB) dispara el costo. Claude usa imágenes de
+    // máx 1568 px de lado, así que reducir a ese tamaño no pierde calidad útil.
+    function comprimirImagen(file, maxLado = 1568, calidad = 0.72) {
+      return new Promise((resolve) => {
+        if (!file || !file.type || !file.type.startsWith('image/')) return resolve(file);
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          const escala = Math.min(1, maxLado / Math.max(img.width, img.height));
+          const w = Math.round(img.width * escala), h = Math.round(img.height * escala);
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          canvas.toBlob((blob) => {
+            if (!blob || blob.size >= file.size) return resolve(file); // si no mejora, deja la original
+            resolve(new File([blob], 'foto.jpg', { type: 'image/jpeg' }));
+          }, 'image/jpeg', calidad);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+        img.src = url;
+      });
+    }
+
+    // ===== Analizar por fotos =====
+    btnImg.onclick = async () => {
+      if (!archivoIng) return;
+      setCargando(true);
+      try {
+        const fd = new FormData();
+        fd.append('ingredientes', await comprimirImagen(archivoIng));
+        if (archivoNombre) fd.append('nombre', await comprimirImagen(archivoNombre));
+        const data = await api('/api/analisis/imagen', { method: 'POST', body: fd, isForm: true });
+        setCargando(false);
+        actualizarTrasLectura(data);
+        pintarResultado(data.resultado, (data.resultado && data.resultado.nombre) || 'Producto escaneado');
+        cargarHistorial();
+      } catch (err) { manejarError(err); }
+    };
+
+    // ===== Historial guardado (cache-first del usuario) =====
+    const histCard = document.getElementById('historial-card');
+    const histLista = document.getElementById('historial-lista');
+    const histInfo = document.getElementById('historial-info');
+    const histDesde = document.getElementById('hist-desde');
+    const histHasta = document.getElementById('hist-hasta');
+    let HISTORIAL = [];
+
+    // Inicializa el filtro en el mes actual (hora local).
+    const _fmtFecha = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    (function initFechas() {
+      const hoy = new Date();
+      histDesde.value = _fmtFecha(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
+      histHasta.value = _fmtFecha(hoy);
+    })();
+
+    async function cargarHistorial() {
+      try {
+        const params = new URLSearchParams();
+        if (histDesde.value) params.set('desde', histDesde.value);
+        if (histHasta.value) params.set('hasta', histHasta.value);
+        const { historial, historial_max } = await api('/api/analisis/historial?' + params.toString());
+        HISTORIAL = historial;
+        if (historial_max === 0) { histCard.classList.add('hidden'); return; } // plan sin historial
+        histCard.classList.remove('hidden');
+        histInfo.textContent = historial_max === null
+          ? `${historial.length} en el rango · guardado ilimitado`
+          : `${historial.length} en el rango · máx ${historial_max}`;
+        histLista.innerHTML = historial.length
+          ? historial.map((h, i) => {
+              const sm = h.resultado && h.resultado.semaforo ? String(h.resultado.semaforo).toLowerCase() : '';
+              const dot = ['verde', 'amarillo', 'rojo'].includes(sm) ? `<span class="sem-pt sem-pt-${sm}" style="margin-right:6px"></span>` : '';
+              return `
+              <div class="row" style="gap:8px">
+                <button class="btn btn-ghost" style="flex:1;justify-content:space-between" data-ver="${i}">
+                  <span>${dot}🛒 ${h.consulta}</span>
+                  <span class="muted" style="font-size:12px">${(h.creado_en || '').slice(0, 10)}</span>
+                </button>
+                <button class="btn btn-danger btn-sm" data-del="${h.id}" data-nombre="${(h.consulta || '').replace(/"/g, '&quot;')}" title="Eliminar">🗑️</button>
+              </div>`;
+            }).join('')
+          : '<p class="muted" style="font-size:13px">No hay productos guardados en este rango.</p>';
+      } catch { histCard.classList.add('hidden'); }
+    }
+    histLista.addEventListener('click', (e) => {
+      const del = e.target.closest('[data-del]');
+      if (del) { pedirBorrado(del.dataset.del, del.dataset.nombre); return; }
+      const ver = e.target.closest('[data-ver]');
+      if (ver) {
+        const h = HISTORIAL[Number(ver.dataset.ver)];
+        if (h) { pintarResultado(h.resultado, h.consulta, true); cont.scrollIntoView({ behavior: 'smooth' }); }
+      }
+    });
+    histDesde.onchange = cargarHistorial;
+    histHasta.onchange = cargarHistorial;
+    document.getElementById('btn-hist-todos').onclick = () => { histDesde.value = ''; histHasta.value = ''; cargarHistorial(); };
+
+    // Modal de confirmación de borrado
+    const modalConfirm = document.getElementById('modal-confirm');
+    let idABorrar = null;
+    function pedirBorrado(id, nombre) {
+      idABorrar = id;
+      document.getElementById('confirm-texto').textContent = `Se quitará "${nombre}" de tus productos guardados.`;
+      modalConfirm.style.display = 'grid';
+    }
+    function cerrarConfirm() { modalConfirm.style.display = 'none'; idABorrar = null; }
+    document.getElementById('confirm-cancelar').onclick = cerrarConfirm;
+    modalConfirm.onclick = (e) => { if (e.target === modalConfirm) cerrarConfirm(); };
+    document.getElementById('confirm-ok').onclick = async () => {
+      if (!idABorrar) return;
+      try { await api('/api/analisis/' + idABorrar, { method: 'DELETE' }); }
+      catch (err) { alert(err.error || 'No se pudo eliminar.'); }
+      cerrarConfirm();
+      cargarHistorial();
+    };
+
+    cargarHistorial();
+  </script>
+</body>
+</html>

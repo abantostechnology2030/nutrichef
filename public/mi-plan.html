@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Mi suscripcion</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Mi suscripción</h2>
+      </header>
+
+      <div class="content stack">
+        <!-- Aviso paywall -->
+        <div class="card hidden" id="aviso-paywall" style="border-color:#ffd2d2;background:var(--primary-soft)">
+          <h3 style="color:var(--primary-dark)" id="aviso-titulo">🔒 Agotaste tus analisis gratuitos</h3>
+          <p class="muted" id="aviso-texto">Elige un plan para seguir analizando productos sin límites.</p>
+        </div>
+
+        <!-- Estado actual -->
+        <div class="card">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px">
+            <div>
+              <h3>Tu plan actual</h3>
+              <p class="muted" id="estado-texto">Cargando…</p>
+            </div>
+            <div id="estado-badge"></div>
+          </div>
+          <div id="estado-renovacion" style="margin-top:10px"></div>
+        </div>
+
+        <!-- Pago pendiente -->
+        <div class="card hidden" id="pago-pendiente" style="border-color:#ffe2b8;background:var(--amber-soft)">
+          <h3 style="color:var(--amber)">⏳ Pago en revisión</h3>
+          <p class="muted">Recibimos tu comprobante para el plan <b id="plan-pendiente"></b> (operación <b id="op-pendiente"></b>). El administrador lo revisará y lo activará pronto.</p>
+        </div>
+
+        <!-- Selección de plan + pago -->
+        <div id="checkout" class="grid grid-2">
+          <!-- Planes disponibles -->
+          <div class="stack">
+            <h3>Elige tu plan</h3>
+            <div id="lista-planes" class="stack"></div>
+          </div>
+
+          <!-- Pago Yape -->
+          <div class="card yape-box">
+            <h3 style="margin-bottom:6px">Paga con Yape</h3>
+            <p class="muted" id="resumen-plan" style="margin-bottom:12px">Selecciona un plan</p>
+            <div class="yape-qr" id="yape-qr"><div><div style="font-size:40px">📱</div><b>YAPE</b></div></div>
+            <p>Yapea al número<br><b style="font-size:20px" id="yape-numero">---</b></p>
+            <p class="muted" id="yape-titular" style="margin-bottom:18px"></p>
+
+            <form id="form-pago">
+              <div id="alerta-pago" class="alert"></div>
+              <input type="hidden" id="plan-id" />
+              <div class="field">
+                <label>Número de operación del Yape</label>
+                <input type="text" id="numero-operacion" placeholder="Ej: 01234567" />
+              </div>
+              <div class="field">
+                <label>Captura del comprobante</label>
+                <input type="file" id="comprobante" accept="image/*" class="hidden" />
+                <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-comprobante">📎 Elegir archivo</button>
+                  <span class="muted" id="comprobante-nombre" style="font-size:13px">Ningún archivo seleccionado</span>
+                </div>
+              </div>
+              <button class="btn btn-block" type="submit" id="btn-pago" disabled>Enviar comprobante</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Historial de pagos del usuario -->
+        <div class="card">
+          <h3 style="margin-bottom:12px">Mis pagos</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Fecha</th><th>Plan</th><th>Operación</th><th>Monto</th><th>Estado</th></tr></thead>
+              <tbody id="tbody-mis-pagos"><tr><td colspan="5" class="muted">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('suscripcion');
+    activarMenuMovil();
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('paywall')) document.getElementById('aviso-paywall').classList.remove('hidden');
+    if (params.get('upgrade')) {
+      const a = document.getElementById('aviso-paywall'); a.classList.remove('hidden');
+      document.getElementById('aviso-titulo').textContent = '✨ Función Premium';
+      document.getElementById('aviso-texto').textContent = 'Esa función está disponible en planes superiores. Elige uno para activarla.';
+    }
+
+    const checkout = document.getElementById('checkout');
+    const pendienteBox = document.getElementById('pago-pendiente');
+    const lista = document.getElementById('lista-planes');
+    const fmt = (n) => Number(n).toFixed(2);
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const fmtFecha = (iso) => { const [y, m, d] = iso.split('-'); return `${parseInt(d, 10)} ${MESES[+m - 1]} ${y}`; };
+    let seleccionado = null;
+
+    // Un limite en NULL = ilimitado ; 0 = no incluido ; N = el tope.
+    const limite = (v, uno, muchos) =>
+      v === null ? `${muchos} ilimitad${muchos.endsWith('s') ? 'os' : 'o'}`
+        : (Number(v) === 0 ? `— Sin ${muchos}` : `${v} ${Number(v) === 1 ? uno : muchos}`);
+
+    function tarjetaPlan(p) {
+      const filas = [
+        p.analisis === null ? 'Analisis ilimitados' : `${p.analisis} analisis de producto`,
+        limite(p.historial_max, 'producto guardado', 'productos guardados'),
+        p.incluye_planificador ? '✅ Plan de comidas familiar' : '— Sin plan de comidas',
+        limite(p.semanas_max, 'semana programable', 'semanas programables'),
+        // La unidad de generacion es el DIA (3 platos), no el menu semanal: el Free trae 7
+        // (una por dia). Decir "7 menus IA por semana" prometeria 7x lo que da.
+        //
+        // No usa limite() porque este concuerda el "ilimitado" mirando la ULTIMA letra de
+        // la frase, y esta termina en "semana": daba "menus IA por semana ilimitado".
+        p.generaciones_max === null
+          ? 'Dias con IA ilimitados'
+          : Number(p.generaciones_max) === 0
+            ? '— Sin generacion con IA'
+            : `${p.generaciones_max} ${Number(p.generaciones_max) === 1 ? 'dia generado' : 'dias generados'} con IA por semana`,
+        limite(p.platos_max, 'plato guardado', 'platos guardados'),
+      ];
+      return `
+        <label class="card plan-opcion" data-id="${p.id}" style="cursor:pointer;display:block">
+          <div class="row" style="justify-content:space-between">
+            <div>
+              <div class="row" style="gap:8px"><input type="radio" name="plan" value="${p.id}"> <b style="font-size:17px">${p.nombre}</b></div>
+              <p class="muted" style="margin:6px 0 0">${filas.join('<br>')}</p>
+            </div>
+            <div class="precio" style="font-size:26px">S/ ${fmt(p.precio)}</div>
+          </div>
+        </label>`;
+    }
+
+    function seleccionar(p) {
+      seleccionado = p;
+      document.getElementById('plan-id').value = p.id;
+      document.getElementById('resumen-plan').innerHTML = `Plan <b>${p.nombre}</b> · S/ ${fmt(p.precio)}`;
+      document.getElementById('btn-pago').disabled = false;
+      document.querySelectorAll('.plan-opcion').forEach((el) => {
+        const on = Number(el.dataset.id) === p.id;
+        el.style.borderColor = on ? 'var(--primary)' : 'var(--line)';
+        el.querySelector('input').checked = on;
+      });
+    }
+
+    async function cargar() {
+      const info = await api('/api/pagos/info');
+      document.getElementById('yape-numero').textContent = info.yape_numero;
+      document.getElementById('yape-titular').textContent = info.yape_titular || '';
+
+      const qrBox = document.getElementById('yape-qr');
+      if (info.yape_qr) {
+        qrBox.style.background = '#fff';
+        qrBox.innerHTML = `<img src="${info.yape_qr}" alt="QR de Yape" style="width:100%;height:100%;object-fit:contain;border-radius:16px" />`;
+      }
+
+      document.getElementById('estado-texto').textContent = info.ilimitado
+        ? `Plan ${info.plan_actual} · acceso ilimitado.`
+        : `Plan ${info.plan_actual} · ${info.analisis_restantes} analisis restantes`;
+      document.getElementById('estado-badge').innerHTML = info.ilimitado
+        ? `<span class="badge badge-premium">⭐ ${info.plan_actual}</span>`
+        : `<span class="badge badge-free">🎁 ${info.plan_actual}</span>`;
+
+      // Renovacion del plan de pago
+      const ren = document.getElementById('estado-renovacion');
+      if (info.plan_expira) {
+        const d = info.dias_restantes;
+        const urgente = d != null && d <= 5;
+        ren.innerHTML = `<div class="${urgente ? 'alert show alert-error' : ''}" style="${urgente ? '' : 'font-size:14px;color:var(--muted)'}">
+          📅 Tu plan se renueva el <b>${fmtFecha(info.plan_expira)}</b> — te queda${d === 1 ? '' : 'n'} <b>${d}</b> día${d === 1 ? '' : 's'}.${urgente ? ' Renueva con un nuevo pago para no volver al plan Free.' : ''}</div>`;
+      } else {
+        ren.innerHTML = '';
+      }
+
+      if (info.pago_pendiente) {
+        checkout.classList.add('hidden');
+        pendienteBox.classList.remove('hidden');
+        document.getElementById('op-pendiente').textContent = info.pago_pendiente.numero_operacion;
+        document.getElementById('plan-pendiente').textContent = info.pago_pendiente.plan_nombre || '';
+        return;
+      }
+
+      if (!info.planes.length) {
+        lista.innerHTML = '<div class="card muted">No hay planes de pago disponibles por ahora.</div>';
+        return;
+      }
+      lista.innerHTML = info.planes.map(tarjetaPlan).join('');
+      lista.querySelectorAll('.plan-opcion').forEach((el) => {
+        el.addEventListener('click', () => seleccionar(info.planes.find((p) => p.id === Number(el.dataset.id))));
+      });
+      seleccionar(info.planes[0]);
+    }
+    cargar();
+
+    // Historial de pagos del usuario
+    async function cargarMisPagos() {
+      const tb = document.getElementById('tbody-mis-pagos');
+      try {
+        const { pagos } = await api('/api/pagos/historial');
+        if (!pagos.length) { tb.innerHTML = '<tr><td colspan="5" class="muted">Todavía no tienes pagos.</td></tr>'; return; }
+        tb.innerHTML = pagos.map((p) => `
+          <tr>
+            <td style="font-size:12.5px">${p.creado_local || ''}</td>
+            <td>${p.plan_nombre || '—'}</td>
+            <td>${p.numero_operacion}</td>
+            <td>S/ ${Number(p.monto).toFixed(2)}</td>
+            <td><span class="badge badge-${p.estado}">${p.estado}</span></td>
+          </tr>`).join('');
+      } catch { tb.innerHTML = '<tr><td colspan="5" class="muted">No se pudo cargar.</td></tr>'; }
+    }
+    cargarMisPagos();
+
+    // Selector de archivo en español (el input nativo muestra "Choose file" segun el navegador).
+    const inputComp = document.getElementById('comprobante');
+    document.getElementById('btn-comprobante').onclick = () => inputComp.click();
+    inputComp.onchange = () => {
+      document.getElementById('comprobante-nombre').textContent = inputComp.files[0] ? inputComp.files[0].name : 'Ningún archivo seleccionado';
+    };
+
+    document.getElementById('form-pago').onsubmit = async (e) => {
+      e.preventDefault();
+      const al = document.getElementById('alerta-pago');
+      const btn = document.getElementById('btn-pago');
+      const comp = document.getElementById('comprobante').files[0];
+      const op = document.getElementById('numero-operacion').value.trim();
+      limpiarAlerta(al);
+      if (!seleccionado) { alerta(al, 'Selecciona un plan.'); return; }
+      if (!op || !comp) { alerta(al, 'Completa el número de operación y la captura.'); return; }
+
+      btn.disabled = true; btn.textContent = 'Enviando...';
+      try {
+        const fd = new FormData();
+        fd.append('plan_id', seleccionado.id);
+        fd.append('numero_operacion', op);
+        fd.append('comprobante', comp);
+        const res = await api('/api/pagos', { method: 'POST', body: fd, isForm: true });
+        alerta(al, res.mensaje, 'ok');
+        setTimeout(() => location.reload(), 1600);
+      } catch (err) {
+        alerta(al, err.error || 'No pudimos registrar el pago.');
+        btn.disabled = false; btn.textContent = 'Enviar comprobante';
+      }
+    };
+  </script>
+</body>
+</html>

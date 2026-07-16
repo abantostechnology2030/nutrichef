@@ -1,0 +1,380 @@
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+/* ===== NutriChefIA - Sistema de diseno (paleta de marca: verde + naranja) ===== */
+/* Los colores de marca NO son inventados: estan MUESTREADOS de archivos/logotipo.png
+   (histograma de los trazos de cada palabra), no elegidos a ojo. Si retocas el logo,
+   vuelve a muestrearlo en vez de aproximar:
+     "Nutri" y el eslogan -> #124819   "Chef" -> #ea6b02   "IA" -> #538e18
+   Antes habia aproximaciones (#1e6b2f / #f07d1a / #7ab829) que no estaban en el logo. */
+:root {
+  --primary: #124819;          /* verde oscuro de marca ("Nutri") */
+  --primary-dark: #0c3211;     /* hover: el mismo verde, mas oscuro */
+  --primary-bright: #ea6b02;   /* naranja de marca ("Chef"): acentos / gradientes */
+  --primary-soft: #e6efe7;     /* fondo suave: pills, nav activo */
+  --secondary: #ea6b02;        /* naranja (acento secundario: foco de inputs) */
+  --secondary-soft: #ffe7cf;   /* naranja claro */
+  --logo-green: #538e18;       /* verde de "IA" en el logo */
+  --ink: #1b2a1d;              /* texto principal (verde muy oscuro) */
+  --muted: #5c6b5e;            /* texto secundario */
+  --line: #dfe9dd;             /* borde verde suave */
+  --bg: #f5faf3;               /* fondo verde muy claro */
+  --white: #ffffff;
+  --green: #2e9e5b;            /* exito (semantico, independiente de la marca) */
+  --green-soft: #e4f6ea;
+  --amber: #b5780a;            /* advertencia */
+  --amber-soft: #fff3da;
+  /* Rojo semantico: errores y acciones destructivas. Antes reusaban --primary
+     porque la marca heredada era carmin; con la marca verde necesitan token propio. */
+  --danger: #c0392b;
+  --danger-soft: #fbe7e6;
+  --danger-line: #f4cdcb;
+  --radius: 24px;              /* cards (rounded-xl) */
+  --radius-btn: 14px;          /* botones / inputs (rounded-lg) */
+  --shadow: 0 4px 20px rgba(27, 42, 29, 0.07);
+  --shadow-sm: 0 2px 10px rgba(27, 42, 29, 0.06);
+  --sidebar-w: 256px;
+  --font: 'Plus Jakarta Sans', 'Inter', 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --font-head: 'Quicksand', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--bg);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+
+/* Titulos con Quicksand (redondeada, amigable); cuerpo con Plus Jakarta Sans */
+h1, h2, h3, h4, .brand, .stat .num, .precio { font-family: var(--font-head); letter-spacing: -0.01em; }
+
+/* ===== Botones ===== */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 20px; border-radius: var(--radius-btn); border: none; cursor: pointer;
+  font-size: 15px; font-weight: 700; font-family: inherit; transition: .15s ease;
+  background: var(--primary); color: #fff;
+}
+.btn:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.btn-block { width: 100%; }
+.btn-ghost { background: var(--white); color: var(--ink); border: 1px solid var(--line); }
+.btn-ghost:hover { background: var(--bg); }
+.btn-green { background: var(--green); }
+.btn-green:hover { background: #128a3e; }
+.btn-danger { background: #fff; color: var(--danger); border: 1px solid var(--danger-line); }
+.btn-danger:hover { background: var(--danger-soft); }
+.btn-sm { padding: 9px 14px; font-size: 13.5px; border-radius: 12px; }
+.btn-lg { padding: 17px 26px; font-size: 18px; }
+
+/* ===== Inputs ===== */
+.field { margin-bottom: 16px; }
+.field label { display: block; font-weight: 600; font-size: 13.5px; margin-bottom: 6px; color: var(--ink); }
+.input, .field input, .field textarea {
+  width: 100%; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: var(--radius-btn);
+  font-size: 15px; font-family: inherit; background: var(--white); transition: .15s;
+}
+/* Al enfocar, el borde pasa al color secundario (teal), segun el design system */
+.input:focus, .field input:focus, .field textarea:focus {
+  outline: none; border-color: var(--secondary); box-shadow: 0 0 0 3px var(--secondary-soft);
+}
+
+/* ===== Cards ===== */
+.card {
+  background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  border: 1px solid var(--line); padding: 24px;
+}
+/* Paneles destacados con fondo mas oscuro (controles principales) */
+.card-tint { background: #dceadd; border-color: #c7dcc9; }
+#lista-platos .result-section { background: #dceadd; border-color: #c7dcc9; }
+/* Cuadro "Nueva receta" con verde bajo */
+.card-verde { background: var(--green-soft); border-color: #c6e8d2; }
+
+/* ===== Badges ===== */
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 700; }
+.badge-free { background: var(--amber-soft); color: var(--amber); }
+.badge-premium { background: var(--green-soft); color: var(--green); }
+.badge-pendiente { background: var(--amber-soft); color: var(--amber); }
+.badge-aprobado { background: var(--green-soft); color: var(--green); }
+.badge-rechazado { background: var(--danger-soft); color: var(--danger); }
+
+/* ===== Alertas ===== */
+.alert { padding: 12px 16px; border-radius: 12px; font-size: 14px; margin-bottom: 16px; display: none; }
+.alert.show { display: block; }
+.alert-error { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-line); }
+.alert-ok { background: var(--green-soft); color: var(--green); border: 1px solid #bdebcd; }
+/* "trabajando": ni exito ni error. La IA tarda 20-30s y sin este aviso la app parece colgada. */
+.alert-info { background: var(--primary-soft); color: var(--primary-dark); border: 1px solid var(--line); }
+.alert-info::after { content: ''; display: inline-block; width: 1.1em; text-align: left;
+  animation: puntosAlert 1.2s steps(4, end) infinite; }
+@keyframes puntosAlert { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+
+/* ===== Layout autenticacion (login/registro) ===== */
+/* Fondo de marca hecho con CSS (verde de base + acentos naranja y verde claro).
+   Las imagenes bg-web-v8/bg-mobile-v1 se retiraron: eran arte de NutriIA (el
+   superheroe "N", con texto de loncheras) y mostraban otra marca en el login. */
+/* Los rgba() son los colores de marca en crudo (no se puede meter var() dentro de un
+   rgba): naranja #ea6b02 y verde "IA" #538e18. Si cambia la paleta, cambian aqui tambien. */
+.auth-wrap {
+  min-height: 100vh; display: grid; place-items: center; padding: 24px;
+  background-color: var(--primary-dark);
+  background-image:
+    radial-gradient(1100px 620px at 78% 12%, rgba(234, 107, 2, .40), transparent 62%),
+    radial-gradient(900px 560px at 12% 88%, rgba(83, 142, 24, .42), transparent 60%),
+    linear-gradient(150deg, #17591f 0%, #0c3211 100%);
+}
+.auth-card { width: 100%; max-width: 420px; }
+.auth-card .brand { text-align: center; margin-bottom: 8px; }
+.auth-card h1 { font-size: 22px; text-align: center; margin-bottom: 4px; }
+.auth-card .sub { text-align: center; color: var(--muted); margin-bottom: 24px; font-size: 14px; }
+.auth-switch { text-align: center; margin-top: 18px; color: var(--muted); font-size: 14px; }
+.auth-switch a { color: var(--primary); font-weight: 600; }
+
+/* ===== Marca ===== */
+.brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; }
+.brand .logo { width: 34px; height: 34px; border-radius: 10px; background: var(--primary);
+  color: #fff; display: grid; place-items: center; font-size: 18px; }
+.brand .logo-em { font-style: normal; }
+/* Logo de marca (imagen logo.png) en sidebar y login */
+.brand-logo { display: block; height: auto; width: 100%; max-width: 216px; }
+.auth-card .brand-logo { width: 86%; max-width: 280px; margin: 2px auto 8px; }
+
+/* ===== Shell con sidebar (app autenticada) ===== */
+.shell { display: flex; min-height: 100vh; }
+.sidebar {
+  width: var(--sidebar-w); background: var(--white); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; padding: 20px 16px; position: fixed; top: 0; bottom: 0; left: 0; z-index: 30;
+  transition: transform .25s ease;
+}
+.sidebar .brand { padding: 8px 10px 20px; }
+.nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.nav a {
+  display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 12px;
+  color: var(--muted); font-weight: 600; font-size: 14.5px;
+}
+.nav a .ic { font-size: 18px; width: 22px; text-align: center; }
+.nav a:hover { background: var(--bg); color: var(--ink); }
+.nav a.active { background: var(--primary-soft); color: var(--primary); }
+.sidebar-foot { border-top: 1px solid var(--line); padding-top: 14px; }
+.userbox { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
+.avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--primary); color: #fff;
+  display: grid; place-items: center; font-weight: 700; flex-shrink: 0; }
+.userbox .meta { overflow: hidden; }
+.userbox .meta b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.userbox .meta span { font-size: 12px; color: var(--muted); }
+
+.main { flex: 1; margin-left: var(--sidebar-w); display: flex; flex-direction: column; min-width: 0; }
+.topbar { background: var(--white); border-bottom: 1px solid var(--line); padding: 14px 28px;
+  display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 20; }
+.topbar h2 { font-size: 25px; font-weight: 800; }
+.topbar .spacer { flex: 1; }
+.hamb { display: none; background: none; border: none; font-size: 24px; cursor: pointer; color: var(--ink); }
+.content { padding: 28px; max-width: 1080px; width: 100%; margin: 0 auto; }
+
+/* ===== Pill de analisis restantes ===== */
+.analisis-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--primary-soft);
+  color: var(--primary-dark); padding: 7px 14px; border-radius: 999px; font-weight: 700; font-size: 13.5px; }
+
+/* ===== Grid utilidades ===== */
+.grid { display: grid; gap: 18px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.stack { display: flex; flex-direction: column; gap: 18px; }
+.row { display: flex; gap: 12px; align-items: center; }
+.muted { color: var(--muted); }
+.center { text-align: center; }
+
+/* ===== Escaner ===== */
+.scan-tabs { display: flex; gap: 8px; margin-bottom: 18px; background: var(--bg); padding: 6px; border-radius: 14px; }
+.scan-tabs button { flex: 1; padding: 20px 10px; border: none; background: transparent; border-radius: 10px;
+  font-weight: 600; font-size: 14px; cursor: pointer; color: var(--muted); font-family: inherit; }
+.scan-tabs button.active { background: var(--white); color: var(--primary); box-shadow: var(--shadow-sm); }
+
+.reco-foto { background: var(--amber-soft); color: var(--amber); border: 1px solid #ffe2b8;
+  border-radius: 12px; padding: 11px 14px; font-size: 13.5px; line-height: 1.5; margin-bottom: 14px; }
+
+.dropzone { border: 2px dashed var(--line); border-radius: var(--radius); padding: 36px 20px; text-align: center;
+  cursor: pointer; transition: .15s; background: var(--bg); }
+.dropzone:hover, .dropzone.drag { border-color: var(--primary); background: var(--primary-soft); }
+.dropzone .big { font-size: 40px; margin-bottom: 8px; }
+.preview-img { max-width: 100%; max-height: 280px; border-radius: 12px; margin-top: 12px; }
+
+/* ===== Resultado IA ===== */
+.result-section { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--white); }
+.result-section + .result-section { margin-top: 14px; }
+.result-section h4 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin-bottom: 8px; }
+.result-section .ic { font-size: 22px; }
+.result-section p { color: #303a4d; }
+
+/* ===== Tabla ===== */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--line); font-size: 14px; }
+th { color: var(--muted); font-weight: 700; font-size: 12.5px; text-transform: uppercase; letter-spacing: .03em; }
+tbody tr:hover { background: var(--bg); }
+
+/* ===== Paywall / Yape ===== */
+.yape-box { text-align: center; }
+.yape-qr { width: 200px; height: 200px; border-radius: 16px; border: 1px solid var(--line);
+  display: grid; place-items: center; margin: 0 auto 14px; background: #5b21b6; color: #fff; }
+.precio { font-size: 38px; font-weight: 800; color: var(--ink); }
+.precio small { font-size: 16px; color: var(--muted); font-weight: 600; }
+
+/* ===== Loader ===== */
+.spinner { width: 38px; height: 38px; border: 4px solid var(--line); border-top-color: var(--primary);
+  border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== Stat cards (admin) ===== */
+.stat { display: flex; flex-direction: column; gap: 4px; }
+.stat .num { font-size: 30px; font-weight: 800; }
+.stat .lbl { color: var(--muted); font-size: 13.5px; font-weight: 600; }
+
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 25; }
+.overlay.show { display: block; }
+
+.hidden { display: none !important; }
+
+/* ===== Mascota decorativa (el chef) en distintas pantallas ===== */
+/* Mascota flotante del escaner. Sin uso hoy: la que habia (p1.png) era el superheroe "N"
+   de NutriIA y se retiro. Se conserva el estilo para el chef propio cuando exista. */
+.mascota { position: fixed; right: 14px; bottom: 66px; width: 128px; height: auto; z-index: 6;
+  pointer-events: none; filter: drop-shadow(0 6px 12px rgba(0,0,0,.22)); }
+@media (max-width: 760px) { .mascota { width: 84px; bottom: 74px; right: 8px; } }
+
+/* ===== Modal de confirmacion / dialogo ===== */
+.modal-back { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50; place-items: center; padding: 20px; }
+.modal-back.show { display: grid; }
+.modal { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); max-width: 460px; width: 100%; padding: 24px; animation: pop .15s ease; }
+.modal h3 { margin-bottom: 10px; font-size: 18px; }
+.modal .modal-body { color: var(--muted); margin-bottom: 18px; }
+.modal .row { justify-content: flex-end; }
+@keyframes pop { from { transform: scale(.96); opacity: .6; } to { transform: scale(1); opacity: 1; } }
+
+/* ===== Plan de comidas (calendario 7 dias x 3 momentos) ===== */
+.dia-fila { border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: var(--white); }
+.dia-fila.hoy { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.dia-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.dia-nombre { font-weight: 800; font-size: 15px; }
+.dia-fecha { color: var(--muted); font-weight: 500; font-size: 12.5px; }
+
+/* Casilla de comida: siempre ocupa lo mismo, este llena o vacia, para que el
+   calendario no "salte" al generar o vaciar una casilla. */
+.casilla { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: #fdfefc;
+  display: flex; flex-direction: column; gap: 6px; min-height: 118px; }
+.casilla.vacia { border-style: dashed; align-items: center; justify-content: center; text-align: center; }
+.casilla.cocinado { background: var(--green-soft); border-color: #bfe6cd; }
+.casilla-momento { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.casilla-plato { font-weight: 700; font-size: 13.5px; line-height: 1.3; }
+.casilla-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto; }
+.casilla-acciones { display: flex; gap: 4px; }
+.casilla-acciones .btn { padding: 3px 8px; font-size: 11px; }
+
+.tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; background: #eef0f3; color: #4a5568; }
+.tag-falta { background: var(--amber-soft); color: var(--amber); }
+.tag-ok { background: var(--green-soft); color: var(--green); }
+/* Semaforo nutricional del plato: reusa la paleta del escaner (sem-*-bn) en tamaño de
+   tag. Es el mismo lenguaje visual verde/ambar/rojo, y como el resto de sem-*, no
+   depende de la paleta de marca. */
+.tag .sem-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tag.sem-verde-bn, .tag.sem-amarillo-bn, .tag.sem-rojo-bn { border: 1px solid; }
+
+@media (max-width: 860px) { .dia-fila .grid-3 { grid-template-columns: 1fr; } }
+
+/* ===== Chips de categoria de ingrediente ===== */
+/* Una clase por categoria de CATEGORIAS_ING (db.js) / CAT_INFO (api.js). */
+.cat-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  background: #eef0f3; color: #4a5568; } /* neutro por defecto: una categoria nueva nunca sale rota */
+.cat-abarrote   { background: #f4ecd8; color: #8a6a2b; } /* trigo */
+.cat-verdura    { background: #e2f5e2; color: #2f7a35; } /* verde */
+.cat-fruta      { background: #fff6cc; color: #8a6d00; } /* dorado */
+.cat-carne      { background: #fde4e4; color: #b03636; } /* rojo */
+.cat-pescado    { background: #e3f4fb; color: #1f6f99; } /* celeste */
+.cat-lacteo     { background: #eef1fb; color: #4a5bb5; } /* azul suave */
+.cat-huevo      { background: #fff0d9; color: #a86a12; } /* ambar */
+.cat-legumbre   { background: #efe6dc; color: #7a5236; } /* marron */
+.cat-condimento { background: #f0e9ff; color: #7c3aed; } /* lila */
+.cat-bebida     { background: #e0f7f4; color: #14776d; } /* teal */
+.cat-otro       { background: #eef0f3; color: #4a5568; } /* gris */
+
+/* ===== Pills seleccionables (armador de receta) ===== */
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--white); cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--ink); transition: .12s; user-select: none; }
+.pill:hover { border-color: var(--primary); }
+.pill.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-dark); }
+.pill .x { font-weight: 800; opacity: .7; }
+
+/* ===== Semaforo de evaluacion de producto (colores pastel) ===== */
+.card.sem-verde    { background: #f1faf4; border-color: #c6e8d2; }
+.card.sem-amarillo { background: #fffaf0; border-color: #f4e3bb; }
+.card.sem-rojo     { background: #fdf3f2; border-color: #f4cdcb; }
+.sem-banner { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 12px;
+  font-weight: 700; font-size: 14.5px; margin-bottom: 14px; border: 1px solid transparent; }
+.sem-banner .sem-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+.sem-verde-bn    { background: #e6f6ec; color: #1d7a44; border-color: #c6e8d2; }
+.sem-verde-bn    .sem-dot { background: #34b36a; }
+.sem-amarillo-bn { background: #fdf4e1; color: #a86a05; border-color: #f4e3bb; }
+.sem-amarillo-bn .sem-dot { background: #e8a93a; }
+.sem-rojo-bn     { background: #fbe7e6; color: #c0392b; border-color: #f4cdcb; }
+.sem-rojo-bn     .sem-dot { background: #e05b50; }
+/* Veredicto del semaforo: luz circular + mensaje, con el personaje al costado (derecha).
+   Hoy NO hay personaje (los de NutriIA se retiraron): .sem-luz-info queda centrada sola. */
+.sem-luz { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; margin: 6px 0 20px; }
+.sem-luz-info { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+/* Sin uso hoy: el sitio reservado para el chef propio en sus 3 versiones (si/regular/no).
+   El banner de app.html ya lo pinta solo si SEM trae "img". */
+.sem-personaje { width: 200px; height: 200px; object-fit: contain; flex-shrink: 0; filter: drop-shadow(0 6px 12px rgba(0,0,0,.18)); }
+.sem-luz .circulo { width: 104px; height: 104px; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; font-weight: 800; font-size: 46px; line-height: 1;
+  animation: prenderLuz .5s ease, latidoLuz 2.6s ease-in-out .5s infinite; }
+.sem-luz .etiqueta { font-family: var(--font-head); font-weight: 800; font-size: 18px; }
+.sem-luz.verde    .circulo { background: #2e9e5b; box-shadow: 0 0 0 8px rgba(46,158,91,.16), 0 0 36px 8px rgba(46,158,91,.55); }
+.sem-luz.verde    .etiqueta { color: #1d7a44; }
+.sem-luz.amarillo .circulo { background: #eaa61f; box-shadow: 0 0 0 8px rgba(234,166,31,.16), 0 0 36px 8px rgba(234,166,31,.55); }
+.sem-luz.amarillo .etiqueta { color: #a86a05; }
+.sem-luz.rojo     .circulo { background: #e0453a; box-shadow: 0 0 0 8px rgba(224,69,58,.16), 0 0 36px 8px rgba(224,69,58,.55); }
+.sem-luz.rojo     .etiqueta { color: #c0392b; }
+@keyframes prenderLuz { from { opacity: .15; transform: scale(.75); filter: brightness(.5); } to { opacity: 1; transform: scale(1); filter: brightness(1); } }
+@keyframes latidoLuz { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.14); } }
+/* Punto de color en el historial */
+.sem-pt { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.sem-pt-verde { background: #34b36a; } .sem-pt-amarillo { background: #e8a93a; } .sem-pt-rojo { background: #e05b50; }
+
+/* ===== Lonchera grafica (caja que se llena) ===== */
+.lonchera-box { border: 2px solid var(--line); border-radius: 14px; padding: 12px; background: var(--bg); }
+.lonchera-box.lleno { border-color: var(--green); background: var(--green-soft); }
+.slot { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px dashed var(--line);
+  background: var(--white); font-size: 13px; margin-bottom: 6px; opacity: .55; }
+.slot.ok { opacity: 1; border-style: solid; }
+.slot .slot-ic { font-size: 18px; width: 22px; text-align: center; }
+.dia-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: var(--white); }
+.dia-card h4 { font-size: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+
+/* ===== Pie de pagina ===== */
+.site-footer { background: var(--logo-green); color: #ffffff; text-align: center;
+  padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: auto; }
+.site-footer a { color: #fff; font-weight: 700; text-decoration: underline; }
+.site-footer .marca { font-weight: 700; }
+/* En la pantalla de login el footer queda al pie de la columna */
+.auth-page { min-height: 100vh; display: flex; flex-direction: column; }
+.auth-page .auth-wrap { flex: 1; min-height: 0; }
+
+/* ===== Responsive ===== */
+@media (max-width: 860px) {
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: 1fr; }
+  .grid-2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .hamb { display: block; }
+  .content { padding: 18px; }
+}
