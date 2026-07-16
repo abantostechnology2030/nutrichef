@@ -44,8 +44,9 @@ npm start          # node src/server.js
 npm run dev        # node --watch src/server.js  <- usar este al desarrollar
 
 npm run smoke        # smoke test de hogar + despensa (gratis, ~10s, servidor arriba)
-npm run smoke:platos # smoke test de la biblioteca + tope del plan (gratis, ~5s)
-npm run smoke:plan   # smoke test del calendario + generacion IA REAL (~$0.01, ~40s)
+npm run smoke:platos # smoke test de la biblioteca + el calendario sin IA (gratis, ~15s)
+npm run smoke:plan   # calendario + generar + verificar con IA REAL (4 llamadas, ~60s)
+                     #   -> $0.012 con gemini | $0.047 con claude  (segun ai_prioridad!)
 ```
 
 No hay linter ni build. Los tests son **smoke tests de extremo a extremo** (jsdom contra
@@ -377,11 +378,18 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 - **Basura en la despensa = basura en el menú.** La IA usa lo que encuentre; un ingrediente de prueba olvidado genera platos reales alrededor de él.
 - **`sed` puede fallar en silencio.** Si editas con `sed`, verifica el resultado: di por hecho que un bloque se había insertado y no era así.
 
-## POR DÓNDE SEGUIR (pausa: 2026-07-16, fases 1-4 hechas)
+## POR DÓNDE SEGUIR (pausa: 2026-07-16 · fases 1-4 hechas · **EN PRODUCCIÓN**)
 
-> **Un frente abierto:** la **fase 5** (lista de faltantes + PDF). El **rebranding ya está
-> aplicado** (solo falta el arte propio de la mascota) y el **despliegue** está preparado
-> pero no ejecutado — ver Deuda y `DEPLOY.md`.
+> **La app es pública:** https://nutrichef.solucionesctec.com. Cualquier cambio que subas a
+> `main` y despliegues lo ven usuarios reales. Redeploy y trampas: `DEPLOY.md`.
+>
+> **Antes de tocar código, hay 3 cosas de operación pendientes** (ver Deuda): la contraseña
+> del admin sigue siendo `admin123` **y está en el repo**; el titular de Yape es un
+> placeholder (nadie puede pagarte); y la key de Gemini es **compartida con MedicaIA y
+> NutriIA**, las tres en producción.
+>
+> **Lo siguiente en producto es la fase 5** (lista de faltantes + PDF). Del rebranding solo
+> falta el arte propio de la mascota.
 
 > **La fase 4 se cerró el 2026-07-16.** El calendario ya tiene **las tres vías** para llenar
 > una casilla: *"✨ Proponer"* (la IA elige), *"✍️ Ya sé qué cocinar"* (la familia elige y la
@@ -432,9 +440,21 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
    `bloqueCobertura()`, y **las advertencias van primero y en rojo**: pueden decir que el
    plato lleva un alérgeno del hogar, y es lo más importante de esa pantalla.
 
-### Fase 5 — lista de faltantes + PDF
-- `platos.faltantes` **ya se llena** en cada generación (medido: ~23 faltantes distintos en una semana).
-- Falta agregar: `GET /api/plan/faltantes?semana=` que una los `faltantes` de los 21 platos + los de la verificación (`plan_comidas.cobertura`), deduplicados.
+### Fase 5 — lista de faltantes + PDF (lo siguiente)
+Es el cierre de la promesa: *"los faltantes de ambas direcciones se consolidan en **una sola
+lista de compras**"* (ver "La inversión conceptual"). **Las dos fuentes ya existen y se
+llenan solas** — falta unirlas:
+
+1. **`platos.faltantes`** — lo que la IA marcó como no disponible al generar (~23 distintos por semana medidos).
+2. **`plan_comidas.cobertura.faltantes`** — lo que arrojó *verificar* un plato propuesto por el usuario (fase 4).
+
+- Falta: **`GET /api/plan/faltantes?semana=`** que una ambas, **deduplicadas** (ojo: la misma
+  cebolla aparece en varios platos, y puede venir por las dos vías con distinta grafía).
+- Sería el sitio natural para cruzarlas con `ingredientes_catalogo` y agruparlas por
+  categoría — la lista se usa **en el mercado**, y ordenarla por pasillo (verduras, carnes,
+  abarrotes) vale más que ordenarla por plato.
+- `public/js/vendor/jspdf.umd.min.js` ya está vendorizado (viene de NutriIA) para el PDF.
+- **No hace falta IA**: son datos que ya están en la BD. Que no se te cuele una llamada.
 - `public/js/vendor/jspdf.umd.min.js` **ya está vendorizado** (viene de NutriIA) para el PDF.
 
 ### Fase 6 — admin
@@ -442,7 +462,7 @@ Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `gener
 
 ## Deuda y avisos
 
-- **⚠️ Crédito Gemini compartido:** el `.env` se copió de NutriIA, así que la `GEMINI_API_KEY` es **la misma de MedicaIA y NutriIA** — el crédito es compartido entre **tres** apps y esta es, de lejos, la más hambrienta de tokens. Considerar una key propia antes de producción.
+- **🔥 Crédito Gemini compartido — AHORA EN PRODUCCIÓN.** La `GEMINI_API_KEY` es **la misma de MedicaIA y NutriIA** (verificado: bytes idénticos), y producción corre con **prioridad Gemini**. Si NutriChefIA se come el crédito, **tumba también a las otras dos apps** — y al revés. Ya no es un "considerarlo antes de producción": es una dependencia viva entre tres apps públicas. Sacar una key propia. El panel admin (`/api/admin/resumen`) avisa al 20% de crédito.
 - **🎨 Rebranding: ✅ HECHO (2026-07-15). Falta solo la mascota propia.**
   - **La paleta sale MUESTREADA del logo**, no elegida a ojo: verde **`#124819`** ("Nutri" y el eslogan), naranja **`#ea6b02`** ("Chef"), verde **`#538e18`** ("IA"). Están en las variables al inicio de `style.css` + los `rgba()` del fondo del login (`.auth-wrap`, donde no se puede usar `var()`). Si retocas el logo, **vuelve a muestrearlo**; los `~#1e6b2f / ~#f07d1a / ~#7ab829` que figuraban aquí antes eran aproximaciones a ojo que no existían en el logotipo.
   - `theme-color` (8 páginas) y `manifest.webmanifest` → `#124819`. `logo.png`, `favicon.png`, `icon-192/512.png` ya son los de NutriChefIA.
@@ -450,9 +470,9 @@ Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `gener
   - ⚠️ **Falta arte propio de la mascota (el chef).** Se retiró el de NutriIA porque mostraba **otra marca al usuario**: `p1.png` (el superhéroe del escudo "N") flotaba en el escáner y `si/regular/no.png` (los 3 personajes del semáforo) llevaban el logo "N" en el pecho. También se borraron `bg-web-v8/bg-mobile-v1.png` (arte de NutriIA que anunciaba *loncheras*, ya sin uso en el CSS) y `p2/p3.png` (huérfanos). Los originales siguen en `C:\app-nutriia\public\img\` si hicieran falta.
     - **Los sitios están reservados y estilados**: `.mascota` en `style.css` + el hueco en `app.html`, y `.sem-personaje` + el campo `img` del objeto `SEM` (el banner ya lo pinta **si existe**). Con el arte listo, es rellenar, no rediseñar.
     - Hace falta el chef en **3 versiones** (sí / regular / no) para el semáforo. `archivos/favicon.png` sirve de base para la mascota flotante, pero **tiene fondo blanco sólido** (0% alfa) y el chef lleva **gorro y casaca blancos**: un "quitar el blanco" global lo agujerearía. Hay que recortarlo con relleno desde los bordes, o pedir el arte con transparencia.
-  - ⚠️ **`archivos/` está en `.gitignore`** (heredado de NutriIA): los originales de marca no se versionarían. Revisar antes de crear el repo.
-- **Credenciales admin** por defecto (`admin@nutrichefia.pe`/`admin123`): cambiar contraseña y datos de Yape (placeholders).
+  - `archivos/` **SÍ se versiona** (se sacó del `.gitignore` heredado de NutriIA): ahí viven los únicos originales de marca y estaban solo en un disco.
+- **🔓 Credenciales admin en PRODUCCIÓN: `admin@nutrichefia.pe` / `admin123`.** Esa contraseña es la del `.env.example` **que está en el repo**: quien lo vea, la sabe. El sitio es público y de ahí cuelgan los pagos Yape, los planes y la config de IA. **Cambiarla.**
+- **🧾 El titular de Yape es un placeholder** ("NutriChefIA Peru"). El número sí es real (976901977). Vive en la tabla `config`, no en el `.env`: se cambia desde el panel admin. Con un titular falso nadie puede pagar.
 - **`platos.region`** se llena al generar pero no se usa en ninguna consulta todavía.
 - **Despliegue: ✅ EN PRODUCCIÓN** desde 2026-07-16 → **https://nutrichef.solucionesctec.com** (PM2 `nutrichefia`, puerto 4005, SSL con renovación automática). Repo: `github.com/abantostechnology2030/nutrichef`. Redeploy y trampas del día del despliegue en `DEPLOY.md`.
-  - ⚠️ Antes de `git init`: **`archivos/` está gitignored** y ahí están los únicos originales de marca (`logotipo.png`, `favicon.png`). Decidir si se versionan o se mueven a `public/img/` con el rebranding.
-- **Cobertura de pruebas:** los smoke tests no tocan el escáner con imagen, el pago Yape ni el panel admin.
+- **Cobertura de pruebas:** los smoke tests **no** tocan el escáner con imagen, el pago Yape ni el panel admin. Tampoco hay prueba del **fallback entre proveedores** — y ahí ya se escondió un bug meses (ver el aviso de Gemini vs Claude arriba).

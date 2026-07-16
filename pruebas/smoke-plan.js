@@ -1,9 +1,11 @@
 // Smoke test de plan.html: carga el calendario en un DOM real (jsdom) y lo maneja
 // contra el servidor de verdad. Ver pruebas/README.md.
 //
-// ⚠️ GASTA DINERO: dispara DOS generaciones de dia REALES (~$0.005 c/u con Gemini, ~$0.01
-// en total) y tarda ~30-40s. Usa la semana SEMANA (futura y vacia) para no pisar el plan
-// de prueba.
+// ⚠️ GASTA DINERO: 4 llamadas REALES a la IA (dia + plato + 2 verificaciones), ~60s.
+//   $0.012 con gemini  |  $0.047 con claude  <- depende de ai_prioridad en la BD.
+// El local suele estar en prioridad claude: si vas a iterar sobre este test, ponlo en
+// gemini (setConfig('ai_prioridad','gemini')) o cada corrida cuesta 4x.
+// Usa la semana SEMANA (futura y vacia) para no pisar el plan de prueba.
 //
 // La segunda generacion no es un capricho: verifica LA invariante del planificador — que
 // generar un dia llena solo las casillas VACIAS y no pisa lo que ya estaba. Sin ella el
