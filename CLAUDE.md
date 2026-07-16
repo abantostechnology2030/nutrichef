@@ -63,7 +63,7 @@ el servidor real) — ver `pruebas/README.md`.
 
 **https://nutrichef.solucionesctec.com** desde 2026-07-16 (ver `DEPLOY.md`). Local: `http://localhost:3002`. Admin: `admin@nutrichefia.pe` / `admin123` — **cambiar la contraseña**.
 
-> ⚠️ **Producción NO corre con la misma IA que tu local.** Allá `ai_modo='ambos'` con **prioridad `gemini`** (~3,5 s por plato, ~$0.036/semana); en local la prioridad es `claude` (~30 s, ~$0.25/semana). Si comparas latencias o costos entre los dos, esa es la razón.
+> ⚠️ **Producción NO corre con la misma IA que tu local.** Allá `ai_modo='ambos'` con **prioridad `gemini`** (~3,5 s por plato, ~$0.036/semana); en local la prioridad es `claude` (~30 s, ~$0.14/semana con sonnet-5 en precio de lanzamiento). Si comparas latencias o costos entre los dos, esa es la razón.
 
 | Fase | Qué | Estado |
 |---|---|---|
@@ -261,24 +261,31 @@ dispara el botón "Analizar nutrición".
 
 **Generar día a día no salió más caro que la semana de un golpe** (~$0.028 vs $0.029 sin receta). El contexto se repite en cada llamada, pero la entrada de flash es ~8x más barata que la salida, y la salida total es la misma. La intuición de "7 llamadas cuestan 7x" es falsa aquí — **medido, no estimado**. La receta subió el día un **31%** ($0.0039 → $0.0051).
 
-> ### 🔥 El costo real depende de `ai_modo`, y hoy NO es el de esta tabla
-> La config de la BD está en **`ai_modo='ambos'` con `ai_prioridad='claude'`**: **Claude
-> atiende primero** y Gemini solo entra como fallback. El **mismo día**, medido con los dos:
+> ### 🔥 El costo real depende de `ai_modo`, y esa tabla es SOLO Gemini
+> **Producción corre con `ai_prioridad='gemini'`** (y por eso la tabla de arriba aplica ahí);
+> **el local está en `ai_prioridad='claude'`**. El **mismo día**, medido con los dos:
 >
-> | Proveedor | Tokens (in / out) | Un día | Una semana |
-> |---|---|---|---|
-> | Gemini flash | 1.823 / 1.825 | $0.0051 | ~$0.036 |
-> | **Claude sonnet (gateway)** | **4.197 / 1.540** | **$0.0357** | **~$0.25** |
+> | Proveedor | Tokens (in / out) | Un día | Una semana | vs Gemini |
+> |---|---|---|---|---|
+> | Gemini flash | 1.823 / 1.825 | $0.0051 | **$0.036** | — |
+> | claude-sonnet-5 (lanzamiento, hasta 31-ago-2026) | 4.197 / 1.540 | $0.0202 | **$0.142** | **4,0x** |
+> | claude-sonnet-5 (lista, desde 1-sep) | ídem | $0.0303 | $0.212 | 5,9x |
+> | claude-opus-4-8 | ídem | $0.0506 | $0.354 | 9,9x |
 >
-> **7x.** Y ojo con el detalle que engaña: Claude reporta **2,3x más tokens de entrada por
-> el mismo prompt** (4.197 vs 1.823) — su tokenizador es menos eficiente en español. Al
-> comparar mediciones, **mira siempre la columna `proveedor`**: aplicarle la tarifa de
-> Gemini a una fila de Claude da un costo 7x optimista. Ya me pasó.
+> **Dos cosas se multiplican:** (1) Claude cuenta **2,3x más tokens de entrada por el mismo
+> prompt** (4.197 vs 1.823) — su tokenizador es menos eficiente en español; y (2) su salida
+> cuesta 4-6x más por token ($10-15/M vs $2.50/M). Las cifras de Claude incluyen el **×0.85
+> del grupo "Claude Default"** del gateway (ver `.env.example`: el grupo es un multiplicador
+> de precio, no un modelo).
+>
+> ⚠️ **Al comparar mediciones, mira SIEMPRE la columna `proveedor`.** Aplicarle la tarifa de
+> Gemini a una fila de Claude da un costo ~7x optimista: ya me pasó, y de ahí salió un "×7"
+> que estuvo un tiempo en este archivo (era sonnet-4-6 a precio de lista y sin el ×0.85 del
+> grupo). **Si cambias de modelo o de grupo, recalcula** — no arrastres el múltiplo viejo.
 >
 > En la práctica se ha visto **caer a Gemini solo** (`[IA] fallo claude: ...JSON`): el
-> gateway devuelve JSON malformado a ratos y el fallback salva la llamada. O sea que el
-> costo real oscila entre $0.036 y $0.25 por semana **según esté el gateway**. Si el
-> objetivo es el costo, poner `ai_modo='gemini'` desde el admin.
+> gateway devuelve JSON malformado a ratos y el fallback salva la llamada. Si el objetivo es
+> el costo, `ai_prioridad='gemini'` (lo que ya hace producción) o `ai_modo='gemini'`.
 
 ### El cupo de generaciones — cómo y por qué
 - **1 generación = 1 llamada a la IA = 1 día (3 platos) o 1 plato suelto.** Cuesta lo mismo pedir 1 que 3: la llamada es la unidad. **Free = 7/semana**, o sea justo una por día para armar la semana completa.
