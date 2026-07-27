@@ -64,7 +64,7 @@ el servidor real) — ver `pruebas/README.md`.
 
 **https://nutrichef.solucionesctec.com** desde 2026-07-16 (ver `DEPLOY.md`). Local: `http://localhost:3002`. Admin: `admin@nutrichefia.pe` / `admin123` — **cambiar la contraseña**.
 
-> ⚠️ **Producción NO corre con la misma IA que tu local.** Allá `ai_modo='ambos'` con **prioridad `gemini`** (~3,5 s por plato, ~$0.036/semana); en local la prioridad es `claude` (~30 s, ~$0.14/semana con sonnet-5 en precio de lanzamiento). Si comparas latencias o costos entre los dos, esa es la razón.
+> ⚠️ **Local y producción corren con `ai_modo='gemini'`** (verificado en las dos BD el 2026-07-27): ~3,5 s por plato, ~$0.038–0.045/semana. **Sin fallback**: si Gemini falla, la llamada devuelve 502 en vez de caer a Claude. Con Claude de prioridad son ~30 s y ~$0.14/semana (sonnet-5 en precio de lanzamiento), unas 4x. La verdad vive en la tabla `config` de **cada** BD (`SELECT * FROM config WHERE clave LIKE 'ai_%'`), no en este archivo ni en el `.env`: si comparas latencias o costos entre entornos, mírala primero.
 
 | Fase | Qué | Estado |
 |---|---|---|
@@ -324,8 +324,9 @@ dispara el botón "Analizar nutrición".
 **Generar día a día no salió más caro que la semana de un golpe** (~$0.028 vs $0.029 sin receta). El contexto se repite en cada llamada, pero la entrada de flash es ~8x más barata que la salida, y la salida total es la misma. La intuición de "7 llamadas cuestan 7x" es falsa aquí — **medido, no estimado**. La receta subió el día un **31%** ($0.0039 → $0.0051).
 
 > ### 🔥 El costo real depende de `ai_modo`, y esa tabla es SOLO Gemini
-> **Producción corre con `ai_prioridad='gemini'`** (y por eso la tabla de arriba aplica ahí);
-> **el local está en `ai_prioridad='claude'`**. El **mismo día**, medido con los dos:
+> **Local y producción están en `ai_modo='gemini'`**, así que la tabla de arriba es la que
+> aplica hoy en los dos. La de abajo es la comparación del **mismo día** medido con ambos
+> proveedores, y sigue valiendo si alguien vuelve a poner Claude desde el admin:
 >
 > | Proveedor | Tokens (in / out) | Un día | Una semana | vs Gemini |
 > |---|---|---|---|---|
@@ -345,9 +346,10 @@ dispara el botón "Analizar nutrición".
 > que estuvo un tiempo en este archivo (era sonnet-4-6 a precio de lista y sin el ×0.85 del
 > grupo). **Si cambias de modelo o de grupo, recalcula** — no arrastres el múltiplo viejo.
 >
-> En la práctica se ha visto **caer a Gemini solo** (`[IA] fallo claude: ...JSON`): el
-> gateway devuelve JSON malformado a ratos y el fallback salva la llamada. Si el objetivo es
-> el costo, `ai_prioridad='gemini'` (lo que ya hace producción) o `ai_modo='gemini'`.
+> En la práctica se vio **caer a Gemini solo** (`[IA] fallo claude: ...JSON`): el gateway
+> devuelve JSON malformado a ratos y el fallback salvaba la llamada. ⚠️ **Con el
+> `ai_modo='gemini'` de hoy ese fallback ya no existe**: si Gemini falla, la llamada devuelve
+> 502. Es el precio de no pagar 4x — pero tenlo presente antes de diagnosticar un 502 raro.
 
 ### El cupo de generaciones — cómo y por qué
 - **1 generación = 1 llamada a la IA = 1 día (3 platos) o 1 plato suelto.** Cuesta lo mismo pedir 1 que 3: la llamada es la unidad. **Free = 7/semana**, o sea justo una por día para armar la semana completa.
