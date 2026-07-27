@@ -85,13 +85,14 @@ router.put('/', (req, res) => {
   const h = asegurarHogar(req.usuario.id);
   const b = req.body || {};
   db.prepare(
-    'UPDATE hogar SET nombre = ?, region = ?, ciudad = ?, dieta = ?, presupuesto = ?, notas = ? WHERE id = ?'
+    'UPDATE hogar SET nombre = ?, region = ?, ciudad = ?, dieta = ?, presupuesto = ?, semanas = ?, notas = ? WHERE id = ?'
   ).run(
     b.nombre !== undefined ? String(b.nombre).trim().slice(0, 60) || null : h.nombre,
     b.region !== undefined ? enLista(b.region, REGIONES, h.region) : h.region,
     b.ciudad !== undefined ? String(b.ciudad).trim().slice(0, 60) || null : h.ciudad,
     b.dieta !== undefined ? enLista(b.dieta, DIETAS, h.dieta) : h.dieta,
     b.presupuesto !== undefined ? enLista(b.presupuesto, PRESUPUESTOS, h.presupuesto) : h.presupuesto,
+    b.semanas !== undefined ? Math.max(1, Math.min(12, parseInt(b.semanas, 10) || 1)) : h.semanas,
     b.notas !== undefined ? String(b.notas).trim().slice(0, 400) || null : h.notas,
     h.id
   );

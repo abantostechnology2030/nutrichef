@@ -49,10 +49,12 @@
                  en la cabecera de cada dia del calendario. -->
             <div class="row" style="gap:8px;flex-wrap:wrap">
               <button class="btn btn-ghost btn-sm hidden" id="btn-detallar">🍳 Completar platos</button>
+              <button class="btn btn-ghost btn-sm hidden" id="btn-faltantes">🛒 Lista de compras</button>
               <button class="btn btn-ghost btn-sm" id="btn-copiar">📋 Copiar otra semana</button>
             </div>
           </div>
           <p class="muted" style="font-size:12.5px;margin-top:10px" id="lbl-limites"></p>
+          <div id="badge-periodo" style="font-size:12.5px;margin-top:8px"></div>
         </div>
 
         <!-- Calendario -->
@@ -253,6 +255,45 @@
             </div>
           </div>`;
       }).join('');
+
+      actualizarBadgePeriodo();
+      actualizarBotonFaltantes(d);
+    }
+
+    // La lista de compras solo tiene sentido cuando ya hay algo programado: con la semana
+    // vacia no hay platos de los que sacar faltantes, y el boton devolvia una lista vacia
+    // que parecia un error ("no me falta nada") en vez de "todavia no has planificado".
+    function actualizarBotonFaltantes(d) {
+      const programadas = d.dia_orden.reduce(
+        (n, dia) => n + d.momentos.filter((m) => d.plan[dia][m]).length, 0
+      );
+      const btn = document.getElementById('btn-faltantes');
+      btn.classList.toggle('hidden', programadas === 0);
+      btn.title = `Ingredientes que te faltan para los ${programadas} plato(s) de esta semana`;
+    }
+
+    // Badge del periodo: la semana visible pertenece al periodo de la ULTIMA compra
+    // registrada. Un periodo de N semanas cubre N semanas del plan (avisa "semana X de N").
+    let PERIODO_ACTIVO = null;
+    const diasEntre = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
+    function actualizarBadgePeriodo() {
+      const el = document.getElementById('badge-periodo');
+      const p = PERIODO_ACTIVO;
+      if (!p || !p.periodo_inicio || !p.periodo_fin) {
+        el.innerHTML = '📦 <span class="muted">Aún no registras una compra. En <a href="/despensa.html">Mi despensa</a> asocias tu despensa a un periodo.</span>';
+        return;
+      }
+      const rango = `${fmtCorto(p.periodo_inicio)} – ${fmtCorto(p.periodo_fin)}`;
+      const N = Math.max(1, Math.round((diasEntre(p.periodo_inicio, p.periodo_fin) + 1) / 7));
+      const dentro = semana >= p.periodo_inicio && semana <= p.periodo_fin;
+      const x = Math.floor(diasEntre(p.periodo_inicio, semana) / 7) + 1;
+      el.innerHTML = dentro
+        ? `📦 <b>Despensa del periodo ${rango}</b> · semana ${x} de ${N}`
+        : `📦 <span class="muted">Esta semana está fuera del periodo de tu última compra (${rango}). Registra la compra de este periodo en Mi despensa.</span>`;
+    }
+    async function cargarPeriodo() {
+      try { PERIODO_ACTIVO = (await api('/api/despensa/compras')).compras[0] || null; }
+      catch { PERIODO_ACTIVO = null; }
     }
 
     // ===== Carga =====
@@ -709,7 +750,96 @@
       };
     };
 
-    cargar();
+    // ===== Lista de compras (faltantes del periodo) =====
+    // Consolida en UNA lista los faltantes de la semana visible: lo que la IA marco al
+    // generar + lo que arrojo verificar un plato propuesto. Sin IA (datos ya en la BD).
+    document.getElementById('btn-faltantes').onclick = verFaltantes;
+
+    async function verFaltantes() {
+      const inicio = semana;
+      const fin = sumar(semana, 6);
+      let data;
+      try { data = await api(`/api/plan/faltantes?inicio=${inicio}&fin=${fin}`); }
+      catch (err) { alerta(alPlan, err.error || 'No pudimos armar la lista de compras.'); return; }
+
+      const cuerpo = data.total === 0
+        ? '<p class="muted">No hay faltantes esta semana. O ya tienes todo en tu despensa, o aún no has generado ni verificado platos.</p>'
+        : data.por_categoria.map((g) => `
+            <div style="margin-bottom:12px">
+              <div style="margin-bottom:6px">${chipCategoria(g.categoria)}</div>
+              <ul style="margin:0 0 0 18px;font-size:13.5px;line-height:1.8">
+                ${g.items.map((i) => `<li>${esc(i.nombre)}${i.casillas > 1 ? ` <span class="muted" style="font-size:12px">×${i.casillas} platos</span>` : ''}${i.fuentes.includes('propuesto') && !i.fuentes.includes('generado') ? ' <span class="muted" style="font-size:11px">· verificado</span>' : ''}</li>`).join('')}
+              </ul>
+            </div>`).join('');
+
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:520px;text-align:left">
+        <h3>🛒 Lista de compras</h3>
+        <div class="modal-body">
+          <p class="muted" style="font-size:12.5px;margin-bottom:12px">Del ${fmtCorto(inicio)} al ${fmtCorto(fin)} · ${data.total} ingrediente(s) que te faltan, ordenados por pasillo del mercado.</p>
+          ${cuerpo}
+        </div>
+        <div class="row" style="justify-content:space-between">
+          <button class="btn btn-sm" data-pdf${data.total ? '' : ' disabled'}>⬇ Descargar PDF</button>
+          <button class="btn btn-ghost btn-sm" data-cerrar>Cerrar</button>
+        </div>
+      </div>`;
+      document.body.appendChild(back);
+      back.querySelector('[data-cerrar]').onclick = () => back.remove();
+      back.onclick = (e) => { if (e.target === back) back.remove(); };
+      if (data.total) back.querySelector('[data-pdf]').onclick = () => faltantesPDF(data, inicio, fin);
+    }
+
+    // jsPDF se carga BAJO DEMANDA (al pulsar Descargar), no en cada carga del plan: es una
+    // libreria pesada que casi nadie usa por visita, y ademas toca <canvas> al evaluarse
+    // (lo que rompia el smoke en jsdom). Vendorizada en /js/vendor.
+    function cargarJsPDF() {
+      return new Promise((resolve, reject) => {
+        if (window.jspdf && window.jspdf.jsPDF) return resolve();
+        const s = document.createElement('script');
+        s.src = '/js/vendor/jspdf.umd.min.js';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('No se pudo cargar el generador de PDF.'));
+        document.head.appendChild(s);
+      });
+    }
+
+    // PDF con fuentes estandar (helvetica/WinAnsi): sin emojis ni simbolos raros — se usa
+    // "[ ]" como casilla para ir marcando en el mercado.
+    async function faltantesPDF(data, inicio, fin) {
+      try { await cargarJsPDF(); }
+      catch (e) { alerta(alPlan, e.message); return; }
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const M = 48;
+      const W = doc.internal.pageSize.getWidth();
+      const H = doc.internal.pageSize.getHeight();
+      let y = 60;
+      const salto = (h) => { if (y > H - h) { doc.addPage(); y = 60; } };
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+      doc.text('Lista de compras', M, y); y += 22;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(120);
+      doc.text(`NutriChefIA  ·  del ${fmtCorto(inicio)} al ${fmtCorto(fin)}  ·  ${data.total} ingredientes`, M, y);
+      y += 26; doc.setTextColor(20);
+
+      for (const g of data.por_categoria) {
+        salto(90);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+        doc.text((CAT_INFO[g.categoria]?.txt || g.categoria).toUpperCase(), M, y); y += 8;
+        doc.setDrawColor(205); doc.line(M, y, W - M, y); y += 18;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(12);
+        for (const i of g.items) {
+          salto(50);
+          doc.text(`[ ]   ${i.nombre}${i.casillas > 1 ? `  (x${i.casillas})` : ''}`, M + 4, y); y += 20;
+        }
+        y += 10;
+      }
+      doc.save(`lista-compras-${inicio}.pdf`);
+    }
+
+    cargarPeriodo().then(cargar);
   </script>
 </body>
 </html>

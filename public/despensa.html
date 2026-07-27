@@ -25,89 +25,106 @@
 
       <div class="content stack">
         <div class="scan-tabs" style="max-width:520px">
-          <button id="t-inventario" class="active">🧺 Lo que tengo</button>
-          <button id="t-compra">🛒 Registrar compra semanal</button>
+          <button id="t-inventario" class="active">🧺 Mi despensa</button>
+          <button id="t-compra">🛒 Registrar compra</button>
         </div>
 
-        <!-- ===== INVENTARIO ===== -->
+        <!-- ===== MI DESPENSA: solo ver + buscar ===== -->
         <div id="panel-inventario" class="stack">
-          <div class="card card-tint">
-            <h3 style="margin-bottom:4px">Agregar un ingrediente</h3>
-            <p class="muted" style="font-size:13px;margin-bottom:12px">Elige del catálogo o escribe el nombre. El nivel le dice a la IA cuánto puede contar con él.</p>
-            <div id="alerta-inv" class="alert"></div>
-            <div class="row" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
-              <div class="field" style="margin:0;flex:1;min-width:200px">
-                <label>Ingrediente</label>
-                <input id="d-nombre" list="lista-catalogo" placeholder="Ej: Papa, Pollo, Ají amarillo..." />
-                <datalist id="lista-catalogo"></datalist>
-              </div>
-              <div class="field" style="margin:0">
-                <label>Categoría</label>
-                <select id="d-cat" class="input" style="width:auto"></select>
-              </div>
-              <div class="field" style="margin:0">
-                <label>¿Cuánto tienes?</label>
-                <select id="d-nivel" class="input" style="width:auto"></select>
-              </div>
-              <button class="btn btn-sm" id="btn-add-ing" type="button" style="margin-bottom:2px">+ Agregar</button>
-            </div>
-            <p class="muted" style="font-size:12.5px;margin-top:8px">Al agregarlo también queda listo en <b>🛒 Registrar compra semanal</b> por si quieres registrarlo como compra de la semana.</p>
-          </div>
-
+          <div id="alerta-inv" class="alert"></div>
           <div class="card">
-            <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+            <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
               <h3>En mi despensa <span class="muted" id="cont-desp" style="font-weight:400;font-size:14px"></span></h3>
-              <select id="filtro-cat" class="input" style="width:auto"><option value="">Todas las categorías</option></select>
+              <input id="buscar-despensa" class="input" placeholder="🔍 Buscar producto…" style="width:auto;flex:1;min-width:160px;max-width:280px" />
             </div>
+            <div id="banner-periodo" style="font-size:12.5px;margin-bottom:14px;background:var(--green-soft);border-radius:10px;padding:9px 12px"></div>
+            <p class="muted" style="font-size:12.5px;margin-bottom:12px">Aquí ves tu stock. Para <b>agregar</b> productos o registrar lo que compraste, ve a <b>🛒 Registrar compra</b>.</p>
             <div id="lista-despensa" class="stack"></div>
           </div>
         </div>
 
-        <!-- ===== COMPRA SEMANAL ===== -->
+        <!-- ===== REGISTRAR COMPRA: agregar producto + checklist de comprados ===== -->
         <div id="panel-compra" class="stack hidden">
           <div class="card card-verde">
-            <h3 style="margin-bottom:4px">🛒 Registrar la compra de la semana</h3>
+            <h3 style="margin-bottom:4px">🛒 Registrar compra</h3>
             <p class="muted" style="font-size:13px;margin-bottom:12px">
-              Marca todo lo que compraste de una sola vez. Esto es lo que la IA usará para proponerte los platos de la semana.
+              Marca los productos que <b>compraste</b> para este periodo. Se guardan como la compra del periodo (cubre las semanas del plan). No borra tu despensa.
             </p>
             <div id="alerta-compra" class="alert"></div>
 
             <div class="field">
-              <label>Buscar y agregar</label>
-              <div class="row" style="gap:8px">
-                <input id="c-buscar" placeholder="Escribe para filtrar el catálogo, o agrega algo propio..." style="flex:1" />
-                <button class="btn btn-ghost btn-sm" id="btn-c-otro" type="button">+ Agregar propio</button>
+              <label>¿Para cuánto es esta compra?</label>
+              <div class="row" style="gap:14px;flex-wrap:wrap;align-items:center">
+                <label style="font-weight:400;font-size:13.5px"><input type="radio" name="modo-periodo" value="semanas" checked /> Por semanas</label>
+                <label style="font-weight:400;font-size:13.5px"><input type="radio" name="modo-periodo" value="fechas" /> Fechas exactas</label>
               </div>
             </div>
 
-            <div id="catalogo-chips" style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px"></div>
+            <div id="modo-semanas" class="row" style="flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:6px">
+              <div class="field" style="margin:0">
+                <label>Semanas</label>
+                <select id="c-semanas" class="input" style="width:auto"></select>
+              </div>
+              <div class="field" style="margin:0">
+                <label>Desde</label>
+                <input id="c-inicio" type="date" class="input" style="width:auto" />
+              </div>
+            </div>
 
-            <div class="field">
-              <label>Nota de la compra (opcional)</label>
+            <div id="modo-fechas" class="row hidden" style="flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:6px">
+              <div class="field" style="margin:0">
+                <label>Inicio</label>
+                <input id="c-fecha-ini" type="date" class="input" style="width:auto" />
+              </div>
+              <div class="field" style="margin:0">
+                <label>Fin</label>
+                <input id="c-fecha-fin" type="date" class="input" style="width:auto" />
+              </div>
+            </div>
+
+            <p id="c-periodo" style="font-size:12.5px;margin:2px 0 14px;color:var(--green)"></p>
+
+            <!-- Agregar un producto (el form que antes estaba en "Mi despensa") -->
+            <div class="field" style="border-top:1px solid var(--line);padding-top:12px">
+              <label>Agregar un producto</label>
+              <div class="row" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
+                <div class="field" style="margin:0;flex:1;min-width:170px">
+                  <input id="cc-nombre" list="lista-catalogo" placeholder="Ej: Papa, Pollo, Ají amarillo…" />
+                  <datalist id="lista-catalogo"></datalist>
+                </div>
+                <div class="field" style="margin:0">
+                  <select id="cc-cat" class="input" style="width:auto" aria-label="Categoría"></select>
+                </div>
+                <div class="field" style="margin:0">
+                  <select id="cc-nivel" class="input" style="width:auto" aria-label="Cuánto tienes"></select>
+                </div>
+                <button class="btn btn-sm" id="btn-cc-add" type="button" style="margin-bottom:2px">+ Agregar</button>
+              </div>
+            </div>
+
+            <!-- Categorias y productos: marcar cuales compre -->
+            <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0 8px">
+              <b style="font-size:13.5px">Marca lo que compraste <span class="muted" id="cc-resumen" style="font-weight:400;font-size:12.5px"></span></b>
+              <div class="row" style="gap:6px">
+                <button class="btn btn-ghost btn-sm" id="btn-marca-todos" type="button">Todos</button>
+                <button class="btn btn-ghost btn-sm" id="btn-marca-ninguno" type="button">Ninguno</button>
+              </div>
+            </div>
+            <div id="checklist-compra" class="stack" style="gap:12px"></div>
+
+            <div class="field" style="margin-top:14px">
+              <label>Nota (opcional)</label>
               <input id="c-nota" placeholder="Ej: compra del mercado de Wanchaq" />
             </div>
 
-            <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
-              <span class="muted" id="c-resumen">Nada seleccionado todavía</span>
-              <button class="btn" id="btn-guardar-compra" type="button" disabled>Registrar compra</button>
+            <div class="row" style="justify-content:flex-end;flex-wrap:wrap;gap:10px">
+              <button class="btn" id="btn-guardar-compra" type="button">Registrar compra</button>
             </div>
           </div>
 
-          <!-- Seleccionados con su nivel -->
-          <div class="card hidden" id="card-seleccion">
-            <h3 style="margin-bottom:12px">Lo que vas a registrar</h3>
-            <div id="lista-seleccion" class="stack"></div>
-          </div>
-
-          <!-- Historial -->
           <div class="card">
             <h3 style="margin-bottom:12px">Compras anteriores</h3>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Fecha</th><th>Semana</th><th>Nota</th><th>Compré</th><th>Siguen en despensa</th></tr></thead>
-                <tbody id="tbody-compras"><tr><td colspan="5" class="muted">Cargando…</td></tr></tbody>
-              </table>
-            </div>
+            <div id="lista-compras" class="stack"><p class="muted">Cargando…</p></div>
           </div>
         </div>
       </div>
@@ -126,15 +143,55 @@
     const alCompra = document.getElementById('alerta-compra');
     let CATALOGO = [];
     let DESPENSA = [];
+    let COMPRAS = [];
     let NIVELES = [];
     let CATEGORIAS = [];
-    let seleccion = new Map(); // nombre -> { nombre, categoria, nivel }
+    const marcadosCompra = new Set();  // nombres (lower) marcados como comprados este periodo
+    const conocidosCompra = new Set(); // nombres ya vistos por el checklist (para no re-marcar)
 
     const NIVEL_TXT = { poco: '🔸 Poco', normal: '🔹 Normal', bastante: '🟢 Bastante' };
     const nivelSelect = (valor, attrs = '') =>
       `<select class="input" ${attrs} style="width:auto;padding:6px 10px;font-size:13px">
         ${NIVELES.map((n) => `<option value="${n}" ${n === valor ? 'selected' : ''}>${NIVEL_TXT[n] || n}</option>`).join('')}
       </select>`;
+
+    // ===== Barra de stock =====
+    // Muestra TRES numeros en una sola linea: lo que tiene, lo que se llevan los platos ya
+    // programados de esta semana y con cuanto se queda. El tramo rayado es proyeccion: no
+    // se ha descontado nada todavia (eso pasa al marcar la comida como cocinada en el plan).
+    const claseStock = (restante) => (restante <= 20 ? 'stock-bajo' : restante <= 50 ? 'stock-medio' : 'stock-ok');
+
+    function barraStock(i) {
+      const tiene = i.porcentaje;
+      const consumo = i.consumo_previsto || 0;
+      const restante = i.restante === undefined ? tiene : i.restante;
+
+      const etiqueta = consumo > 0
+        ? `Te queda <b>${tiene}%</b> · esta semana −${consumo}% → te quedará <b>${restante}%</b>`
+        : (tiene === 0 ? 'Se te <b>acabó</b>' : `Te queda <b>${tiene}%</b>`);
+
+      return `
+        <div class="stock-barra ${claseStock(restante)}" title="${tiene}% en la despensa${consumo ? `, −${consumo}% programado` : ''}">
+          <div class="stock-tiene" style="width:${restante}%"></div>
+          <div class="stock-consumo" style="width:${consumo}%"></div>
+        </div>
+        <div class="row" style="justify-content:space-between;gap:10px;align-items:center">
+          <span class="stock-lbl">${etiqueta}</span>
+        </div>
+        <input class="stock-rango" type="range" min="0" max="100" step="5" value="${tiene}"
+               data-pct="${i.id}" aria-label="Cuánto te queda de ${i.nombre}" />`;
+    }
+
+    // ===== Helpers de fecha/periodo (mismo criterio que el backend: se ancla al lunes) =====
+    const hoyPeru = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+    const sumarDias = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    const lunesLocal = (iso) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+    const fmtFecha = (iso) => { const [, m, d] = iso.split('-'); return `${d}/${m}`; };
+    function periodoSemLocal(inicio, n) {
+      const ini = lunesLocal(/^\d{4}-\d{2}-\d{2}$/.test(inicio || '') ? inicio : hoyPeru());
+      const s = Math.max(1, Math.min(12, parseInt(n, 10) || 1));
+      return { semanas: s, inicio: ini, fin: sumarDias(ini, s * 7 - 1) };
+    }
 
     // ===== Tabs =====
     const tabs = { inventario: 't-inventario', compra: 't-compra' };
@@ -143,224 +200,268 @@
         document.getElementById(id).classList.toggle('active', k === n);
         document.getElementById('panel-' + k).classList.toggle('hidden', k !== n);
       });
-      if (n === 'compra') cargarCompras();
+      if (n === 'compra') pintarChecklist();
     }
     Object.entries(tabs).forEach(([k, id]) => { document.getElementById(id).onclick = () => verTab(k); });
 
-    // ===== Inventario =====
+    // ===== Mi despensa (solo ver + buscar) =====
     function pintarDespensa() {
-      const filtro = document.getElementById('filtro-cat').value;
-      const items = filtro ? DESPENSA.filter((d) => d.categoria === filtro) : DESPENSA;
-      document.getElementById('cont-desp').textContent = DESPENSA.length ? `· ${DESPENSA.length} ingredientes` : '';
+      const q = document.getElementById('buscar-despensa').value.trim().toLowerCase();
+      const items = q ? DESPENSA.filter((d) => d.nombre.toLowerCase().includes(q)) : DESPENSA;
+      document.getElementById('cont-desp').textContent = DESPENSA.length ? `· ${DESPENSA.length} productos` : '';
       document.getElementById('pill-despensa').innerHTML = `🧺 ${DESPENSA.length} en despensa`;
 
       const cont = document.getElementById('lista-despensa');
       if (!items.length) {
         cont.innerHTML = DESPENSA.length
-          ? '<p class="muted">No hay ingredientes en esa categoría.</p>'
-          : '<p class="muted">Tu despensa está vacía. Agrega ingredientes arriba o registra tu compra semanal.</p>';
+          ? '<p class="muted">Ningún producto con ese nombre.</p>'
+          : '<p class="muted">Tu despensa está vacía. Agrega productos en 🛒 <b>Registrar compra</b>.</p>';
         return;
       }
-      // Agrupados por categoria para que se lea como una despensa de verdad.
       const porCat = {};
       items.forEach((i) => { (porCat[i.categoria] ||= []).push(i); });
-      cont.innerHTML = Object.entries(porCat).map(([cat, list]) => `
+      cont.innerHTML = CATEGORIAS.filter((c) => porCat[c]).map((cat) => `
         <div>
           <div style="margin-bottom:8px">${chipCategoria(cat)}</div>
           <div class="stack" style="gap:8px">
-            ${list.map((i) => `
-              <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:10px 12px">
-                <b style="flex:1;min-width:120px">${i.nombre}</b>
-                <div class="row" style="gap:6px">
-                  ${nivelSelect(i.nivel, `data-nivel="${i.id}"`)}
+            ${porCat[cat].map((i) => `
+              <div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px">
+                <div class="row" style="justify-content:space-between;gap:10px;align-items:center">
+                  <b style="flex:1;min-width:120px">${i.nombre}</b>
                   <button class="btn btn-danger btn-sm" data-del="${i.id}">Quitar</button>
                 </div>
+                ${barraStock(i)}
               </div>`).join('')}
           </div>
         </div>`).join('');
+    }
+
+    function pintarBanner() {
+      const b = document.getElementById('banner-periodo');
+      const ult = COMPRAS[0];
+      if (!ult || !ult.periodo_inicio) {
+        b.innerHTML = '📦 Aún no registras la compra de un periodo. Ve a <b>🛒 Registrar compra</b>.';
+        return;
+      }
+      const vencido = ult.periodo_fin && hoyPeru() > ult.periodo_fin;
+      b.innerHTML = `📦 Despensa del periodo <b>${fmtFecha(ult.periodo_inicio)} – ${fmtFecha(ult.periodo_fin)}</b>`
+        + (vencido ? ' · <span style="color:var(--amber);font-weight:700">este periodo venció, registra la compra del nuevo periodo</span>' : '');
+    }
+
+    document.getElementById('buscar-despensa').oninput = pintarDespensa;
+
+    // La barra se mueve en vivo mientras se arrastra, pero solo se GUARDA al soltar
+    // (evento "change"): con "input" seria un PATCH por cada pixel del recorrido.
+    document.getElementById('lista-despensa').addEventListener('input', (e) => {
+      const id = e.target.dataset.pct;
+      if (!id) return;
+      const caja = e.target.closest('div');
+      const pct = Number(e.target.value);
+      const barra = caja.querySelector('.stock-barra');
+      const lbl = caja.querySelector('.stock-lbl');
+      // Al mover la barra a mano se muestra el valor crudo: el usuario esta declarando lo
+      // que tiene AHORA, y volver a restarle la proyeccion mientras arrastra confundiria.
+      barra.className = `stock-barra ${claseStock(pct)}`;
+      barra.querySelector('.stock-tiene').style.width = `${pct}%`;
+      barra.querySelector('.stock-consumo').style.width = '0%';
+      lbl.innerHTML = pct === 0 ? 'Se te <b>acabó</b>' : `Te queda <b>${pct}%</b>`;
+    });
+
+    document.getElementById('lista-despensa').addEventListener('change', async (e) => {
+      const id = e.target.dataset.pct;
+      if (!id) return;
+      try {
+        DESPENSA = (await api(`/api/despensa/${id}`, { method: 'PATCH', body: { porcentaje: Number(e.target.value) } })).despensa;
+        pintarDespensa(); // repinta con la proyeccion recalculada por el servidor
+      } catch (err) { alerta(alInv, err.error || 'No pudimos actualizar.'); }
+    });
+    document.getElementById('lista-despensa').addEventListener('click', async (e) => {
+      const id = e.target.dataset.del;
+      if (!id) return;
+      try { DESPENSA = (await api(`/api/despensa/${id}`, { method: 'DELETE' })).despensa; pintarDespensa(); }
+      catch (err) { alerta(alInv, err.error || 'No pudimos quitar el producto.'); }
+    });
+
+    // ===== Registrar compra: etiquetas de "comprado este periodo" =====
+    // Los productos de la despensa por categoria, como ETIQUETAS que se marcan al tocar.
+    // Arrancan TODAS marcadas: lo comun es que la compra del periodo sea tu stock entero,
+    // asi que es menos trabajo desmarcar lo que ya tenias que marcar de cero.
+    //
+    // conocidosCompra distingue "producto nuevo" de "producto que el usuario desmarcó": sin
+    // ese registro, cada repintado volveria a marcar lo que se acaba de desmarcar.
+    function pintarChecklist() {
+      DESPENSA.forEach((d) => {
+        const k = d.nombre.toLowerCase();
+        if (!conocidosCompra.has(k)) { conocidosCompra.add(k); marcadosCompra.add(k); }
+      });
+      const cont = document.getElementById('checklist-compra');
+      if (!DESPENSA.length) {
+        cont.innerHTML = '<p class="muted" style="font-size:13px">Tu despensa está vacía. Agrega productos con «+ Agregar» aquí arriba.</p>';
+        document.getElementById('cc-resumen').textContent = '';
+        return;
+      }
+      const porCat = {};
+      DESPENSA.forEach((d) => { (porCat[d.categoria] ||= []).push(d); });
+      cont.innerHTML = CATEGORIAS.filter((c) => porCat[c]).map((cat) => `
+        <div>
+          <div style="margin-bottom:6px">${chipCategoria(cat)}</div>
+          <div class="row" style="flex-wrap:wrap;gap:6px">
+            ${porCat[cat].map((d) => {
+              const k = d.nombre.toLowerCase();
+              const on = marcadosCompra.has(k);
+              return `<button type="button" class="btn btn-sm ${on ? '' : 'btn-ghost'}" data-check="${k.replace(/"/g, '&quot;')}"
+                title="${on ? 'Comprado' : 'Marcar como comprado'}" style="padding:5px 11px;font-size:12.5px${on ? '' : ';opacity:.7'}">${on ? '✓ ' : ''}${d.nombre}</button>`;
+            }).join('')}
+          </div>
+        </div>`).join('');
+      document.getElementById('cc-resumen').textContent = `· ${marcadosCompra.size} de ${DESPENSA.length} marcados`;
+    }
+
+    document.getElementById('checklist-compra').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-check]');
+      if (!b) return;
+      const k = b.dataset.check;
+      if (marcadosCompra.has(k)) marcadosCompra.delete(k); else marcadosCompra.add(k);
+      pintarChecklist();
+    });
+    document.getElementById('btn-marca-todos').onclick = () => { DESPENSA.forEach((d) => marcadosCompra.add(d.nombre.toLowerCase())); pintarChecklist(); };
+    document.getElementById('btn-marca-ninguno').onclick = () => { marcadosCompra.clear(); pintarChecklist(); };
+
+    // Agregar un producto: alta INMEDIATA a la despensa + queda marcado en el checklist.
+    document.getElementById('btn-cc-add').onclick = async () => {
+      limpiarAlerta(alCompra);
+      const nombre = document.getElementById('cc-nombre').value.trim();
+      if (!nombre) { alerta(alCompra, 'Escribe el nombre del producto.'); return; }
+      try {
+        DESPENSA = (await api('/api/despensa', { method: 'POST', body: {
+          nombre,
+          categoria: document.getElementById('cc-cat').value,
+          nivel: document.getElementById('cc-nivel').value,
+        } })).despensa;
+        const k = nombre.toLowerCase();
+        conocidosCompra.add(k); marcadosCompra.add(k);
+        document.getElementById('cc-nombre').value = '';
+        document.getElementById('cc-cat').value = 'otro';
+        document.getElementById('cc-nivel').value = 'bastante';
+        pintarChecklist();
+        pintarDespensa();
+        document.getElementById('cc-nombre').focus();
+      } catch (err) { alerta(alCompra, err.error || 'No pudimos agregar el producto.'); }
+    };
+    document.getElementById('cc-nombre').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-cc-add').click(); } };
+    document.getElementById('cc-nombre').oninput = () => {
+      const nombre = document.getElementById('cc-nombre').value.trim().toLowerCase();
+      const hit = CATALOGO.find((c) => c.nombre.toLowerCase() === nombre);
+      if (hit) document.getElementById('cc-cat').value = hit.categoria;
+    };
+
+    // ===== Periodo =====
+    function periodoUI() {
+      const modo = document.querySelector('input[name=modo-periodo]:checked').value;
+      if (modo === 'fechas') {
+        return { modo, inicio: document.getElementById('c-fecha-ini').value, fin: document.getElementById('c-fecha-fin').value, semanas: null };
+      }
+      return { modo, ...periodoSemLocal(document.getElementById('c-inicio').value, document.getElementById('c-semanas').value) };
+    }
+    function renderPeriodo() {
+      const p = periodoUI();
+      const el = document.getElementById('c-periodo');
+      if (p.modo === 'fechas') {
+        el.innerHTML = (p.inicio && p.fin)
+          ? `Cubre del <b>${fmtFecha(p.inicio)}</b> al <b>${fmtFecha(p.fin)}</b>`
+          : 'Elige la fecha de inicio y de fin.';
+      } else {
+        el.innerHTML = `Cubre del <b>${fmtFecha(p.inicio)}</b> al <b>${fmtFecha(p.fin)}</b> · ${p.semanas} semana${p.semanas > 1 ? 's' : ''} del plan.`;
+      }
+    }
+    function initPeriodo(semHogar) {
+      const lunes = lunesLocal(hoyPeru());
+      document.getElementById('c-semanas').innerHTML = [1, 2, 3, 4, 5, 6, 7, 8]
+        .map((n) => `<option value="${n}" ${n === semHogar ? 'selected' : ''}>${n} semana${n > 1 ? 's' : ''}</option>`).join('');
+      document.getElementById('c-inicio').value = lunes;
+      document.getElementById('c-fecha-ini').value = lunes;
+      document.getElementById('c-fecha-fin').value = sumarDias(lunes, 6);
+      document.querySelectorAll('input[name=modo-periodo]').forEach((r) => { r.onchange = () => {
+        const fechas = periodoUI().modo === 'fechas';
+        document.getElementById('modo-semanas').classList.toggle('hidden', fechas);
+        document.getElementById('modo-fechas').classList.toggle('hidden', !fechas);
+        renderPeriodo();
+      }; });
+      ['c-semanas', 'c-inicio', 'c-fecha-ini', 'c-fecha-fin'].forEach((id) => { document.getElementById(id).onchange = renderPeriodo; });
+      renderPeriodo();
+    }
+
+    document.getElementById('btn-guardar-compra').onclick = async () => {
+      limpiarAlerta(alCompra);
+      const items = DESPENSA.map((d) => d.nombre).filter((n) => marcadosCompra.has(n.toLowerCase()));
+      if (!items.length) { alerta(alCompra, 'Marca al menos un producto que compraste.'); return; }
+      const p = periodoUI();
+      const body = { nota: document.getElementById('c-nota').value, items };
+      if (p.modo === 'fechas') {
+        if (!p.inicio || !p.fin) { alerta(alCompra, 'Elige la fecha de inicio y de fin.'); return; }
+        body.periodo_inicio = p.inicio; body.periodo_fin = p.fin;
+      } else {
+        body.semanas = p.semanas; body.periodo_inicio = p.inicio;
+      }
+      const btn = document.getElementById('btn-guardar-compra');
+      btn.disabled = true; btn.textContent = 'Guardando…';
+      try {
+        const d = await api('/api/despensa/compra', { method: 'POST', body });
+        document.getElementById('c-nota').value = '';
+        await cargarCompras();
+        alerta(alCompra, `Se guardó la despensa del periodo ${fmtFecha(d.periodo.inicio)} – ${fmtFecha(d.periodo.fin)}.`, 'ok');
+      } catch (err) { alerta(alCompra, err.error || 'No pudimos registrar la compra.'); }
+      finally { btn.disabled = false; btn.textContent = 'Registrar compra'; }
+    };
+
+    async function cargarCompras() {
+      const cont = document.getElementById('lista-compras');
+      try {
+        const { compras } = await api('/api/despensa/compras');
+        COMPRAS = compras;
+        cont.innerHTML = compras.length
+          ? compras.map((c) => {
+              const rango = (c.periodo_inicio && c.periodo_fin) ? `${fmtFecha(c.periodo_inicio)} – ${fmtFecha(c.periodo_fin)}` : (c.periodo_inicio ? fmtFecha(c.periodo_inicio) : '—');
+              const nombres = (c.items || []).map((i) => i.nombre).join(', ');
+              return `<div style="border:1px solid var(--line);border-radius:12px;padding:11px 13px">
+                <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+                  <b>Periodo ${rango}</b>
+                  <span class="muted" style="font-size:12.5px">${c.total_items} producto${c.total_items === 1 ? '' : 's'} · ${c.creado_local}</span>
+                </div>
+                ${c.nota ? `<p class="muted" style="font-size:12.5px;margin-top:4px">📝 ${c.nota}</p>` : ''}
+                ${nombres ? `<p class="muted" style="font-size:12.5px;margin-top:6px">${nombres}</p>` : ''}
+              </div>`;
+            }).join('')
+          : '<p class="muted">Aún no registras compras.</p>';
+        pintarBanner();
+      } catch { cont.innerHTML = '<p class="muted">No pudimos cargar el historial.</p>'; }
     }
 
     async function cargar() {
       try {
         const d = await api('/api/despensa');
         CATALOGO = d.catalogo; DESPENSA = d.despensa; NIVELES = d.niveles; CATEGORIAS = d.categorias;
-        document.getElementById('d-nivel').innerHTML = NIVELES.map((n) => `<option value="${n}" ${n === 'normal' ? 'selected' : ''}>${NIVEL_TXT[n] || n}</option>`).join('');
-        document.getElementById('d-cat').innerHTML = CATEGORIAS.map((c) => `<option value="${c}" ${c === 'otro' ? 'selected' : ''}>${CAT_INFO[c]?.ic || ''} ${CAT_INFO[c]?.txt || c}</option>`).join('');
+        document.getElementById('cc-cat').innerHTML = CATEGORIAS.map((c) => `<option value="${c}" ${c === 'otro' ? 'selected' : ''}>${CAT_INFO[c]?.ic || ''} ${CAT_INFO[c]?.txt || c}</option>`).join('');
+        // Por defecto "bastante" (= 100%): este formulario vive en "Registrar compra", asi
+        // que lo normal es que el producto se acabe de comprar y este lleno. Si no, la
+        // barra de "Mi despensa" lo corrige con precision.
+        document.getElementById('cc-nivel').innerHTML = NIVELES.map((n) => `<option value="${n}" ${n === 'bastante' ? 'selected' : ''}>${NIVEL_TXT[n] || n}</option>`).join('');
         document.getElementById('lista-catalogo').innerHTML = CATALOGO.map((c) => `<option value="${c.nombre}">`).join('');
-        document.getElementById('filtro-cat').innerHTML = '<option value="">Todas las categorías</option>' +
-          CATEGORIAS.map((c) => `<option value="${c}">${CAT_INFO[c]?.ic || ''} ${CAT_INFO[c]?.txt || c}</option>`).join('');
         pintarDespensa();
-        pintarCatalogoChips();
       } catch (err) {
         if (err.status === 403) { location.href = '/mi-plan.html?upgrade=1'; return; }
         alerta(alInv, err.error || 'No pudimos cargar tu despensa.');
       }
     }
 
-    document.getElementById('filtro-cat').onchange = pintarDespensa;
-
-    // Sugerir la categoria del catalogo cuando el nombre coincide (editable: el usuario puede cambiarla).
-    document.getElementById('d-nombre').oninput = () => {
-      const nombre = document.getElementById('d-nombre').value.trim().toLowerCase();
-      if (!nombre) return;
-      const hit = CATALOGO.find((c) => c.nombre.toLowerCase() === nombre);
-      if (hit) document.getElementById('d-cat').value = hit.categoria;
-    };
-
-    document.getElementById('btn-add-ing').onclick = async () => {
-      limpiarAlerta(alInv);
-      const nombre = document.getElementById('d-nombre').value.trim();
-      if (!nombre) { alerta(alInv, 'Escribe el nombre del ingrediente.'); return; }
-      const categoria = document.getElementById('d-cat').value;
-      const nivel = document.getElementById('d-nivel').value;
-      try {
-        const d = await api('/api/despensa', { method: 'POST', body: { nombre, categoria, nivel } });
-        DESPENSA = d.despensa;
-        // Ademas de guardarlo en la despensa, lo dejamos LISTO en la compra de la semana
-        // (preseleccionado). No se registra hasta que el usuario le de a "Registrar compra".
-        seleccion.set(nombre.toLowerCase(), { nombre, categoria, nivel });
-        document.getElementById('d-nombre').value = '';
-        document.getElementById('d-cat').value = 'otro';
-        pintarDespensa();
-        pintarCatalogoChips();
-        pintarSeleccion();
-        alerta(alInv, `«${nombre}» agregado. Queda listo en 🛒 Registrar compra semanal.`, 'ok');
-      } catch (err) { alerta(alInv, err.error || 'No pudimos agregar el ingrediente.'); }
-    };
-    document.getElementById('d-nombre').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-ing').click(); } };
-
-    document.getElementById('lista-despensa').addEventListener('change', async (e) => {
-      const id = e.target.dataset.nivel;
-      if (!id) return;
-      try { DESPENSA = (await api(`/api/despensa/${id}`, { method: 'PATCH', body: { nivel: e.target.value } })).despensa; }
-      catch (err) { alerta(alInv, err.error || 'No pudimos actualizar.'); }
-    });
-
-    document.getElementById('lista-despensa').addEventListener('click', async (e) => {
-      const id = e.target.dataset.del;
-      if (!id) return;
-      try {
-        DESPENSA = (await api(`/api/despensa/${id}`, { method: 'DELETE' })).despensa;
-        pintarDespensa();
-        pintarCatalogoChips();
-      } catch (err) { alerta(alInv, err.error || 'No pudimos quitar el ingrediente.'); }
-    });
-
-    // ===== Compra semanal =====
-    // Los chips del catalogo marcan lo comprado. Lo que ya esta en la despensa se
-    // muestra atenuado: registrarlo de nuevo solo actualiza su nivel, no duplica.
-    function pintarCatalogoChips() {
-      const q = document.getElementById('c-buscar').value.trim().toLowerCase();
-      const lista = q ? CATALOGO.filter((c) => c.nombre.toLowerCase().includes(q)) : CATALOGO;
-      const cont = document.getElementById('catalogo-chips');
-      if (!lista.length) {
-        cont.innerHTML = '<p class="muted" style="font-size:13px">Nada en el catálogo con ese nombre. Usa «+ Agregar propio».</p>';
-        return;
-      }
-      const porCat = {};
-      lista.forEach((c) => { (porCat[c.categoria] ||= []).push(c); });
-      cont.innerHTML = Object.entries(porCat).map(([cat, items]) => `
-        <div style="margin-bottom:10px">
-          <div style="margin-bottom:6px">${chipCategoria(cat)}</div>
-          <div class="row" style="flex-wrap:wrap;gap:6px">
-            ${items.map((c) => {
-              const on = seleccion.has(c.nombre.toLowerCase());
-              const tengo = DESPENSA.some((d) => d.nombre.toLowerCase() === c.nombre.toLowerCase());
-              return `<button type="button" class="btn btn-sm ${on ? '' : 'btn-ghost'}" data-cat-chip="${c.nombre.replace(/"/g, '&quot;')}"
-                data-categoria="${c.categoria}" title="${tengo ? 'Ya está en tu despensa' : ''}"
-                style="${on ? '' : 'opacity:' + (tengo ? '.45' : '.72')};padding:5px 11px;font-size:12.5px">${on ? '✓ ' : ''}${c.nombre}${tengo && !on ? ' ·🧺' : ''}</button>`;
-            }).join('')}
-          </div>
-        </div>`).join('');
-      cont.querySelectorAll('[data-cat-chip]').forEach((b) => {
-        b.onclick = () => {
-          const nombre = b.dataset.catChip;
-          const k = nombre.toLowerCase();
-          if (seleccion.has(k)) seleccion.delete(k);
-          else seleccion.set(k, { nombre, categoria: b.dataset.categoria, nivel: 'normal' });
-          pintarCatalogoChips();
-          pintarSeleccion();
-        };
-      });
+    async function init() {
+      await cargar();
+      let semHogar = 1;
+      try { semHogar = (await api('/api/hogar')).hogar?.semanas || 1; } catch { /* el gate del plan ya redirige si aplica */ }
+      initPeriodo(semHogar);
+      await cargarCompras(); // deja el banner del periodo listo en la pestaña de despensa
     }
-    document.getElementById('c-buscar').oninput = pintarCatalogoChips;
-
-    document.getElementById('btn-c-otro').onclick = () => {
-      const el = document.getElementById('c-buscar');
-      const nombre = el.value.trim();
-      if (!nombre) { alerta(alCompra, 'Escribe el nombre de lo que compraste.'); return; }
-      limpiarAlerta(alCompra);
-      seleccion.set(nombre.toLowerCase(), { nombre, nivel: 'normal' }); // sin categoria: la resuelve el backend
-      el.value = '';
-      pintarCatalogoChips();
-      pintarSeleccion();
-    };
-
-    function pintarSeleccion() {
-      const items = [...seleccion.values()];
-      const btn = document.getElementById('btn-guardar-compra');
-      btn.disabled = !items.length;
-      document.getElementById('c-resumen').textContent = items.length
-        ? `${items.length} ingrediente${items.length === 1 ? '' : 's'} seleccionado${items.length === 1 ? '' : 's'}`
-        : 'Nada seleccionado todavía';
-      document.getElementById('card-seleccion').classList.toggle('hidden', !items.length);
-      document.getElementById('lista-seleccion').innerHTML = items.map((i) => `
-        <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:10px 12px">
-          <b style="flex:1;min-width:120px">${i.nombre}</b>
-          <div class="row" style="gap:6px">
-            ${nivelSelect(i.nivel, `data-sel-nivel="${i.nombre.toLowerCase().replace(/"/g, '&quot;')}"`)}
-            <button class="btn btn-ghost btn-sm" data-sel-del="${i.nombre.toLowerCase().replace(/"/g, '&quot;')}">Quitar</button>
-          </div>
-        </div>`).join('');
-    }
-
-    document.getElementById('lista-seleccion').addEventListener('change', (e) => {
-      const k = e.target.dataset.selNivel;
-      if (k && seleccion.has(k)) seleccion.get(k).nivel = e.target.value;
-    });
-    document.getElementById('lista-seleccion').addEventListener('click', (e) => {
-      const k = e.target.dataset.selDel;
-      if (!k) return;
-      seleccion.delete(k);
-      pintarCatalogoChips();
-      pintarSeleccion();
-    });
-
-    document.getElementById('btn-guardar-compra').onclick = async () => {
-      limpiarAlerta(alCompra);
-      const btn = document.getElementById('btn-guardar-compra');
-      btn.disabled = true; btn.textContent = 'Registrando…';
-      try {
-        const d = await api('/api/despensa/compra', { method: 'POST', body: {
-          nota: document.getElementById('c-nota').value,
-          items: [...seleccion.values()],
-        } });
-        DESPENSA = d.despensa;
-        seleccion.clear();
-        document.getElementById('c-nota').value = '';
-        pintarSeleccion();
-        pintarCatalogoChips();
-        pintarDespensa();
-        cargarCompras();
-        alerta(alCompra, d.mensaje, 'ok');
-      } catch (err) { alerta(alCompra, err.error || 'No pudimos registrar la compra.'); }
-      finally { btn.textContent = 'Registrar compra'; pintarSeleccion(); }
-    };
-
-    async function cargarCompras() {
-      const tb = document.getElementById('tbody-compras');
-      try {
-        const { compras } = await api('/api/despensa/compras');
-        tb.innerHTML = compras.length
-          ? compras.map((c) => `<tr>
-              <td>${c.creado_local}</td><td>${c.semana}</td><td>${c.nota || '—'}</td>
-              <td>${c.total_items}</td><td>${c.vigentes}</td>
-            </tr>`).join('')
-          : '<tr><td colspan="5" class="muted">Aún no registras compras.</td></tr>';
-      } catch { tb.innerHTML = '<tr><td colspan="5" class="muted">No pudimos cargar el historial.</td></tr>'; }
-    }
-
-    cargar();
+    init();
   </script>
 </body>
 </html>

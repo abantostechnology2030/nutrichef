@@ -78,6 +78,15 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     check(vacia.cuerpo.platos.length === 0, 'la biblioteca de un usuario nuevo esta vacia');
     check(vacia.cuerpo.limite.max === 5, `el plan Free topa en 5 platos (fue ${vacia.cuerpo.limite.max})`);
 
+    // Lista de faltantes (Fase 5): responde con la forma correcta aun sin plan. El dedup
+    // con datos reales se cubre en smoke:plan (necesita platos generados con faltantes).
+    console.log('=== /api/plan/faltantes (forma) ===');
+    const falt = await apiSrv('/api/plan/faltantes');
+    check(falt.status === 200, `GET /faltantes responde 200 (fue ${falt.status})`);
+    check(/^\d{4}-\d{2}-\d{2}$/.test(falt.cuerpo.inicio) && /^\d{4}-\d{2}-\d{2}$/.test(falt.cuerpo.fin), 'trae la ventana inicio/fin');
+    check(Array.isArray(falt.cuerpo.items) && Array.isArray(falt.cuerpo.por_categoria), 'trae items[] y por_categoria[]');
+    check(falt.cuerpo.total === 0, `usuario nuevo sin plan: 0 faltantes (fue ${falt.cuerpo.total})`);
+
     const creado = await apiSrv('/api/platos', {
       method: 'POST',
       body: JSON.stringify({
@@ -180,10 +189,18 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     await apiSrv('/api/platos', { method: 'POST', body: JSON.stringify({ nombre: 'Solo para almuerzo', momento: 'almuerzo' }) });
     await apiSrv('/api/platos', { method: 'POST', body: JSON.stringify({ nombre: 'Sin momento fijo' }) });
 
+    // La avena entra a la despensa LLENA: es el ingrediente del plato de desayuno, y sobre
+    // ella se comprueba el descuento al cocinar (mas abajo). Sin IA: el plato es manual, no
+    // trae "consume", asi que el consumo sale de la heuristica por categoria (abarrote=12).
+    await apiSrv('/api/despensa', { method: 'POST', body: JSON.stringify({ nombre: 'Avena', categoria: 'abarrote', porcentaje: 100 }) });
+
     const pl = await abrir('plan.html', token, usuario);
     await esperar(500);
     check(pl.errores.length === 0, `sin errores de runtime ${pl.errores.join(' | ')}`);
     check(pl.doc.querySelectorAll('.casilla.vacia').length === 21, 'el calendario del usuario nuevo esta vacio');
+    // La lista de compras no se ofrece con la semana vacia: no hay platos de los que sacar
+    // faltantes, y el boton devolvia una lista vacia que parecia un error.
+    check(pl.doc.querySelector('#btn-faltantes').classList.contains('hidden'), 'con la semana vacia NO se ofrece la lista de compras');
 
     // Este usuario no tiene hogar: la IA no puede proponer nada (el backend daria 409),
     // pero poner un plato PROPIO no la necesita. Los dos botones no se bloquean igual.
@@ -213,6 +230,29 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     check(pl.doc.querySelectorAll('.casilla.vacia').length === 20, 'solo se lleno esa casilla (no toco el resto)');
     const enServidor = (await apiSrv('/api/plan')).cuerpo;
     check(enServidor.plan?.[1]?.desayuno?.plato?.nombre === 'Solo para desayuno', 'y quedo guardado en el servidor, no solo en pantalla');
+    check(!pl.doc.querySelector('#btn-faltantes').classList.contains('hidden'), 'con la semana ya programada SI se ofrece la lista de compras');
+
+    // ===== Consumo de la despensa =====
+    // Mientras el plato solo esta PROGRAMADO, la despensa no se toca: lo que se ve es una
+    // proyeccion. El descuento real ocurre al marcar la comida como cocinada, y desmarcar
+    // lo devuelve EXACTO (lo que se resto de verdad, no lo que se volveria a estimar hoy).
+    const avena = async () => (await apiSrv('/api/despensa')).cuerpo.despensa.find((i) => i.nombre === 'Avena');
+    const programada = await avena();
+    check(programada.porcentaje === 100, `programar NO descuenta de la despensa (sigue en ${programada.porcentaje}%)`);
+    check(programada.consumo_previsto === 12 && programada.restante === 88,
+      `pero se proyecta el consumo: -${programada.consumo_previsto} => quedaria ${programada.restante}%`);
+
+    casillaLunes().querySelector('[data-cocinado]').click();
+    await esperar(800);
+    const cocinada = await avena();
+    check(cocinada.porcentaje === 88, `al marcar cocinado SI se descuenta (100% -> ${cocinada.porcentaje}%)`);
+    check(cocinada.consumo_previsto === 0, 'y deja de proyectarse (no se cuenta dos veces)');
+    check(cocinada.nivel === 'bastante', `el nivel derivado se recalcula: "${cocinada.nivel}"`);
+
+    casillaLunes().querySelector('[data-cocinado]').click();
+    await esperar(800);
+    const revertida = await avena();
+    check(revertida.porcentaje === 100, `desmarcar devuelve lo descontado (-> ${revertida.porcentaje}%)`);
 
     // El plato manual TRAE pasos: el detalle debe mostrarlos en vez del aviso de "aun no".
     casillaLunes().querySelector('[data-ver]').click();

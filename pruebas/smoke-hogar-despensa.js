@@ -7,6 +7,7 @@
 // No usa IA: es gratis y rapido. DEJA el hogar de prueba en un estado conocido
 // (Casa Abanto + Rosa/Luis/Ana) porque el test necesita conteos estables.
 const { JSDOM, VirtualConsole } = require('jsdom');
+const { db } = require('../src/db'); // solo para limpiar la compra de prueba al final
 
 const BASE = 'http://localhost:3002';
 const EMAIL = 'fam@test.pe';
@@ -44,6 +45,17 @@ async function abrir(pagina, token, usuario) {
 
 const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().replace(/\s+/g, ' ');
 
+// Llamada directa a la API (fuera del jsdom): sirve para comprobar que lo que la pagina
+// hizo se GUARDO de verdad en el servidor, y no solo que se pinto en pantalla.
+async function api(ruta, token, { method = 'GET', body } = {}) {
+  const r = await fetch(BASE + ruta, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  return r.json();
+}
+
 (async () => {
   const login = await (await fetch(`${BASE}/api/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -71,9 +83,10 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     { nombre: 'Ana', edad: 34, condiciones: ['intolerancia a la lactosa'], alergias: [] },
   ]) await apiSrv('/api/hogar/integrantes', { method: 'POST', body: JSON.stringify(it) });
 
-  // Ingrediente unico por corrida, para que "agregar" siempre sea un alta real
+  // Producto unico por corrida, para que "agregar" siempre sea un alta real
   // (el dedup de la despensa es correcto, pero haria que el conteo no cambie).
-  const INGREDIENTE = 'Hierba de prueba ' + Date.now();
+  const INGREDIENTE = 'Hierba de prueba ' + Date.now(); // se agrega en "Registrar compra"
+  let porcentajesPrevios = []; // snapshot de la despensa antes de la compra de prueba (se restaura al final)
 
   // ================= HOGAR =================
   console.log('\n=== hogar.html ===');
@@ -122,60 +135,117 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
   }
 
   // ================= DESPENSA =================
+  // Modelo: "Mi despensa" es SOLO VER + buscar (sin form de agregar). Agregar productos y
+  // marcar cuales compre vive en "Registrar compra": form de alta arriba + checklist debajo.
   console.log('\n=== despensa.html ===');
   {
     const { doc, errores } = await abrir('despensa.html', token, usuario);
     check(errores.length === 0, `sin errores de runtime ${errores.length ? '-> ' + errores.join(' | ') : ''}`);
-    check(doc.querySelector('#lista-catalogo').children.length === 51, `datalist con 51 ingredientes (= ${doc.querySelector('#lista-catalogo').children.length})`);
-    check(doc.querySelector('#d-nivel').options.length === 3, 'select de nivel con 3 opciones');
-    check(doc.querySelector('#d-cat').options.length === 11, `select de categoria con 11 opciones (= ${doc.querySelector('#d-cat').options.length})`);
-    check(doc.querySelector('#filtro-cat').options.length === 12, `filtro con 11 categorias + "todas" (= ${doc.querySelector('#filtro-cat').options.length})`);
-    check(/\d+ en despensa/.test(txt(doc, '#pill-despensa')), `pill de despensa: "${txt(doc, '#pill-despensa')}"`);
+    // Mi despensa: solo ver + buscar (sin formulario de agregar ni chips).
+    check(doc.querySelector('#btn-add-ing') === null && doc.querySelector('#catalogo-chips') === null, 'Mi despensa no tiene formulario de agregar ni chips');
+    check(!!doc.querySelector('#buscar-despensa'), 'Mi despensa tiene un buscador');
     const antes = doc.querySelectorAll('#lista-despensa [data-del]').length;
-    check(antes > 0, `${antes} ingredientes pintados`);
-    check(doc.querySelectorAll('#lista-despensa .cat-chip').length > 0, 'los ingredientes salen agrupados por categoria');
+    check(antes > 0, `${antes} productos pintados`);
+    check(doc.querySelectorAll('#lista-despensa .cat-chip').length > 0, 'los productos salen agrupados por categoria');
 
-    // Agregar un ingrediente de verdad.
-    doc.querySelector('#d-nombre').value = INGREDIENTE;
-    doc.querySelector('#btn-add-ing').click();
+    // Barra de stock: cada producto muestra el % que le queda y se puede editar a mano.
+    // El select poco/normal/bastante ya NO esta aqui: el porcentaje es la fuente de verdad.
+    check(doc.querySelectorAll('#lista-despensa .stock-barra').length === antes, `cada producto trae su barra de stock (= ${doc.querySelectorAll('#lista-despensa .stock-barra').length})`);
+    check(doc.querySelectorAll('#lista-despensa [data-nivel]').length === 0, 'el select de nivel ya no esta en Mi despensa');
+    const rango = doc.querySelector('#lista-despensa .stock-rango');
+    check(!!rango && rango.type === 'range', 'la barra se edita con un control de rango');
+    check(/Te queda|acabó/.test(txt(doc, '#lista-despensa .stock-lbl')), `la etiqueta dice cuanto queda: "${txt(doc, '#lista-despensa .stock-lbl')}"`);
+
+    // Editar a mano PERSISTE: se mueve el rango, se suelta (change) y se recarga del servidor.
+    const idEditado = rango.dataset.pct;
+    const pctOriginal = Number(rango.value);
+    const pctNuevo = pctOriginal >= 50 ? 25 : 75;
+    rango.value = String(pctNuevo);
+    rango.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
+    await esperar(700);
+    const guardado = (await api(`/api/despensa`, token)).despensa.find((i) => String(i.id) === idEditado);
+    check(guardado.porcentaje === pctNuevo, `el % editado a mano se guarda (${pctOriginal}% -> ${guardado.porcentaje}%)`);
+    // El nivel es DERIVADO: nunca puede contradecir a la barra.
+    const esperado = pctNuevo <= 30 ? 'poco' : pctNuevo <= 70 ? 'normal' : 'bastante';
+    check(guardado.nivel === esperado, `el nivel se deriva del %: ${guardado.porcentaje}% -> "${guardado.nivel}"`);
+    // Se deja como estaba: el resto del smoke (y la siguiente corrida) no debe heredarlo.
+    await api(`/api/despensa/${idEditado}`, token, { method: 'PATCH', body: { porcentaje: pctOriginal } });
+    // El buscador filtra la despensa.
+    doc.querySelector('#buscar-despensa').value = 'zzz-no-existe';
+    doc.querySelector('#buscar-despensa').dispatchEvent(new doc.defaultView.Event('input'));
+    await esperar(80);
+    check(doc.querySelectorAll('#lista-despensa [data-del]').length === 0, 'el buscador filtra la despensa');
+    doc.querySelector('#buscar-despensa').value = '';
+    doc.querySelector('#buscar-despensa').dispatchEvent(new doc.defaultView.Event('input'));
+    await esperar(60);
+
+    // Registrar compra: form de agregar (nombre+categoria+nivel) + checklist por categoria.
+    doc.querySelector('#t-compra').click(); await esperar(150);
+    check(!doc.querySelector('#panel-compra').classList.contains('hidden'), 'la tab de registrar compra se muestra');
+    check(!!doc.querySelector('#cc-nombre') && doc.querySelector('#cc-cat').options.length === 11 && doc.querySelector('#cc-nivel').options.length === 3,
+      'el form de agregar (nombre + categoria + nivel) esta en Registrar compra');
+    check(doc.querySelector('#c-semanas').options.length === 8, `selector de semanas con 8 opciones (= ${doc.querySelector('#c-semanas').options.length})`);
+    check(/Cubre del/.test(txt(doc, '#c-periodo')), `el rango del periodo se muestra: "${txt(doc, '#c-periodo')}"`);
+
+    // El checklist muestra los productos de la despensa por categoria, marcados por defecto.
+    // OJO: son <button>, no <input type=checkbox> — "c.checked" seria undefined y el aserto
+    // pasaria SIEMPRE (asi estuvo, dando un falso OK en el desmarcado). El estado marcado se
+    // lee de la clase: sin "btn-ghost" = marcado.
+    const marcados = () => [...doc.querySelectorAll('#checklist-compra [data-check]')].filter((b) => !b.classList.contains('btn-ghost')).length;
+    check(doc.querySelectorAll('#checklist-compra [data-check]').length === antes, `el checklist lista los ${antes} productos (= ${doc.querySelectorAll('#checklist-compra [data-check]').length})`);
+    check(doc.querySelectorAll('#checklist-compra .cat-chip').length > 0, 'el checklist sale agrupado por categoria');
+    check(marcados() === antes, `arrancan todos marcados (${marcados()} de ${antes})`);
+
+    // Agregar un producto con el form -> alta a la despensa + queda en el checklist marcado.
+    doc.querySelector('#cc-nombre').value = INGREDIENTE;
+    doc.querySelector('#cc-cat').value = 'verdura';
+    doc.querySelector('#btn-cc-add').click();
     await esperar(900);
-    const despues = doc.querySelectorAll('#lista-despensa [data-del]').length;
-    check(despues === antes + 1, `agregar ingrediente: ${antes} -> ${despues}`);
+    check(doc.querySelectorAll('#checklist-compra [data-check]').length === antes + 1, `agregar suma al checklist: ${antes} -> ${doc.querySelectorAll('#checklist-compra [data-check]').length}`);
 
-    // Tab de compra. El ingrediente recien agregado queda PRESELECCIONADO aqui (queda
-    // listo para registrarlo como compra de la semana), asi que el boton ya esta habilitado.
-    doc.querySelector('#t-compra').click(); await esperar(600);
-    check(!doc.querySelector('#panel-compra').classList.contains('hidden'), 'la tab de compra se muestra');
-    check(doc.querySelectorAll('#catalogo-chips [data-cat-chip]').length === 51, `chips del catalogo (= ${doc.querySelectorAll('#catalogo-chips [data-cat-chip]').length})`);
-    check(doc.querySelector('#btn-guardar-compra').disabled === false, 'el ingrediente agregado llega preseleccionado (boton habilitado)');
-    check(txt(doc, '#c-resumen').includes('1 ingrediente'), `resumen arranca con el agregado: "${txt(doc, '#c-resumen')}"`);
-    check(doc.querySelectorAll('#lista-seleccion [data-sel-del]').length === 1, 'el agregado se lista para registrar');
+    // "Ninguno" desmarca todo y registrar debe exigir al menos uno.
+    doc.querySelector('#btn-marca-ninguno').click(); await esperar(60);
+    check(marcados() === 0, `con "Ninguno" se desmarca todo (quedan ${marcados()})`);
+    doc.querySelector('#btn-guardar-compra').click(); await esperar(200);
+    check(/Marca al menos un producto/.test(txt(doc, '#alerta-compra')), 'registrar sin marcados avisa que marques uno');
 
-    // Seleccionar 2 chips mas -> 3 en total.
-    const chips = doc.querySelectorAll('#catalogo-chips [data-cat-chip]');
-    chips[0].click(); await esperar(60);
-    chips[5].click(); await esperar(60);
-    check(doc.querySelector('#btn-guardar-compra').disabled === false, 'el boton sigue habilitado al seleccionar mas');
-    check(txt(doc, '#c-resumen').includes('3 ingredientes'), `resumen: "${txt(doc, '#c-resumen')}"`);
-    check(doc.querySelectorAll('#lista-seleccion [data-sel-del]').length === 3, 'los seleccionados se listan con su nivel');
+    // "Todos" y registrar -> los marcados van al historial.
+    // OJO: registrar una compra deja los productos marcados al 100% (acabas de comprarlos).
+    // Marcando TODOS, esta prueba aplana la despensa del hogar sembrado, que tiene niveles
+    // realistas a proposito. Se guarda el estado para devolverlo en la limpieza: si no, cada
+    // corrida dejaria al hogar de prueba con todo lleno y el planificador veria otra casa.
+    porcentajesPrevios = (await apiSrv('/api/despensa')).despensa.map((d) => ({ id: d.id, porcentaje: d.porcentaje }));
+    doc.querySelector('#btn-marca-todos').click(); await esperar(60);
+    const comprasAntes = doc.querySelectorAll('#lista-compras > div').length;
+    doc.querySelector('#btn-guardar-compra').click();
+    await esperar(1000);
+    check(/Se guardó la despensa del periodo/.test(txt(doc, '#alerta-compra')), `mensaje de exito: "${txt(doc, '#alerta-compra')}"`);
+    const comprasDespues = doc.querySelectorAll('#lista-compras > div').length;
+    check(comprasDespues === comprasAntes + 1, `la compra aparece en el historial: ${comprasAntes} -> ${comprasDespues}`);
+    check(/Periodo \d{2}\/\d{2}/.test(txt(doc, '#lista-compras')), 'el historial muestra el periodo (dd/mm)');
 
-    // Filtro de busqueda.
-    doc.querySelector('#c-buscar').value = 'papa';
-    doc.querySelector('#c-buscar').dispatchEvent(new doc.defaultView.Event('input'));
-    await esperar(120);
-    const filtrados = doc.querySelectorAll('#catalogo-chips [data-cat-chip]').length;
-    check(filtrados > 0 && filtrados < 51, `el buscador filtra el catalogo (51 -> ${filtrados})`);
-
-    // Historial de compras.
-    check(doc.querySelectorAll('#tbody-compras tr').length >= 1, 'el historial de compras carga');
+    // Volver a la despensa: el banner avisa a que periodo pertenece.
+    doc.querySelector('#t-inventario').click(); await esperar(80);
+    check(/Despensa del periodo/.test(txt(doc, '#banner-periodo')), `el banner del periodo: "${txt(doc, '#banner-periodo')}"`);
   }
 
-  // Limpieza: quitar el ingrediente de prueba. Si se queda, la IA lo tomara como real
-  // y generara platos alrededor de el (la despensa es la entrada del planificador).
+  // Limpieza: quitar los productos de prueba Y el snapshot de compra que los incluyo. Si un
+  // producto se queda, la IA lo tomara como real y generara platos alrededor de el (la
+  // despensa es la entrada del planificador); la compra se borra directo en BD (no hay endpoint).
   const fin = await apiSrv('/api/despensa');
   const sobra = fin.despensa.find((d) => d.nombre === INGREDIENTE);
-  if (sobra) await apiSrv(`/api/despensa/${sobra.id}`, { method: 'DELETE' });
-  console.log(`\n(limpieza: ingrediente de prueba ${sobra ? 'eliminado' : 'no encontrado'})`);
+  let compraId = null;
+  if (sobra) {
+    await apiSrv(`/api/despensa/${sobra.id}`, { method: 'DELETE' });
+    compraId = sobra.compra_id;
+    if (compraId) db.prepare('DELETE FROM compras WHERE id = ?').run(compraId);
+  }
+  // Devolver los porcentajes que la compra de prueba puso a 100 (ver el comentario arriba).
+  for (const p of porcentajesPrevios) {
+    await apiSrv(`/api/despensa/${p.id}`, { method: 'PATCH', body: JSON.stringify({ porcentaje: p.porcentaje }) });
+  }
+  console.log(`\n(limpieza: producto de prueba ${sobra ? 'eliminado' : 'no encontrado'}${compraId ? ', compra de prueba borrada' : ''}`
+    + `${porcentajesPrevios.length ? `, ${porcentajesPrevios.length} niveles de despensa restaurados` : ''})`);
 
   console.log(fallos ? `\n=== ${fallos} FALLA(S) ===` : '\n=== TODO OK ===');
   process.exit(fallos ? 1 : 0);

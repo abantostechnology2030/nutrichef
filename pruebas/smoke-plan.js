@@ -68,6 +68,27 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
   const sobras = await vaciarSemana();
   if (sobras) console.log(`(estado inicial: se limpiaron ${sobras} casillas que habian quedado de antes)`);
 
+  // La seccion de "carga y estructura" necesita una semana LLENA, y la que se abre por
+  // defecto es la ACTUAL. Antes daba por hecho que el menu sembrado caia en la semana de
+  // hoy: funcionaba la semana en que se sembro y se rompia sola en cuanto pasaba el tiempo
+  // (falla real: "las 21 casillas tienen plato" con el menu sembrado 2 semanas atras).
+  //
+  // Se copia la semana mas llena que tenga el usuario a la semana actual. Es GRATIS (copiar
+  // apunta a los mismos platos, no llama a la IA) y deja el estado fijado en vez de heredado.
+  const semanaActual = await apiSrv('/api/plan').then((p) => p.semana);
+  let copiadaAqui = false;
+  {
+    const { semanas } = await apiSrv('/api/plan/semanas');
+    const origen = semanas.filter((s) => s.semana !== semanaActual).sort((a, b) => b.items - a.items)[0];
+    const actual = await apiSrv(`/api/plan?semana=${semanaActual}`);
+    const llenasHoy = actual.dia_orden.reduce((n, d) => n + actual.momentos.filter((m) => actual.plan[d][m]).length, 0);
+    if (llenasHoy === 0 && origen && origen.items >= 21) {
+      await apiSrv('/api/plan/copiar', { method: 'POST', body: JSON.stringify({ desde: origen.semana, hacia: semanaActual }) });
+      copiadaAqui = true;
+      console.log(`(estado inicial: se copio el menu de ${origen.semana} a la semana actual para probar la carga)`);
+    }
+  }
+
   console.log('\n=== plan.html: carga y estructura ===');
   const { doc, errores } = await abrir('plan.html', token, usuario);
   check(errores.length === 0, `sin errores de runtime ${errores.length ? '-> ' + errores.join(' | ') : ''}`);
@@ -79,6 +100,7 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
   check(/generaciones/.test(txt(doc, '#pill-gen')), `pill de generaciones: "${txt(doc, '#pill-gen')}"`);
   check(doc.querySelectorAll('.casilla:not(.vacia)').length === 21, 'las 21 casillas tienen plato (menu ya generado antes)');
   check(doc.querySelectorAll('.tag-falta, .tag-ok').length === 21, 'cada casilla muestra si falta comprar o no');
+  check(/periodo|compra/i.test(txt(doc, '#badge-periodo')), `el badge de periodo se pinta: "${txt(doc, '#badge-periodo')}"`);
 
   // El dia de hoy se resalta.
   check(doc.querySelectorAll('.dia-fila.hoy').length <= 1, 'a lo sumo un dia marcado como hoy');
@@ -146,6 +168,15 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     check(!!p?.info, `${m}: y su aporte nutricional`);
     check(!(p?.pasos || []).some((s) => /^\s*\d+\s*[.)-]/.test(s)), `${m}: los pasos no vienen numerados (el <ol> ya numera)`);
   }
+
+  // Lista de compras (Fase 5): consolida y DEDUPLICA los faltantes del periodo. Los 3
+  // platos recien generados traen faltantes; la lista los junta por pasillo, sin repetir.
+  const falt = await apiSrv(`/api/plan/faltantes?inicio=${SEMANA}`);
+  check(falt.total >= 1, `la lista junta los faltantes del dia (total = ${falt.total})`);
+  check((falt.por_categoria || []).every((g) => g.items.length), 'agrupada por categoria, sin grupos vacios');
+  const sinDobles = falt.items.every((i, n) =>
+    falt.items.findIndex((o) => o.nombre.toLowerCase() === i.nombre.toLowerCase()) === n);
+  check(sinDobles, 'sin nombres duplicados en la lista consolidada');
   // Y el detalle los muestra en vez del aviso de "todavia no tiene receta".
   doc2.querySelector('.dia-fila:first-child .casilla [data-ver]').click();
   await esperar(250);
@@ -199,7 +230,12 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
   check(Array.isArray(cob?.tengo) && Array.isArray(cob?.faltantes), 'separa lo que tiene de lo que le falta');
 
   // Lo importante: el alergeno.
-  const adv = (cob?.advertencias || []).join(' ').toLowerCase();
+  // SIN TILDES antes de buscar: Gemini escribe "un alergeno grave para Luis" (con tilde en
+  // la e) y Claude "¡ALERTA DE ALERGIA!" (sin tilde). Buscando /alerg/ a secas, el mismo
+  // aviso —igual de correcto— pasaba con un proveedor y fallaba con el otro. Es exactamente
+  // la trampa de "Gemini y Claude no responden igual": el aserto debe medir el CONTENIDO.
+    const sinTildes = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const adv = sinTildes((cob?.advertencias || []).join(' ')).toLowerCase();
   check((cob?.advertencias || []).length > 0, `avisa de algo (${(cob?.advertencias || []).length} advertencia(s))`);
   check(/man[ií]/.test(adv), 'la advertencia nombra el MANI (el alergeno del hogar)');
   check(/alerg/.test(adv), 'y dice explicitamente que es una alergia');
@@ -216,8 +252,19 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
   });
   check(!raro.verificados, `un texto sin sentido no se inventa como plato (${raro.error || 'lo acepto <- falla'})`);
 
-  // Limpieza: borrar la semana de prueba para no dejar basura.
-  console.log(`\n(limpieza: ${await vaciarSemana()} casillas de la semana de prueba eliminadas)`);
+  // Limpieza: borrar la semana de prueba para no dejar basura. Y deshacer la copia a la
+  // semana actual, si la hizo esta corrida: los platos son los MISMOS del menu de origen
+  // (copiar no duplica), asi que vaciar las casillas no borra el menu sembrado.
+  let copiaBorrada = 0;
+  if (copiadaAqui) {
+    const p = await apiSrv(`/api/plan?semana=${semanaActual}`);
+    for (const d of p.dia_orden) for (const m of p.momentos) {
+      const it = p.plan[d][m];
+      if (it) { await apiSrv(`/api/plan/${it.id}`, { method: 'DELETE' }); copiaBorrada++; }
+    }
+  }
+  console.log(`\n(limpieza: ${await vaciarSemana()} casillas de la semana de prueba eliminadas`
+    + `${copiaBorrada ? `, ${copiaBorrada} de la copia en la semana actual` : ''})`);
 
   console.log(fallos ? `\n=== ${fallos} FALLA(S) ===` : '\n=== TODO OK ===');
   process.exit(fallos ? 1 : 0);

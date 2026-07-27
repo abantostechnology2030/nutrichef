@@ -11,18 +11,21 @@
 // proveedor). Sirve para dos cosas a la vez: el tope por plan (generaciones_max por
 // semana) y el costo real en el panel admin. No agregar una llamada a IA sin registrarla.
 const express = require('express');
-const { db, lunesDe, fechaPeru, MOMENTOS, DIAS } = require('../db');
+const {
+  db, lunesDe, fechaPeru, sumarDias, periodoDe, claveIng, clampPct, nivelDePorcentaje,
+  MOMENTOS, DIAS, DIA_NUM, CATEGORIAS_ING,
+} = require('../db');
 const { requiereAuth } = require('../middleware/auth');
 const { requierePlanificador, requiereHogar } = require('../middleware/planificador');
 const { contextoDe, textoContexto } = require('../services/contexto');
+const { consumoDeCasillaId } = require('../services/consumo');
 const { generarPlatos, detallarPlatos, verificarPlatos } = require('../services/ai.service');
 
 const router = express.Router();
 router.use(requiereAuth, requierePlanificador);
 
-// Orden de los dias en el calendario: lunes..domingo. La BD usa 0=Domingo (como
-// Date.getDay()), asi que el indice del array de la IA se mapea con esto.
-const DIA_NUM = [1, 2, 3, 4, 5, 6, 0];
+// DIA_NUM (orden lunes..domingo sobre el 0=Domingo de la BD) vive en db.js: lo comparten
+// el calendario y el descuento de la despensa, y tienen que mapear el domingo igual.
 const semanaActual = () => lunesDe(fechaPeru());
 
 // ===== Limites del plan =====
@@ -142,6 +145,93 @@ router.get('/semanas', (req, res) => {
   });
 });
 
+// ===== Lista de faltantes del periodo (Fase 5) =====
+// La promesa central: "los faltantes de AMBAS direcciones se consolidan en UNA sola lista".
+//   1. platos.faltantes        -> lo que la IA marco como no disponible AL GENERAR.
+//   2. plan_comidas.cobertura  -> lo que arrojo VERIFICAR un plato propuesto por el usuario.
+// Se juntan, se DEDUPLICAN (misma cebolla en varios platos, con distinta grafia) y se
+// agrupan por categoria del catalogo para leerla EN EL MERCADO (por pasillo, no por plato).
+// NO usa IA: son datos que ya estan en la BD.
+
+// claveIng (la normalizacion que deduplica "Tomates" con "tomate") vive en db.js: la
+// comparten esta lista, el cruce con el catalogo y el descuento de la despensa, y las tres
+// tienen que agrupar igual o el mismo producto seria uno o dos segun quien lo mire.
+
+// Fecha real (YYYY-MM-DD) de una casilla: dia 0=Domingo (BD) -> offset lunes..domingo.
+const fechaCasilla = (semana, dia) => sumarDias(semana, DIA_NUM.indexOf(dia));
+
+// GET /api/plan/faltantes?inicio=&fin=   |   ?compra_id=   |   ?semana=
+// Sin parametros: la semana actual. La ventana puede cruzar varias semanas ISO.
+router.get('/faltantes', (req, res) => {
+  const usuario = req.usuario;
+
+  // Resolver la ventana [inicio, fin]. Prioridad: compra_id > inicio/fin > semana > actual.
+  let inicio;
+  let fin;
+  if (req.query.compra_id) {
+    const c = db.prepare('SELECT periodo_inicio, periodo_fin, semana FROM compras WHERE id = ? AND usuario_id = ?')
+      .get(Number(req.query.compra_id), usuario.id);
+    if (!c) return res.status(404).json({ error: 'Compra no encontrada.' });
+    inicio = c.periodo_inicio || c.semana;
+    fin = c.periodo_fin || sumarDias(inicio, 6);
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.inicio || '')) {
+    inicio = req.query.inicio;
+    fin = /^\d{4}-\d{2}-\d{2}$/.test(req.query.fin || '') ? req.query.fin : sumarDias(inicio, 6);
+  } else {
+    const p = periodoDe('semanal', req.query.semana);
+    inicio = p.inicio;
+    fin = p.fin;
+  }
+  if (fin < inicio) [inicio, fin] = [fin, inicio];
+
+  // Todas las casillas del usuario con sus faltantes (generado) y su cobertura (propuesto).
+  const filas = db.prepare(
+    `SELECT pc.semana, pc.dia, pc.cobertura, p.faltantes AS p_faltantes
+     FROM plan_comidas pc JOIN platos p ON p.id = pc.plato_id
+     WHERE pc.usuario_id = ?`
+  ).all(usuario.id);
+
+  // Catalogo -> categoria, indexado por la misma clave para tolerar plurales/grafia.
+  const catMap = new Map();
+  for (const r of db.prepare('SELECT nombre, categoria FROM ingredientes_catalogo').all()) {
+    catMap.set(claveIng(r.nombre), r.categoria);
+  }
+
+  // Consolidar deduplicando. Se conserva el PRIMER nombre visto (mejor grafia) y se
+  // acumulan las fuentes (generado / propuesto) de las que vino el faltante.
+  const acc = new Map(); // clave -> { nombre, categoria, fuentes:Set, casillas:count }
+  const sumar = (nombre, fuente) => {
+    const limpio = String(nombre || '').trim();
+    if (!limpio) return;
+    const k = claveIng(limpio);
+    if (!k) return;
+    let e = acc.get(k);
+    if (!e) { e = { nombre: limpio, categoria: catMap.get(k) || 'otro', fuentes: new Set(), casillas: 0 }; acc.set(k, e); }
+    e.fuentes.add(fuente);
+    e.casillas++;
+  };
+
+  for (const f of filas) {
+    if (!(fechaCasilla(f.semana, f.dia) >= inicio && fechaCasilla(f.semana, f.dia) <= fin)) continue;
+    for (const x of JSON.parse(f.p_faltantes || '[]')) sumar(x, 'generado');
+    if (f.cobertura) {
+      try { for (const x of JSON.parse(f.cobertura).faltantes || []) sumar(x, 'propuesto'); }
+      catch { /* cobertura corrupta: se ignora, no debe tumbar la lista */ }
+    }
+  }
+
+  const items = [...acc.values()]
+    .map((e) => ({ nombre: e.nombre, categoria: e.categoria, casillas: e.casillas, fuentes: [...e.fuentes] }))
+    .sort((a, b) => CATEGORIAS_ING.indexOf(a.categoria) - CATEGORIAS_ING.indexOf(b.categoria) || a.nombre.localeCompare(b.nombre));
+
+  // Agrupado por categoria en el orden del catalogo (= orden de pasillo del mercado).
+  const por_categoria = CATEGORIAS_ING
+    .map((cat) => ({ categoria: cat, items: items.filter((i) => i.categoria === cat) }))
+    .filter((g) => g.items.length);
+
+  res.json({ inicio, fin, total: items.length, items, por_categoria });
+});
+
 // ===== Aporte nutricional (platos.info) =====
 
 // Niveles y semaforo son enums: la IA es un modelo de lenguaje y a veces responde
@@ -206,6 +296,20 @@ function normInfo(info) {
 // devuelve un string donde esperamos un array, y perder el menu entero por eso seria peor.
 // origen: 'ia' = lo propuso el planificador ; 'propuesto' = lo pidio el usuario por nombre
 // y la IA solo lo verifico (ver POST /verificar).
+// Normaliza los ingredientes que devuelve la IA. Lo unico que se valida de verdad es
+// "consume" (0-100), porque es el que MUEVE la despensa: si llega como "80%" o como texto,
+// se descarta y el ingrediente cae a la heuristica por categoria en vez de descontar un
+// NaN. Ausente y 0 son cosas distintas: 0 es "no gasta nada de esto", y se respeta.
+function normIngredientes(v) {
+  return (Array.isArray(v) ? v : []).map((ing) => {
+    const limpio = { ...ing };
+    const c = Number(ing?.consume);
+    if (Number.isFinite(c)) limpio.consume = clampPct(c);
+    else delete limpio.consume;
+    return limpio;
+  });
+}
+
 function crearPlato(usuarioId, p, momento, comensales, region, origen = 'ia') {
   const lista = (v) => (Array.isArray(v) ? v : []);
   const nombre = String(p?.nombre || '').trim().slice(0, 120);
@@ -217,7 +321,7 @@ function crearPlato(usuarioId, p, momento, comensales, region, origen = 'ia') {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
   ).run(
     usuarioId, nombre, momento, comensales,
-    JSON.stringify(lista(p?.ingredientes)),
+    JSON.stringify(normIngredientes(p?.ingredientes)),
     JSON.stringify(lista(p?.faltantes).map((f) => String(f))),
     p?.nota ? String(p.nota).slice(0, 300) : null,
     normPasos(p?.pasos),
@@ -231,9 +335,15 @@ function crearPlato(usuarioId, p, momento, comensales, region, origen = 'ia') {
 // Coloca un plato en una casilla. La casilla es UNIQUE(usuario,semana,dia,momento):
 // si ya habia algo, se reemplaza (y el plato viejo se limpia si nadie mas lo usa).
 function ponerEnCasilla(usuarioId, semana, dia, momento, platoId, comensales) {
-  const previo = db.prepare('SELECT plato_id FROM plan_comidas WHERE usuario_id = ? AND semana = ? AND dia = ? AND momento = ?')
+  const previo = db.prepare('SELECT * FROM plan_comidas WHERE usuario_id = ? AND semana = ? AND dia = ? AND momento = ?')
     .get(usuarioId, semana, dia, momento);
-  if (previo) db.prepare('DELETE FROM plan_comidas WHERE usuario_id = ? AND semana = ? AND dia = ? AND momento = ?').run(usuarioId, semana, dia, momento);
+  if (previo) {
+    // Si la casilla que se reemplaza ya estaba cocinada, hay que devolverle a la despensa
+    // lo que le descontó: el plato desaparece del calendario y con el su registro de
+    // consumo_aplicado, asi que este es el ultimo momento para revertirlo.
+    if (previo.cocinado) revertirConsumo(usuarioId, previo);
+    db.prepare('DELETE FROM plan_comidas WHERE usuario_id = ? AND semana = ? AND dia = ? AND momento = ?').run(usuarioId, semana, dia, momento);
+  }
 
   db.prepare('INSERT INTO plan_comidas (usuario_id, semana, dia, momento, plato_id, comensales) VALUES (?, ?, ?, ?, ?, ?)')
     .run(usuarioId, semana, dia, momento, platoId, comensales);
@@ -644,18 +754,74 @@ router.post('/', (req, res) => {
 });
 
 // PATCH /api/plan/:id { cocinado } -> marcar una comida como cocinada
+//
+// AQUI es donde el consumo deja de ser proyeccion y se descuenta de verdad de la despensa.
+// Marcar resta ; desmarcar devuelve EXACTAMENTE lo que se resto (consumo_aplicado), no lo
+// que se volveria a estimar hoy: entre una cosa y la otra el usuario pudo editar la barra
+// a mano o comprar de nuevo, y recalcular le devolveria un porcentaje que nunca se le quito.
 router.patch('/:id', (req, res) => {
   const it = db.prepare('SELECT * FROM plan_comidas WHERE id = ? AND usuario_id = ?').get(Number(req.params.id), req.usuario.id);
   if (!it) return res.status(404).json({ error: 'Comida no encontrada en tu plan.' });
-  db.prepare('UPDATE plan_comidas SET cocinado = ? WHERE id = ?').run(req.body?.cocinado ? 1 : 0, it.id);
+  const quiere = req.body?.cocinado ? 1 : 0;
+
+  db.transaction(() => {
+    // Solo se mueve la despensa cuando el estado CAMBIA: dos "marcar cocinado" seguidos no
+    // pueden descontar dos veces el mismo plato.
+    if (quiere && !it.cocinado) aplicarConsumo(req.usuario.id, it);
+    else if (!quiere && it.cocinado) revertirConsumo(req.usuario.id, it);
+    db.prepare('UPDATE plan_comidas SET cocinado = ? WHERE id = ?').run(quiere, it.id);
+  })();
+
   res.json({ semana: it.semana, plan: planSemana(req.usuario.id, it.semana) });
 });
+
+// Descuenta de la despensa lo que se lleva esta casilla y deja registro de lo aplicado.
+// Se guarda lo REALMENTE descontado (el descuento se topa en 0), que es lo que hace que
+// revertir sea exacto aunque al producto le quedara menos de lo que el plato pedia.
+function aplicarConsumo(usuarioId, casilla) {
+  const consumo = consumoDeCasillaId(usuarioId, casilla.id);
+  const leer = db.prepare('SELECT porcentaje FROM despensa WHERE id = ? AND usuario_id = ?');
+  const escribir = db.prepare("UPDATE despensa SET porcentaje = ?, nivel = ?, actualizado_en = datetime('now') WHERE id = ?");
+
+  const aplicado = {};
+  for (const [despensaId, pct] of consumo) {
+    const fila = leer.get(despensaId, usuarioId);
+    if (!fila) continue;
+    const real = Math.min(fila.porcentaje, Math.round(pct));
+    if (real <= 0) continue;
+    const nuevo = clampPct(fila.porcentaje - real);
+    escribir.run(nuevo, nivelDePorcentaje(nuevo), despensaId);
+    aplicado[despensaId] = real;
+  }
+  db.prepare('UPDATE plan_comidas SET consumo_aplicado = ? WHERE id = ?')
+    .run(Object.keys(aplicado).length ? JSON.stringify(aplicado) : null, casilla.id);
+}
+
+// Devuelve a la despensa lo que esta casilla le habia descontado.
+function revertirConsumo(usuarioId, casilla) {
+  let aplicado = {};
+  try { aplicado = JSON.parse(casilla.consumo_aplicado || '{}'); }
+  catch { aplicado = {}; } // registro corrupto: no se devuelve nada, pero no se tumba el desmarcado
+
+  const leer = db.prepare('SELECT porcentaje FROM despensa WHERE id = ? AND usuario_id = ?');
+  const escribir = db.prepare("UPDATE despensa SET porcentaje = ?, nivel = ?, actualizado_en = datetime('now') WHERE id = ?");
+  for (const [despensaId, pct] of Object.entries(aplicado)) {
+    const fila = leer.get(Number(despensaId), usuarioId);
+    if (!fila) continue; // el producto ya no esta en la despensa: no hay donde devolverlo
+    const nuevo = clampPct(fila.porcentaje + Number(pct || 0));
+    escribir.run(nuevo, nivelDePorcentaje(nuevo), Number(despensaId));
+  }
+  db.prepare('UPDATE plan_comidas SET consumo_aplicado = NULL WHERE id = ?').run(casilla.id);
+}
 
 // DELETE /api/plan/:id -> vaciar una casilla
 router.delete('/:id', (req, res) => {
   const it = db.prepare('SELECT * FROM plan_comidas WHERE id = ? AND usuario_id = ?').get(Number(req.params.id), req.usuario.id);
   if (!it) return res.status(404).json({ error: 'Comida no encontrada en tu plan.' });
   db.transaction(() => {
+    // Vaciar una casilla ya cocinada le devuelve a la despensa lo que se le habia
+    // descontado: si no, el stock quedaria bajo por un plato que ya no existe.
+    if (it.cocinado) revertirConsumo(req.usuario.id, it);
     db.prepare('DELETE FROM plan_comidas WHERE id = ?').run(it.id);
     limpiarPlatoHuerfano(req.usuario.id, it.plato_id);
   })();

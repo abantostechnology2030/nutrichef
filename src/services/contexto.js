@@ -23,7 +23,7 @@ function contextoDe(usuarioId) {
       notas: i.notas || undefined,
     }));
 
-  const despensa = db.prepare('SELECT nombre, categoria, nivel FROM despensa WHERE usuario_id = ? ORDER BY categoria, nombre')
+  const despensa = db.prepare('SELECT nombre, categoria, nivel, porcentaje FROM despensa WHERE usuario_id = ? ORDER BY categoria, nombre')
     .all(usuarioId);
 
   const unicos = (arr) => [...new Map(arr.map((x) => [x.toLowerCase(), x])).values()];
@@ -65,9 +65,13 @@ function textoContexto(ctx) {
       ? `CONDICIONES MEDICAS A RESPETAR: ${ctx.condiciones.join(', ')}`
       : 'CONDICIONES MEDICAS: ninguna declarada.'
   );
+  // "queda" va en PORCENTAJE (0-100) y no como etiqueta poco/normal/bastante: es el dato
+  // real que guarda la despensa, y es el mismo lenguaje en el que la IA debe devolver el
+  // "consume" de cada ingrediente. Con dos escalas distintas (palabra a la entrada, numero
+  // a la salida) la estimacion no tendria contra que calibrarse.
   partes.push(
     ctx.despensa.length
-      ? `DESPENSA (lo que YA tiene en casa, con cuanto le queda): ${JSON.stringify(ctx.despensa.map((d) => ({ nombre: d.nombre, tengo: d.nivel })))}`
+      ? `DESPENSA (lo que YA tiene en casa; "queda" es el % que le sobra de ese producto, 100 = lleno, 0 = se le acabo): ${JSON.stringify(ctx.despensa.map((d) => ({ nombre: d.nombre, queda: `${d.porcentaje}%` })))}`
       : 'DESPENSA: vacia (no tiene ingredientes registrados).'
   );
   if (ctx.hogar.notas) partes.push(`NOTAS DE LA FAMILIA: ${ctx.hogar.notas}`);

@@ -4,7 +4,7 @@ Guía para trabajar en **NutriChefIA**. Lee esto antes de tocar el código.
 
 ## Qué es
 
-App web que **planifica las comidas de una familia** (desayuno / almuerzo / cena, de lunes a domingo) con IA, para el mercado peruano. El usuario configura su **hogar** (integrantes, condiciones médicas, alergias, dieta, región), registra su **compra semanal** en la despensa, y la IA **propone los platos** usando los ingredientes con los que ya cuenta, adaptando recetas de su región al número de comensales y a sus restricciones de salud. Incluye además un **escáner de productos** (foto o nombre → semáforo verde/ámbar/rojo). Modelo **freemium** con pagos manuales por **Yape** aprobados por un admin.
+App web que **planifica las comidas de una familia** (desayuno / almuerzo / cena, de lunes a domingo) con IA, para el mercado peruano. El usuario configura su **hogar** (integrantes, condiciones médicas, alergias, dieta, región), llena su **despensa** (stock de productos) y la registra como **compra de un periodo** (N semanas), y la IA **propone los platos** usando los ingredientes con los que ya cuenta, adaptando recetas de su región al número de comensales y a sus restricciones de salud. Incluye además un **escáner de productos** (foto o nombre → semáforo verde/ámbar/rojo). Modelo **freemium** con pagos manuales por **Yape** aprobados por un admin.
 
 > 🥗 La información generada es orientativa y no reemplaza la consulta con un nutricionista o profesional de salud. Mantener este disclaimer visible en el frontend.
 
@@ -72,7 +72,7 @@ el servidor real) — ver `pruebas/README.md`.
 | 2 | Hogar + Despensa (config previa, sin IA) | ✅ **hecha** |
 | 3 | Generador IA **por día** + calendario 7×3 + regenerar día/plato | ✅ **hecha** |
 | 4 | Detalle del plato (pasos) + platos manuales/biblioteca + **verificar platos propuestos** | ✅ **hecha** |
-| 5 | Lista de faltantes + PDF | ⬜ pendiente |
+| 5 | **Compra por periodo** + lista de faltantes consolidada + PDF | ✅ **hecha** |
 | 6 | Admin: catálogo de ingredientes + medidor con generaciones | 🟡 backend listo, falta pulir UI |
 
 **Funciona hoy, de punta a punta:** registro/login → configurar hogar → registrar la
@@ -103,7 +103,7 @@ src/
     auth.routes.js       # /registro, /login, /yo
     analisis.routes.js   # escaner: /texto (cache-first), /imagen (2 fotos), /historial, DELETE
     hogar.routes.js      # hogar + CRUD de integrantes (condiciones y alergias)
-    despensa.routes.js   # inventario + /compra (bulk semanal) + /compras (historial)
+    despensa.routes.js   # inventario (alta inmediata) + /compra (snapshot por periodo) + /compras (historial)
     plan.routes.js       # calendario 7x3 + /generar (POR DIA) + /verificar + /detallar + /copiar
     platos.routes.js     # biblioteca: CRUD de platos manuales + guardar/quitar (tope platos_max)
     pagos.routes.js      # info del paywall (incl. yape_qr) + comprobante Yape + /historial
@@ -116,7 +116,7 @@ public/
   index.html             # login / registro
   app.html               # ESCANER de productos (semaforo)
   hogar.html             # familia, condiciones medicas, alergias, region
-  despensa.html          # inventario + registrar compra semanal
+  despensa.html          # ver la despensa (buscar) + registrar compra (agregar producto + marcar comprados)
   plan.html              # CALENDARIO 7x3 + boton "Generar dia" con IA en cada dia
   platos.html            # "Mis platos": la biblioteca (crear/editar/borrar recetas)
   mi-plan.html           # "Mi suscripcion": planes y pago Yape
@@ -137,14 +137,15 @@ La BD **nació vacía**, así que el esquema está completo y limpio desde el d�
 - **planes**: todo límite en `NULL` = **ilimitado**. `analisis` (escaneos incluidos), `historial_max` (`0` = no guarda), `platos_max`, `semanas_max` (semanas distintas programables), **`generaciones_max`** (llamadas IA del planificador **por semana** — el cuello de costo), `dias_vigencia` (default 30), `incluye_planificador`, `es_default`, `activo`. Sembrados: **Free** (3 análisis, 3 guardados, 5 platos, 1 semana, **7 generaciones/semana** = una por día) y **Premium** (todo ilimitado). Admin = bypass total.
 - **usuarios**: `rol` `user|admin`, `plan_id`, `analisis_restantes`, `plan_expira` (YYYY-MM-DD; NULL = sin vencimiento). `usuarioPublico` resuelve el plan, expone `dias_restantes` + `hogar_configurado` y **auto-degrada a Free** (perezosamente) si `plan_expira <= hoy`.
 - **analisis**: historial del escáner. `consulta` = nombre del producto; `respuesta_json`; `input_tokens`/`output_tokens`; `proveedor` (`gemini`|`claude`). Limitado por `historial_max` (dedup por nombre, ventana rodante).
-- **hogar** (1 por usuario, UNIQUE): `region` (costa|sierra|selva), `ciudad`, `dieta`, `presupuesto`, `comensales`, **`configurado`** = gate del onboarding (sin hogar la IA no puede proponer nada).
+- **hogar** (1 por usuario, UNIQUE): `region` (costa|sierra|selva), `ciudad`, `dieta`, `presupuesto`, `comensales`, **`semanas`** (1..12 = cuántas semanas cubre una compra = el "periodo"; default 1; preferencia sticky), **`configurado`** = gate del onboarding (sin hogar la IA no puede proponer nada). `cadencia` (diario|semanal|mensual) quedó **heredada y sin uso** — la reemplazó `semanas`.
 - **integrantes**: `condiciones` (JSON) y **`alergias`** (JSON) → las alergias son **exclusión dura** en el prompt, no una preferencia.
 - **ingredientes_catalogo** (admin): base para abastecer la despensa. Categorías de cocina real (abarrote/verdura/fruta/carne/pescado/lacteo/huevo/legumbre/condimento/bebida/otro). Sembrado con ~51 ingredientes peruanos.
-- **despensa**: **inventario simple** — `nivel` (`poco|normal|bastante`), sin descuento automático al cocinar. UNIQUE por usuario + nombre normalizado. Decisión deliberada: descontar gramos exigía conversión de unidades y mermas, y la IA razona bien con disponibilidad.
-- **compras**: cabecera de la compra semanal; sus ítems entran a `despensa`.
+- **despensa**: inventario **por porcentaje** — **`porcentaje`** (0-100) es la **fuente de verdad** y **`nivel`** (`poco|normal|bastante`) quedó como campo **derivado** (`nivelDePorcentaje`: ≤30 poco, ≤70 normal, >70 bastante), que solo existe porque lo consumen el prompt de la IA y el snapshot de `compra_items`. **Nunca escribas `nivel` suelto**: se recalcula en cada escritura de `porcentaje`, para que no puedan contradecirse (una barra al 10% etiquetada "bastante"). UNIQUE por usuario + nombre normalizado. **Sigue sin haber gramos**: esa decisión no cambió (conversión de unidades + mermas). Lo que baja el porcentaje es el consumo de los platos programados, y **solo al marcarlos cocinados** — ver "Consumo de la despensa".
+- **compras**: registro de una compra de un periodo = los productos que el usuario **marcó como comprados**. **`periodo_inicio`/`periodo_fin`** = el tramo que cubre (N semanas o fechas a medida); `total_items` = cuántos productos marcó. **No es un reset**: la despensa persiste y sigue cambiando. `semana` (= lunes del inicio) se conserva por compatibilidad. Ver "Compra por periodo" en Lógica.
+- **compra_items**: el **detalle congelado** de la compra (`nombre`, `categoria`, `nivel`) por cada producto marcado. Vive aparte de `despensa` (que es mutable) para que el historial de "qué compré en el periodo X" no se reescriba al editar la despensa. `ON DELETE CASCADE` con `compras`.
 - **platos**: `ingredientes` (JSON `[{nombre,cantidad,unidad}]`), `faltantes` (JSON: lo que no estaba en la despensa al generar), **`pasos`** (JSON | **NULL hasta que se pidan** — hoy siempre NULL, los llena la fase 4), `info` (JSON | idem), `nota` (adaptación por condición médica), `momento`, `porciones`, `tiempo_min`, `dificultad`, `origen` (`ia`|`propuesto`|`manual`), **`guardado`**.
   > **`guardado` separa la biblioteca del plan**, y no es cosmético: llenar una semana crea **21 platos** y el plan Free permite **5**. Si `platos_max` contara todos, planificar sería imposible. El tope aplica a lo que el usuario decide **curar** (`guardado=1`), no a lo que la IA produce para el calendario.
-- **plan_comidas**: calendario. `semana` = fecha del **lunes**; `dia` 0..6 (0=Dom); `momento`; **UNIQUE(usuario, semana, dia, momento)** = una casilla, un plato. **`cobertura`** (JSON de la verificación contra la despensa) vive aquí y **no** en `platos`: el plato es estable, lo que cambia es la despensa (mismo plato puede "alcanzar" esta semana y "faltar" la otra).
+- **plan_comidas**: calendario. `semana` = fecha del **lunes**; `dia` 0..6 (0=Dom); `momento`; **UNIQUE(usuario, semana, dia, momento)** = una casilla, un plato. **`cobertura`** (JSON de la verificación contra la despensa) vive aquí y **no** en `platos`: el plato es estable, lo que cambia es la despensa (mismo plato puede "alcanzar" esta semana y "faltar" la otra). **`consumo_aplicado`** (JSON `{despensa_id: puntos}`) guarda lo que esta casilla le **descontó de verdad** a la despensa al marcarse cocinada: se registra lo aplicado y no lo estimado porque el descuento se topa en 0, y sin eso desmarcar devolvería un porcentaje que nunca se quitó.
 - **generaciones**: log de llamadas IA del planificador (`tipo`: menu|dia|plato|detalle|verificar). Cumple **dos** funciones: el gate `generaciones_max` por semana **y** el costo real en el admin.
 - **pagos**: `numero_operacion` UNIQUE, `comprobante_path`, `estado` `pendiente|aprobado|rechazado`.
 - **config**: clave/valor (`yape_numero`, `yape_titular`, `yape_qr_path`, `ai_modo`, `ai_prioridad`, `credito_gemini`, `credito_claude`, **`ia_instrucciones`**). `ia_instrucciones` = instrucciones generales del admin para la IA (texto libre, editable desde el panel); se anteponen al contexto de **todos** los flujos del planificador — ver `contexto.js`.
@@ -172,12 +173,70 @@ La BD **nació vacía**, así que el esquema está completo y limpio desde el d�
 - Ojo: este módulo **NO** usa `requiereHogar` — es justamente el que lo configura (gallina y huevo).
 
 ### Despensa (`despensa.routes.js`, gate `requierePlanificador`)
-- **Inventario simple**: `nivel` (`poco|normal|bastante`), sin descuento al cocinar (ver decisión arriba).
+- **Inventario por porcentaje**: `porcentaje` (0-100) manda, `nivel` se deriva (ver decisión arriba). `PATCH /api/despensa/:id` acepta **`porcentaje`** (la barra) o **`nivel`** (el select de "Agregar un producto", que es más cómodo justo después de comprar): una sola escala en la BD, dos formas de escribirla.
+- **`GET /api/despensa?inicio=&fin=`** devuelve, además del stock, la **proyección** de esa ventana: `consumo_previsto` y `restante` por producto. Sin parámetros, la **semana actual**. `POST`, `PATCH`, `DELETE` y `/compra` devuelven la despensa con la misma forma.
 - **Nunca duplica**: hay un UNIQUE sobre `(usuario_id, LOWER(TRIM(nombre)))`. `guardarIngrediente()` resuelve el upsert **a mano** (busca y luego UPDATE/INSERT) porque el índice es sobre una **expresión**.
-- **Categoría automática**: si el ingrediente está en `ingredientes_catalogo`, hereda su categoría; si no, cae a `otro`. El usuario no tiene que clasificar nada. Desde 2026-07-16 el form de "Lo que tengo" **también** trae un **selector de categoría** (sugerido desde el catálogo al teclear el nombre, editable): si el usuario elige una, `POST /api/despensa` la respeta; si no, sigue la regla automática.
-- **Al agregar un ingrediente queda preseleccionado en la compra semanal** (2026-07-16, solo cliente): tras guardarlo en la despensa, `despensa.html` lo mete en el `Map` de la pestaña "Registrar compra semanal" para que quede **listo** ahí — pero **no** se registra como compra hasta que el usuario pulse "Registrar compra". Es puramente de UI: el backend no cambió. Lo cubre `npm run smoke`.
-- **`POST /compra`** registra la compra semanal completa **en una transacción**: una compra a medias dejaría a la IA proponiendo platos con ingredientes que el usuario no llegó a registrar.
+- **Categoría automática**: si el ingrediente está en `ingredientes_catalogo`, hereda su categoría; si no, cae a `otro`. El usuario no tiene que clasificar nada. `POST /api/despensa` respeta la categoría si viene en el body; si no, sigue la regla automática.
+- **Agregar ≠ comprar (modelo 2026-07-18).** Son **dos conceptos separados**, y viven en **dos pestañas**:
+  - **"🧺 Mi despensa" = SOLO ver + buscar.** Muestra el stock agrupado por categoría (con su **barra de porcentaje** y quitar) + un buscador por nombre. **No tiene formulario de agregar** — para no confundir "tener" con "comprar".
+  - **"🛒 Registrar compra" = agregar + marcar.** Arriba, el **formulario "Agregar un producto"** (nombre + categoría autosugerida + nivel) → alta INMEDIATA a la despensa (`POST /api/despensa`) y queda marcado en el checklist. Debajo, la despensa **por categoría con checkboxes** para marcar **los productos que compraste** este periodo. Guarda los marcados como la **compra del periodo** (no borra la despensa). Ver el bullet siguiente.
+- **`POST /compra`** registra la compra del periodo completa **en una transacción**: una compra a medias dejaría a la IA proponiendo platos con ingredientes que el usuario no llegó a registrar.
 - **`compras.total_items`** guarda cuántos ingredientes traía la compra **al registrarla**. Los ítems viven en `despensa`, que es mutable: contar por `compra_id` daría un historial que se reescribe solo ("compré 6" pasaría a decir 5 al borrar uno). El conteo por `compra_id` sigue exponiéndose, pero como **`vigentes`**, que significa otra cosa.
+- **Registrar compra = marcar lo comprado del periodo (2026-07-18).** La pestaña "🛒 Registrar compra" muestra los productos de la despensa **por categoría con un checkbox cada uno** (arrancan **todos marcados** — lo común es que compraste tu stock; desmarca lo que ya tenías) + los botones **Todos/Ninguno**. El **formulario "Agregar un producto"** (arriba) da de alta uno que compraste y **no estaba en la despensa** (alta inmediata + queda marcado). `POST /compra` recibe **`items` = los nombres marcados**; la categoría **se resuelve contra la despensa** (no se confía en el cliente), crea la `compra` + congela el detalle en `compra_items`, responde *"Se guardó la despensa del periodo …"* y la compra **aparece en "Compras anteriores"**. Los productos **no marcados no se tocan** (su stock persiste); los **marcados vuelven al 100%** — acabas de comprarlos, están llenos, y ese es el punto de partida de la barra que cierra el ciclo *comprar → cocinar → se vacía → vuelve a la lista de compras*. El periodo se define de **dos formas**:
+  - **N semanas enteras** (`semanas`, 1..12): `periodoSemanas(inicio, n)` en `db.js` ancla el inicio al **lunes** y `fin = inicio + N*7 − 1`. N queda sticky en `hogar.semanas`. Como el periodo es en semanas enteras, **calza con la unidad de edición del plan** (que sigue siendo la semana): un periodo de N semanas **cubre N semanas de planificación**.
+  - **Fechas a medida** (`periodo_inicio` + `periodo_fin`): el usuario fija el rango exacto; no toca la preferencia sticky.
+  - **Concepto de "agotado":** pasado el periodo se entiende que se agotó y hay que volver a registrar (no hay borrado automático). El **banner** de la despensa y el **badge** del plan avisan a qué periodo pertenece (y si venció). El badge del plan muestra *"semana X de N"* del periodo activo (= la última compra registrada).
+
+### Consumo de la despensa (`services/consumo.js`) — ✅ hecho (2026-07-27)
+La barra de cada producto **baja sola** con lo que la familia cocina. Vive en su propio
+servicio porque lo usan **dos caminos que tienen que dar el mismo número**, o el usuario ve
+una barra que no cuadra con lo que se le descuenta:
+
+1. **Proyección** — *"esta semana te va a bajar el ají amarillo a 5%"*. **No toca la BD.**
+2. **Descuento** — al marcar la casilla **cocinada**, ese mismo cálculo se **aplica**.
+
+> **Programar NO descuenta.** Se evaluó descontar al poner el plato en la casilla y se
+> descartó: cada camino que toca el calendario (generar, rehacer día, copiar semana, borrar
+> plato, el CASCADE al borrar de la biblioteca) tendría que acordarse de devolver el
+> porcentaje, y el primero que se olvidara dejaría el stock mintiendo para siempre. Con la
+> proyección no hay nada que revertir — y el usuario igual **ve** el efecto de su semana
+> antes de cocinarla, que es para lo que sirve.
+
+- **De dónde sale "cuánto consume este plato de este ingrediente":**
+  - **Primero la IA**: cada ingrediente generado trae **`consume`** (0-100 = qué % del stock
+    se lleva ese plato), en `FORMATO_CONSUME`. Es la **única** fuente que distingue una
+    cucharadita de ají de medio kilo de pollo, y **viaja en la misma llamada** que el plato,
+    así que **no cuesta una generación extra de cupo**.
+  - **Después la heurística** (`PESO_CATEGORIA`), para lo que nació sin ese dato: los platos
+    viejos, los manuales de la biblioteca y los de *verificar*. **No es un caso raro**: hasta
+    que se regenere, es lo que ve todo usuario existente.
+- **Las dos fuentes se ACUMULAN distinto, y no es un detalle.** La IA da una fracción por
+  plato, así que dos platos que piden 40% necesitan 80%: **se suman**. La heurística no sabe
+  cuánto pide el plato, así que **satura**: `total = 1 − (1−w)^n`. Sumándola linealmente,
+  medido sobre la semana de 21 platos del hogar de prueba, **el aceite y el ajo llegaban a
+  0%** — una casa compra los básicos en tamaños proporcionales a lo que los usa. Con la
+  saturación el aceite queda en 28%. **Con un solo plato las dos fórmulas coinciden**
+  (`1−(1−w)^1 = w`), así que el descuento real al cocinar no cambia por esto.
+- **El emparejamiento ingrediente↔despensa aquí es LOCAL, no de la IA** (la IA sí lo hace en
+  el prompt, donde tiene la despensa delante). Se compara por **conjunto de palabras, no por
+  substring**: `"sal"` está contenida en `"salsa de soya"`, y descontarle el stock de sal a
+  una salsa sería un error silencioso que el usuario no tiene cómo notar. Gana la
+  coincidencia **exacta**, y si no, la **más específica** (para que "Ají amarillo" no se
+  lleve el descuento de un "Ají" genérico). Verificado: `Pechuga de pollo → Pollo`,
+  `Salsa de soya → (sin match)`.
+- **Los faltantes se excluyen**: si la IA ya dijo que ese ingrediente no lo tiene (o que su
+  versión normal no le sirve por una condición médica), **no puede salir de la despensa**.
+  Sin esto, un hogar con "Arroz" vería bajar su arroz por un plato de *"arroz integral"* que
+  está justamente en la lista de compras **porque no lo tiene**.
+- **La proyección solo cuenta las casillas NO cocinadas**: lo que ya se cocinó se descontó de
+  verdad, y volver a proyectarlo lo restaría dos veces.
+- **La edición manual manda.** El usuario mueve la barra (`.stock-rango`) y eso es lo que
+  queda: es el único que sabe cuánto le queda de verdad en la olla.
+- **UI:** la barra tiene **dos tramos** (`.stock-tiene` sólido = lo que le queda hoy;
+  `.stock-consumo` **rayado** = lo que se llevarían los platos programados). El rayado es a
+  propósito: es una proyección, y pintarla sólida haría creer que ya se gastó. El color del
+  tramo sólido responde a lo que le **quedará**, no a lo que tiene: la pregunta que el
+  usuario trae a esa pantalla es *"¿me alcanza?"*.
 
 ### IA (`services/ai.service.js`) — el corazón
 **Proveedor configurable en runtime + fallback.** Lee de `config`: `ai_modo` (`gemini`|`claude`|`ambos`) y `ai_prioridad`. Con `ambos` usa el prioritario y, si falla tras sus reintentos, **cae automáticamente** al otro.
@@ -248,14 +307,15 @@ dispara el botón "Analizar nutrición".
 - La UI usa las clases `sem-*-bn` del **escáner**: es el mismo lenguaje visual verde/ámbar/rojo.
   Ojo con el mapeo: la BD dice **`ambar`** y la clase CSS se llama **`amarillo`**.
 
-> **`MAX_TOKENS_PLANIFICADOR = 24000`** y **1.400 por casilla** en `generarPlatos`. El techo por casilla fue subiendo con lo que trae el plato: ~350 tokens medidos con la receta base, ~550 al sumar `info`, **~900 al sumar `pasos`**. Con los 700 de antes, pedir un día se habría truncado — y un JSON cortado **no pierde un plato: pierde la llamada entera**. Subir el techo **no cuesta nada** (solo se pagan los tokens generados). Si le agregas campos al plato, **vuelve a medir**: `SELECT output_tokens FROM generaciones`.
+> **`MAX_TOKENS_PLANIFICADOR = 24000`** y **1.600 por casilla** en `generarPlatos`. El techo por casilla fue subiendo con lo que trae el plato: ~350 tokens medidos con la receta base, ~550 al sumar `info`, **~900 al sumar `pasos`**. Con los 700 de antes, pedir un día se habría truncado — y un JSON cortado **no pierde un plato: pierde la llamada entera**. El último salto (1.400 → 1.600) es el **`consume` por ingrediente** (~10 tokens × ~10 ingredientes). Subir el techo **no cuesta nada** (solo se pagan los tokens generados). Si le agregas campos al plato, **vuelve a medir**: `SELECT output_tokens FROM generaciones`.
 
 **Costo medido (Gemini flash, `gemini-2.5-flash`):**
 
 | Operación | Tokens (in / out) | Costo |
 |---|---|---|
-| **Un día (3 platos, con receta + nutrición)** | 1.823 / 1.825 | **$0.0051** |
-| Una semana completa = 7 días sueltos | — | **~$0.036** |
+| **Un día (3 platos: receta + nutrición + `consume`)** | 2.222 / 1.918–2.304 | **$0.0055–0.0064** |
+| Una semana completa = 7 días sueltos | — | **~$0.038–0.045** |
+| ~~Un día antes del `consume`~~ (referencia) | 1.823 / 1.825 | $0.0051 |
 | Un día sin receta (histórico) | 1.636 / 1.382 | $0.0039 |
 | Un plato suelto | ~2.340 / ~530 | ~$0.002 |
 | Backfill de 21 platos (`/detallar`) | 3.492 / 3.450 | $0.0097 |
@@ -382,7 +442,7 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 - **Basura en la despensa = basura en el menú.** La IA usa lo que encuentre; un ingrediente de prueba olvidado genera platos reales alrededor de él.
 - **`sed` puede fallar en silencio.** Si editas con `sed`, verifica el resultado: di por hecho que un bloque se había insertado y no era así.
 
-## POR DÓNDE SEGUIR (pausa: 2026-07-16 · fases 1-4 hechas · **EN PRODUCCIÓN**)
+## POR DÓNDE SEGUIR (pausa: 2026-07-18 · fases 1-5 hechas · **EN PRODUCCIÓN**)
 
 > **La app es pública:** https://nutrichef.solucionesctec.com. Cualquier cambio que subas a
 > `main` y despliegues lo ven usuarios reales. Redeploy y trampas: `DEPLOY.md`.
@@ -392,8 +452,16 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 > placeholder (nadie puede pagarte); y la key de Gemini es **compartida con MedicaIA y
 > NutriIA**, las tres en producción.
 >
-> **Lo siguiente en producto es la fase 5** (lista de faltantes + PDF). Del rebranding solo
-> falta el arte propio de la mascota.
+> **Lo siguiente en producto es la fase 6** (pulir la UI del admin). La fase 5 (compra por
+> periodo + lista de faltantes + PDF) se cerró el 2026-07-18. Del rebranding solo falta el
+> arte propio del chef del semáforo.
+>
+> ✅ **El consumo de la despensa (2026-07-27) está verificado con IA real (Gemini).** Devuelve
+> `consume` en **11/11 ingredientes** y con criterio: `Pollo 80, Papa 40, Ajo 5, Sal 2,
+> Comino 2` — distingue lo que se acaba en el plato de lo que dura meses, que es justo lo
+> que la heurística por categoría no puede hacer. **Falta probarlo con Claude**
+> (`setConfig('ai_modo','claude')` + `npm run smoke:plan`, ~$0.047): el fallback tapa las
+> diferencias entre proveedores y ahí ya se escondió un bug meses.
 
 > **La fase 4 se cerró el 2026-07-16.** El calendario ya tiene **las tres vías** para llenar
 > una casilla: *"✨ Proponer"* (la IA elige), *"✍️ Ya sé qué cocinar"* (la familia elige y la
@@ -448,22 +516,39 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
    `bloqueCobertura()`, y **las advertencias van primero y en rojo**: pueden decir que el
    plato lleva un alérgeno del hogar, y es lo más importante de esa pantalla.
 
-### Fase 5 — lista de faltantes + PDF (lo siguiente)
-Es el cierre de la promesa: *"los faltantes de ambas direcciones se consolidan en **una sola
-lista de compras**"* (ver "La inversión conceptual"). **Las dos fuentes ya existen y se
-llenan solas** — falta unirlas:
+### Fase 5 — compra por periodo + lista de faltantes + PDF — ✅ HECHA (2026-07-18)
+Cierra la promesa: *"los faltantes de ambas direcciones se consolidan en **una sola lista de
+compras**"* (ver "La inversión conceptual"). Lo cubren `smoke:platos` (forma del endpoint,
+gratis) y `smoke:plan` (dedup con datos reales, con IA).
 
-1. **`platos.faltantes`** — lo que la IA marcó como no disponible al generar (~23 distintos por semana medidos).
-2. **`plan_comidas.cobertura.faltantes`** — lo que arrojó *verificar* un plato propuesto por el usuario (fase 4).
+**`GET /api/plan/faltantes?inicio=&fin=` | `?compra_id=` | `?semana=`** (en `plan.routes.js`).
+Sin parámetros: la semana actual. La ventana puede **cruzar varias semanas ISO** (para una
+cadencia mensual): filtra las casillas por su **fecha real** (`fechaCasilla` = `semana` + el
+offset del día vía `DIA_NUM`). Une las dos fuentes:
 
-- Falta: **`GET /api/plan/faltantes?semana=`** que una ambas, **deduplicadas** (ojo: la misma
-  cebolla aparece en varios platos, y puede venir por las dos vías con distinta grafía).
-- Sería el sitio natural para cruzarlas con `ingredientes_catalogo` y agruparlas por
-  categoría — la lista se usa **en el mercado**, y ordenarla por pasillo (verduras, carnes,
-  abarrotes) vale más que ordenarla por plato.
-- `public/js/vendor/jspdf.umd.min.js` ya está vendorizado (viene de NutriIA) para el PDF.
-- **No hace falta IA**: son datos que ya están en la BD. Que no se te cuele una llamada.
-- `public/js/vendor/jspdf.umd.min.js` **ya está vendorizado** (viene de NutriIA) para el PDF.
+1. **`platos.faltantes`** — lo que la IA marcó al generar (fuente `generado`).
+2. **`plan_comidas.cobertura.faltantes`** — lo que arrojó *verificar* un plato propuesto (fuente `propuesto`).
+
+- **Deduplicación con `claveIng()`**: minúsculas + sin tildes + espacios colapsados +
+  **singular simple** (une "tomate"/"tomates", "Cebolla roja"/"cebolla roja"). El singular
+  solo afecta la **clave**, no el nombre mostrado (se conserva el primero visto). Cada ítem
+  lleva `casillas` (en cuántos platos aparece) y `fuentes[]`.
+- **Agrupada por categoría** cruzando con `ingredientes_catalogo` (mismo `claveIng` en ambos
+  lados para tolerar plurales); lo que no matchea cae a `otro`. El orden es el de
+  `CATEGORIAS_ING` = **orden de pasillo del mercado** (se usa caminando el mercado, no por plato).
+- **NO usa IA** ni consume cupo: son datos que ya están en la BD. La cobertura corrupta se
+  ignora sin tumbar la lista.
+- **UI en `plan.html`**: botón "🛒 Lista de compras" → modal con los faltantes de la semana
+  visible agrupados por pasillo → "⬇ Descargar PDF". El botón **solo aparece si la semana
+  visible tiene al menos un plato** (`actualizarBotonFaltantes`): con la semana vacía no hay
+  de dónde sacar faltantes, y devolvía una lista vacía que parecía un error ("no me falta
+  nada") en vez de "todavía no has planificado". Y un **badge de periodo** (`#badge-periodo`)
+  que muestra a qué periodo pertenece la semana visible (*"Despensa del periodo … · semana X de N"*),
+  leyendo la última compra registrada; avisa si la semana quedó **fuera** de ese periodo.
+- **PDF con `jspdf.umd.min.js`** (vendorizado, viene de NutriIA). Se carga **bajo demanda**
+  (al pulsar Descargar), no en cada carga del plan: es pesado y además toca `<canvas>` al
+  evaluarse, lo que rompía el smoke en jsdom. Fuentes estándar (helvetica): sin emojis, usa
+  `[ ]` como casilla para marcar en el mercado.
 
 ### Fase 6 — admin
 Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `generaciones`). Falta pulir la UI: mostrar el desglose de generaciones por tipo (menu/dia/plato/detalle/verificar) y el aviso de crédito.

@@ -130,12 +130,23 @@ db.exec(`
     dieta        TEXT    NOT NULL DEFAULT 'omnivora' CHECK (dieta IN ('omnivora','vegetariana','vegana','pescetariana')),
     presupuesto  TEXT    NOT NULL DEFAULT 'medio' CHECK (presupuesto IN ('bajo','medio','alto')),
     comensales   INTEGER NOT NULL DEFAULT 1,
+    cadencia     TEXT    NOT NULL DEFAULT 'semanal',
+    semanas      INTEGER NOT NULL DEFAULT 1,
     notas        TEXT,
     configurado  INTEGER NOT NULL DEFAULT 0,
     creado_en    TEXT    NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
   );
 `);
+// cadencia = heredada (diario|semanal|mensual); ya NO se usa en la UI. El periodo ahora se
+// mide en SEMANAS enteras (hogar.semanas), que calza con la unidad de edicion del plan.
+if (!db.prepare('PRAGMA table_info(hogar)').all().some((c) => c.name === 'cadencia')) {
+  db.exec("ALTER TABLE hogar ADD COLUMN cadencia TEXT NOT NULL DEFAULT 'semanal'");
+}
+// semanas = cuantas semanas cubre una compra (el "periodo"). 1..12. Preferencia sticky.
+if (!db.prepare('PRAGMA table_info(hogar)').all().some((c) => c.name === 'semanas')) {
+  db.exec('ALTER TABLE hogar ADD COLUMN semanas INTEGER NOT NULL DEFAULT 1');
+}
 
 // ===== INTEGRANTES (miembros de la familia) =====
 // condiciones: JSON ["diabetes","hipertension",...] -> la IA adapta el plato.
@@ -166,30 +177,68 @@ db.exec(`
   );
 `);
 
-// ===== COMPRAS (cabecera de la compra semanal; sus items entran a la despensa) =====
+// ===== COMPRAS (cabecera de la compra por periodo; sus items entran a la despensa) =====
 // total_items = cuantos ingredientes traia la compra AL REGISTRARLA. Se guarda aqui
 // porque los items viven en "despensa", que es inventario MUTABLE: si luego el usuario
 // edita o borra un ingrediente, contar por compra_id daria un historial que se reescribe
 // solo ("compre 6" pasaria a decir 5). El conteo por compra_id sigue sirviendo, pero
 // significa otra cosa: cuantos de esa compra siguen vigentes.
+//
+// periodo_inicio/periodo_fin = el TRAMO de dias que esa compra alimenta (segun la cadencia
+// del hogar: diario|semanal|mensual). Es una ETIQUETA de atribucion, no un reset: la
+// despensa persiste. La Fase 5 (lista de faltantes) calcula sobre esta ventana. "semana"
+// se conserva (= lunes del inicio) por compatibilidad con las consultas existentes.
 db.exec(`
   CREATE TABLE IF NOT EXISTS compras (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    usuario_id  INTEGER NOT NULL,
-    semana      TEXT    NOT NULL,
-    nota        TEXT,
-    total_items INTEGER NOT NULL DEFAULT 0,
-    creado_en   TEXT    NOT NULL DEFAULT (datetime('now')),
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id     INTEGER NOT NULL,
+    semana         TEXT    NOT NULL,
+    periodo_inicio TEXT,
+    periodo_fin    TEXT,
+    nota           TEXT,
+    total_items    INTEGER NOT NULL DEFAULT 0,
+    creado_en      TEXT    NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
   );
 `);
-if (!db.prepare('PRAGMA table_info(compras)').all().some((c) => c.name === 'total_items')) {
-  db.exec('ALTER TABLE compras ADD COLUMN total_items INTEGER NOT NULL DEFAULT 0');
+{
+  const cols = db.prepare('PRAGMA table_info(compras)').all();
+  if (!cols.some((c) => c.name === 'total_items')) {
+    db.exec('ALTER TABLE compras ADD COLUMN total_items INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.some((c) => c.name === 'periodo_inicio')) {
+    db.exec('ALTER TABLE compras ADD COLUMN periodo_inicio TEXT');
+    db.exec('ALTER TABLE compras ADD COLUMN periodo_fin TEXT');
+    // Backfill de compras viejas: una compra "semanal" cubria de su lunes al domingo.
+    db.exec("UPDATE compras SET periodo_inicio = semana, periodo_fin = date(semana, '+6 days') WHERE periodo_inicio IS NULL");
+  }
 }
 
-// ===== DESPENSA (inventario simple: sin descuento automatico al cocinar) =====
-// nivel = poco|normal|bastante. La IA razona con disponibilidad, no con gramos.
-// UNIQUE por usuario+nombre normalizado: un ingrediente = una fila (se actualiza el nivel).
+// ===== COMPRA_ITEMS (detalle de la despensa AL REGISTRAR la compra de un periodo) =====
+// "Registrar compra" hace un SNAPSHOT de la despensa actual: la despensa es mutable (stock
+// vivo), pero el historial de "que compre en el periodo X" debe quedar CONGELADO. Por eso
+// el detalle se copia aqui y no se lee de despensa (que sigue cambiando).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS compra_items (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    compra_id INTEGER NOT NULL,
+    nombre    TEXT    NOT NULL,
+    categoria TEXT    NOT NULL DEFAULT 'otro',
+    nivel     TEXT    NOT NULL DEFAULT 'normal',
+    FOREIGN KEY (compra_id) REFERENCES compras(id) ON DELETE CASCADE
+  );
+`);
+
+// ===== DESPENSA (inventario por PORCENTAJE de lo que queda) =====
+// porcentaje = 0..100 de lo que le queda de ese producto. Es la FUENTE DE VERDAD y la
+// edita el usuario a mano; "nivel" (poco|normal|bastante) quedo como campo DERIVADO
+// (nivelDePorcentaje) porque lo consumen el prompt de la IA y el snapshot compra_items.
+// Nunca escribas "nivel" por tu cuenta: se recalcula en cada escritura de "porcentaje".
+//
+// Sigue sin haber gramos ni conversion de unidades (esa decision no cambio). Lo que baja
+// el porcentaje es el CONSUMO de los platos programados, y solo cuando se marcan como
+// cocinados; antes de eso es una PROYECCION que no toca la BD (ver services/consumo.js).
+// UNIQUE por usuario+nombre normalizado: un ingrediente = una fila.
 db.exec(`
   CREATE TABLE IF NOT EXISTS despensa (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,6 +246,7 @@ db.exec(`
     nombre        TEXT    NOT NULL,
     categoria     TEXT    NOT NULL DEFAULT 'otro',
     nivel         TEXT    NOT NULL DEFAULT 'normal' CHECK (nivel IN ('poco','normal','bastante')),
+    porcentaje    INTEGER NOT NULL DEFAULT 100 CHECK (porcentaje BETWEEN 0 AND 100),
     origen        TEXT    NOT NULL DEFAULT 'manual' CHECK (origen IN ('compra','manual')),
     compra_id     INTEGER REFERENCES compras(id) ON DELETE SET NULL,
     actualizado_en TEXT   NOT NULL DEFAULT (datetime('now')),
@@ -204,6 +254,13 @@ db.exec(`
   );
 `);
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ix_despensa_unica ON despensa (usuario_id, LOWER(TRIM(nombre)));');
+// Migracion: las despensas viejas solo tenian "nivel". Se backfillea al punto medio de
+// cada tramo (ver PORCENTAJE_NIVEL) para que la barra arranque en un valor coherente con
+// lo que el usuario ya habia declarado, en vez de mentirle un 100% a todo el mundo.
+if (!db.prepare('PRAGMA table_info(despensa)').all().some((c) => c.name === 'porcentaje')) {
+  db.exec('ALTER TABLE despensa ADD COLUMN porcentaje INTEGER NOT NULL DEFAULT 100');
+  db.exec("UPDATE despensa SET porcentaje = CASE nivel WHEN 'poco' THEN 25 WHEN 'bastante' THEN 100 ELSE 60 END");
+}
 
 // ===== PLATOS (generados por IA, propuestos por el usuario o manuales) =====
 // ingredientes: JSON [{ nombre, cantidad, unidad }]
@@ -262,6 +319,7 @@ db.exec(`
     comensales   INTEGER,
     cocinado     INTEGER NOT NULL DEFAULT 0,
     cobertura    TEXT,
+    consumo_aplicado TEXT,
     verificado_en TEXT,
     creado_en    TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE (usuario_id, semana, dia, momento),
@@ -269,6 +327,13 @@ db.exec(`
     FOREIGN KEY (plato_id)   REFERENCES platos(id)   ON DELETE CASCADE
   );
 `);
+// consumo_aplicado: JSON { "<clave del ingrediente>": <puntos de porcentaje descontados> }
+// con lo que ESTA casilla le resto a la despensa al marcarse cocinada. Se guarda lo
+// REALMENTE descontado (no lo estimado): el descuento se topa en 0 y, sin este registro,
+// desmarcar "cocinado" le devolveria a la despensa un porcentaje que nunca se le quito.
+if (!db.prepare('PRAGMA table_info(plan_comidas)').all().some((c) => c.name === 'consumo_aplicado')) {
+  db.exec('ALTER TABLE plan_comidas ADD COLUMN consumo_aplicado TEXT');
+}
 
 // ===== GENERACIONES (log de llamadas IA del planificador) =====
 // Cumple DOS funciones: (1) gate del plan -> generaciones_max por semana ;
@@ -390,6 +455,37 @@ function lunesDe(iso) {
   return d.toISOString().slice(0, 10);
 }
 
+// Cadencias de compra. La longitud del periodo sale de aqui, NO de la unidad de edicion
+// del plan (que sigue siendo la semana). Fuente unica; la usa la compra y la Fase 5.
+const CADENCIAS = ['diario', 'semanal', 'mensual'];
+const DURACION_CADENCIA = { diario: 0, semanal: 6, mensual: 29 }; // dias tras el inicio
+
+// Dada una cadencia y una fecha de inicio, devuelve { cadencia, inicio, fin }.
+// "semanal" ancla el inicio al lunes (coherente con el resto de la app); las otras usan
+// la fecha tal cual. Inicio invalido -> hoy en Peru. (Heredado; el modelo vivo es semanas.)
+function periodoDe(cadencia, inicioIso) {
+  const cad = CADENCIAS.includes(String(cadencia || '').toLowerCase()) ? String(cadencia).toLowerCase() : 'semanal';
+  let inicio = /^\d{4}-\d{2}-\d{2}$/.test(inicioIso || '') ? inicioIso : fechaPeru();
+  if (cad === 'semanal') inicio = lunesDe(inicio);
+  return { cadencia: cad, inicio, fin: sumarDias(inicio, DURACION_CADENCIA[cad]) };
+}
+
+// Periodo de N SEMANAS enteras desde una fecha. El inicio se ancla al LUNES (el periodo
+// calza con las semanas del plan) y el fin = inicio + N*7 - 1 (domingo de la ultima semana).
+// N se acota a 1..12. Es el modelo de periodo vigente. Inicio invalido -> semana actual.
+const SEMANAS_MAX_COMPRA = 12;
+function periodoSemanas(inicioIso, n) {
+  const inicio = lunesDe(inicioIso);
+  const semanas = Math.max(1, Math.min(SEMANAS_MAX_COMPRA, parseInt(n, 10) || 1));
+  return { semanas, inicio, fin: sumarDias(inicio, semanas * 7 - 1) };
+}
+// Cuantas semanas (1-index) del periodo contienen la fecha dada; 0 si esta fuera.
+function semanaDelPeriodo(inicioIso, dia) {
+  if (!inicioIso || dia < inicioIso) return 0;
+  const ms = new Date(dia + 'T00:00:00Z') - new Date(inicioIso + 'T00:00:00Z');
+  return Math.floor(Math.round(ms / 86400000) / 7) + 1;
+}
+
 // ===== Usuario en forma "publica" (plan resuelto) =====
 function usuarioPublico(id) {
   // Auto-degradacion perezosa: si el plan de pago vencio, vuelve al plan Free.
@@ -446,11 +542,38 @@ function usuarioPublico(id) {
 // ===== Constantes de dominio =====
 const MOMENTOS = ['desayuno', 'almuerzo', 'cena'];
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+// Orden de la semana. La BD guarda dia 0..6 con 0=Domingo (como Date.getDay()), pero la
+// semana EMPIEZA EL LUNES: el domingo es el septimo dia. Vive aqui, y no en la ruta que lo
+// estreno, porque ya lo necesitan el calendario y el descuento de la despensa; el frontend
+// mantiene su propia copia.
+const DIA_NUM = [1, 2, 3, 4, 5, 6, 0];
 const NIVELES = ['poco', 'normal', 'bastante'];
 const CATEGORIAS_ING = [
   'abarrote', 'verdura', 'fruta', 'carne', 'pescado',
   'lacteo', 'huevo', 'legumbre', 'condimento', 'bebida', 'otro',
 ];
+
+// ===== Porcentaje <-> nivel (despensa) =====
+// El porcentaje es la fuente de verdad; "nivel" es la etiqueta DERIVADA que ven el prompt
+// de la IA y el snapshot de compra_items. Las dos funciones son inversas aproximadas: el
+// porcentaje de un nivel es el punto medio de su tramo, para que ida y vuelta no derive.
+const clampPct = (v) => Math.max(0, Math.min(100, Math.round(Number(v))));
+const nivelDePorcentaje = (p) => (p <= 30 ? 'poco' : p <= 70 ? 'normal' : 'bastante');
+const PORCENTAJE_NIVEL = { poco: 25, normal: 60, bastante: 100 };
+const porcentajeDeNivel = (n) => PORCENTAJE_NIVEL[String(n || '').toLowerCase()] ?? 60;
+
+// Clave canonica de un ingrediente: minusculas, sin tildes, espacios colapsados y singular
+// simple. Vive AQUI (y no en la ruta que la estreno) porque la usan tres cosas que DEBEN
+// coincidir: la lista de faltantes, el emparejamiento con el catalogo y el descuento de la
+// despensa. Si cada una normalizara a su manera, "Tomates" y "tomate" serian dos productos
+// en una y el mismo en la otra. El singular solo afecta la CLAVE, nunca el nombre mostrado.
+const quitarTildes = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+function claveIng(nombre) {
+  let k = quitarTildes(nombre).toLowerCase().trim().replace(/\s+/g, ' ');
+  if (k.length > 4 && k.endsWith('es')) k = k.slice(0, -2);
+  else if (k.length > 3 && k.endsWith('s')) k = k.slice(0, -1);
+  return k;
+}
 const REGIONES = ['costa', 'sierra', 'selva'];
 const DIETAS = ['omnivora', 'vegetariana', 'vegana', 'pescetariana'];
 const PRESUPUESTOS = ['bajo', 'medio', 'alto'];
@@ -481,9 +604,19 @@ module.exports = {
   sumarDias,
   diasHasta,
   lunesDe,
+  periodoDe,
+  periodoSemanas,
+  semanaDelPeriodo,
+  SEMANAS_MAX_COMPRA,
+  CADENCIAS,
   MOMENTOS,
   DIAS,
+  DIA_NUM,
   NIVELES,
+  clampPct,
+  nivelDePorcentaje,
+  porcentajeDeNivel,
+  claveIng,
   CATEGORIAS_ING,
   REGIONES,
   DIETAS,

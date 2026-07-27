@@ -41,7 +41,7 @@ REGLAS INNEGOCIABLES:
 1. ALERGIAS: jamas incluyas un ingrediente al que alguien del hogar sea alergico, ni en trazas, ni como acompañamiento, ni "opcional". No hay excepciones ni sustituciones "al gusto". Esto es lo mas importante de tu tarea.
 2. CONDICIONES MEDICAS: adapta el plato de verdad (menos sal e hipertension, menos azucar y carbohidratos simples con diabetes, sin gluten con celiaquia, sin lacteos con intolerancia, etc.). No basta con advertir: cambia la receta.
 3. DIETA: respeta la dieta del hogar (vegetariana = sin carne ni pescado; vegana = sin ningun producto animal; pescetariana = pescado si, carne no).
-4. DESPENSA PRIMERO: prioriza SIEMPRE lo que la familia ya tiene. Un ingrediente con "tengo: poco" alcanza para un plato, no para varios; con "bastante" puedes repetirlo en la semana. Puedes incluir ingredientes que NO tenga, pero solo los justos y baratos, y debes listarlos como faltantes.
+4. DESPENSA PRIMERO: prioriza SIEMPRE lo que la familia ya tiene. Cada producto de su despensa dice cuanto le "queda" en porcentaje: con 20% o menos alcanza para un plato, no para varios; con 70% o mas puedes repetirlo en la semana; con 0% se le acabo y cuenta como que NO lo tiene. Puedes incluir ingredientes que NO tenga, pero solo los justos y baratos, y debes listarlos como faltantes.
 5. REGION: cocina del estilo de su region (costa, sierra o selva) y de su ciudad si la indican. Usa nombres de platos que esa familia reconozca.
 6. VARIEDAD: no repitas el mismo plato en la semana. Varia proteinas y guarniciones.
 7. MOMENTO: el desayuno peruano es ligero (pan, avena, quinua, huevo, fruta, emoliente); el almuerzo es la comida fuerte (entrada opcional + segundo con arroz/papa); la cena es liviana y facil.
@@ -76,9 +76,25 @@ const FORMATO_PASOS = `- "pasos": array de strings con la receta, paso a paso y 
   - Con hipertension en el hogar, nada de "sal al gusto": di cuanta.
   - NO numeres los pasos ("1.", "2.-"): el orden del array ya es el numero.`;
 
+// "consume" = que porcion del STOCK que la familia tiene se lleva este plato. Es lo que
+// hace bajar la barra de la despensa, y por eso la escala tiene que ser la misma con la que
+// se le describe la despensa en el contexto (porcentaje, no gramos).
+//
+// La alternativa era una heuristica local por categoria, que es la que sigue usandose de
+// respaldo para los platos que nacieron sin este campo (ver services/consumo.js). No basta
+// sola: sin la IA, la sal y el aceite bajarian igual que la carne y una semana normal
+// dejaria los condimentos en rojo. Este campo viaja en la MISMA llamada que el plato, asi
+// que no cuesta una generacion extra de cupo.
+const FORMATO_CONSUME = `  El "consume" de cada ingrediente es un ENTERO 0-100: que porcentaje de lo que la familia TIENE en su despensa de ESE producto se gasta al cocinar este plato una vez.
+  - Piensa en el envase real de una casa peruana, no en el gramaje: una cucharadita de sal de un kilo de sal es 2, no 50.
+  - Los condimentos y abarrotes duran muchos platos (valores bajos: 2-15). Las carnes, pescados y verduras frescas se compran para el plato y se acaban en el (valores altos: 40-90).
+  - Si el ingrediente esta en "faltantes" (no lo tiene), pon 0: no hay stock del que descontar.
+  - Si de ese producto le queda poco, NO subas el numero por eso: "consume" es del stock que tiene, no del que necesitarias.`;
+
 const FORMATO_PLATO = `Cada plato es un objeto JSON con:
 - "nombre": nombre del plato como lo diria la familia (ej. "Ají de gallina", "Quinua atamalada").
-- "ingredientes": array de { "nombre", "cantidad", "unidad" } con las cantidades YA ESCALADAS al numero de comensales del hogar. Usa unidades de mercado peruano (kg, g, unidad, taza, cucharada, atado, rama).
+- "ingredientes": array de { "nombre", "cantidad", "unidad", "consume" } con las cantidades YA ESCALADAS al numero de comensales del hogar. Usa unidades de mercado peruano (kg, g, unidad, taza, cucharada, atado, rama).
+${FORMATO_CONSUME}
 - "faltantes": array de strings con los nombres de los ingredientes que NO estan en su despensa y tendria que comprar. Si le alcanza con lo que tiene, devuelve [].
 - "tiempo_min": minutos aproximados de preparacion (numero).
 - "dificultad": "facil" | "media" | "dificil".
@@ -152,12 +168,13 @@ ${JSON.stringify(platos)}`;
 const FORMATO_COBERTURA = `Para CADA plato devuelve un objeto con:
 - "nombre": el plato, con el nombre normalizado y bien escrito (el usuario puede escribir "aji d gallina").
 - "reconocido": true | false. false SOLO si no puedes identificar que plato es (texto sin sentido). Si es un plato real que no conoces al dedillo, usa tu mejor criterio y pon true.
-- "ingredientes": array de { "nombre", "cantidad", "unidad" } con las cantidades YA ESCALADAS a los comensales del hogar. Es la receta REAL del plato, no la que quisieras.
+- "ingredientes": array de { "nombre", "cantidad", "unidad", "consume" } con las cantidades YA ESCALADAS a los comensales del hogar. Es la receta REAL del plato, no la que quisieras.
+${FORMATO_CONSUME}
 - "tengo": array de strings — los ingredientes que SI estan cubiertos por su despensa.
 - "faltantes": array de strings — los que NO tiene y debe comprar. [] si le alcanza con todo.
 - "veredicto": "alcanza" (tiene todo) | "alcanza_justo" (tiene todo pero algo esta en "poco" y podria no rendir) | "falta_comprar" (le falta al menos un ingrediente).
 - "advertencias": array de strings. Aqui va lo IMPORTANTE para la salud de este hogar:
-  - Si el plato lleva un ALERGENO de la familia, la primera advertencia debe decirlo de frente y sin rodeos. NO adaptes el plato en silencio: el usuario pidio ESE plato y tiene derecho a saber que no le conviene.
+  - Si el plato lleva un ALERGENO de la familia, la primera advertencia debe decirlo de frente y sin rodeos, nombrando al integrante concreto. NO adaptes el plato en silencio: el usuario pidio ESE plato y tiene derecho a saber que no le conviene.
   - Si choca con una condicion medica (diabetes, hipertension...), dilo y sugiere el cambio concreto.
   - [] si no hay nada que advertir.
 - "nota": una frase corta con el consejo mas util para prepararlo en esta casa. null si no aporta nada.
@@ -167,7 +184,7 @@ ${FORMATO_INFO}
 Al decidir "tengo" vs "faltantes", usa el criterio de un cocinero, no un buscador de texto:
 - Un ingrediente de la despensa cubre al del plato si sirve DE VERDAD para cocinarlo (si tiene "pollo", cubre "pechuga de pollo").
 - PERO si la condicion medica del hogar exige una version distinta de la que tiene (arroz integral cuando solo tiene arroz blanco; leche sin lactosa cuando solo tiene leche), eso es un FALTANTE, no algo que ya tiene.
-- Lo que tenga en "poco" cuenta como que lo tiene, pero si el plato necesita bastante, dilo en "veredicto": "alcanza_justo".`;
+- Un producto del que le quede poco (20% o menos) cuenta como que lo tiene, pero si el plato necesita bastante, dilo en "veredicto": "alcanza_justo". Con 0% se le acabo: eso es un FALTANTE.`;
 
 const SYSTEM_VERIFICAR = `${REGLAS_PLANIFICADOR}
 
@@ -424,12 +441,14 @@ async function generarPlatos(ctxTexto, casillas, yaEnLaSemana, comprometidos, ev
   const { data, usage } = await pedir(
     SYSTEM_CASILLAS,
     [{ texto: PROMPT_CASILLAS(ctxTexto, casillas, yaEnLaSemana, comprometidos, evitar, extra) }],
-    // 1400 por casilla. Fue subiendo con lo que trae el plato: ~350 tokens medidos cuando
+    // 1600 por casilla. Fue subiendo con lo que trae el plato: ~350 tokens medidos cuando
     // era solo la receta base, ~550 al sumarle el aporte nutricional (info) y ~900 al
     // sumarle los pasos de preparacion. Con los 700 de antes, pedir un dia (3 platos) se
     // habria truncado y NO se pierde un plato: se pierde el JSON entero de la llamada.
+    // El ultimo salto (1400 -> 1600) es el "consume" por ingrediente: ~10 tokens x ~10
+    // ingredientes por plato. Subir el techo no cuesta nada (solo se paga lo generado).
     // Si le agregas campos al plato, MIDE otra vez (SELECT output_tokens FROM generaciones).
-    Math.min(MAX_TOKENS_PLANIFICADOR, 1200 + casillas.length * 1400)
+    Math.min(MAX_TOKENS_PLANIFICADOR, 1200 + casillas.length * 1600)
   );
   return { resultado: data, usage };
 }
@@ -445,9 +464,9 @@ async function verificarPlatos(ctxTexto, pedidos) {
   const { data, usage } = await pedir(
     SYSTEM_VERIFICAR,
     [{ texto: PROMPT_VERIFICAR(ctxTexto, pedidos) }],
-    // 1400 por plato, igual que generarPlatos: la respuesta trae lo mismo (ingredientes,
+    // 1600 por plato, igual que generarPlatos: la respuesta trae lo mismo (ingredientes,
     // receta, info) mas la cobertura y las advertencias.
-    Math.min(MAX_TOKENS_PLANIFICADOR, 1200 + pedidos.length * 1400)
+    Math.min(MAX_TOKENS_PLANIFICADOR, 1200 + pedidos.length * 1600)
   );
   return { resultado: data, usage };
 }

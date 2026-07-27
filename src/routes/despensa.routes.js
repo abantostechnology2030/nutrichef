@@ -2,13 +2,22 @@
 // COMPRA SEMANAL que lo abastece. Es la entrada del planificador: la IA propone
 // platos a partir de esto.
 //
-// Inventario SIMPLE a proposito: nivel poco|normal|bastante, sin descuento automatico
-// al cocinar. Descontar gramos exigiria conversion de unidades y mermas, y la IA razona
-// bien con disponibilidad. Ver CLAUDE.md.
+// Inventario por PORCENTAJE de lo que queda (0-100), no por gramos: descontar gramos
+// exigiria conversion de unidades y mermas, y la familia razona en "ya casi no me queda".
+// El porcentaje es la fuente de verdad y "nivel" (poco|normal|bastante) es un campo
+// DERIVADO que solo existe para el prompt de la IA y el snapshot de compra_items.
+//
+// Lo que baja el porcentaje es el consumo de los platos programados, y SOLO cuando se
+// marcan como cocinados (ver services/consumo.js y PATCH /api/plan/:id). Mientras la
+// casilla no se cocina, lo que se ve es una PROYECCION que no toca la BD.
 //
 // No usa IA ni consume analisis: el gate es el plan.
 const express = require('express');
-const { db, lunesDe, CATEGORIAS_ING, NIVELES } = require('../db');
+const {
+  db, lunesDe, periodoSemanas, fechaPeru, sumarDias,
+  CATEGORIAS_ING, NIVELES, clampPct, nivelDePorcentaje, porcentajeDeNivel,
+} = require('../db');
+const { consumoPrevisto } = require('../services/consumo');
 const { requiereAuth } = require('../middleware/auth');
 const { requierePlanificador } = require('../middleware/planificador');
 
@@ -17,6 +26,17 @@ router.use(requiereAuth, requierePlanificador);
 
 const normCat = (v) => (CATEGORIAS_ING.includes(String(v || '').toLowerCase()) ? String(v).toLowerCase() : 'otro');
 const normNivel = (v) => (NIVELES.includes(String(v || '').toLowerCase()) ? String(v).toLowerCase() : 'normal');
+
+// El cliente puede mandar "porcentaje" (la barra) o "nivel" (el select de agregar, que es
+// mas comodo justo despues de comprar). Se acepta cualquiera de los dos y siempre se
+// termina guardando un porcentaje: una sola escala en la BD, dos formas de escribirla.
+function porcentajeEntrante({ porcentaje, nivel }, actual = 100) {
+  if (porcentaje !== undefined && porcentaje !== null && porcentaje !== '' && Number.isFinite(Number(porcentaje))) {
+    return clampPct(porcentaje);
+  }
+  if (nivel !== undefined) return porcentajeDeNivel(normNivel(nivel));
+  return clampPct(actual);
+}
 
 // Categoria por defecto de un ingrediente: la del catalogo del admin si existe.
 // Asi el usuario no tiene que clasificar "Rocoto" a mano si ya esta en el catalogo.
@@ -29,52 +49,92 @@ function categoriaSugerida(nombre, fallback) {
 const despensaDe = (usuarioId) =>
   db.prepare('SELECT * FROM despensa WHERE usuario_id = ? ORDER BY categoria, nombre').all(usuarioId);
 
+// La despensa MAS la proyeccion de lo que se va a consumir en una ventana de fechas.
+// Por cada producto agrega:
+//   consumo_previsto -> puntos de porcentaje que se llevan las casillas NO cocinadas
+//   restante         -> con cuanto se queda si se cocina todo lo programado
+// Es una proyeccion: NO se ha escrito nada en la BD (eso pasa al marcar cocinado).
+function despensaConProyeccion(usuarioId, inicio, fin) {
+  const previsto = consumoPrevisto(usuarioId, inicio, fin);
+  return despensaDe(usuarioId).map((d) => {
+    const consumo = Math.min(d.porcentaje, Math.round(previsto.get(d.id) || 0));
+    return { ...d, consumo_previsto: consumo, restante: clampPct(d.porcentaje - consumo) };
+  });
+}
+
 // Agrega o actualiza un ingrediente de la despensa. Hay un UNIQUE por (usuario, nombre
-// normalizado), asi que un mismo ingrediente NUNCA se duplica: se le actualiza el nivel.
+// normalizado), asi que un mismo ingrediente NUNCA se duplica: se le actualiza el stock.
 // Se resuelve a mano (en vez de ON CONFLICT) porque el indice es sobre una expresion.
-function guardarIngrediente(usuarioId, { nombre, categoria, nivel, origen = 'manual', compraId = null }) {
+//
+// "nivel" NUNCA se escribe suelto: siempre se deriva del porcentaje que se acaba de
+// guardar, para que no puedan contradecirse (una barra al 10% con la etiqueta "bastante").
+function guardarIngrediente(usuarioId, { nombre, categoria, nivel, porcentaje, origen = 'manual', compraId = null }) {
   const limpio = String(nombre || '').trim().slice(0, 80);
   if (!limpio) return null;
 
   const existe = db.prepare('SELECT * FROM despensa WHERE usuario_id = ? AND LOWER(TRIM(nombre)) = LOWER(TRIM(?))').get(usuarioId, limpio);
   if (existe) {
-    db.prepare("UPDATE despensa SET nivel = ?, categoria = ?, origen = ?, compra_id = ?, actualizado_en = datetime('now') WHERE id = ?")
-      .run(normNivel(nivel || existe.nivel), categoria ? normCat(categoria) : existe.categoria, origen, compraId, existe.id);
+    const pct = porcentajeEntrante({ porcentaje, nivel }, existe.porcentaje);
+    db.prepare("UPDATE despensa SET porcentaje = ?, nivel = ?, categoria = ?, origen = ?, compra_id = ?, actualizado_en = datetime('now') WHERE id = ?")
+      .run(pct, nivelDePorcentaje(pct), categoria ? normCat(categoria) : existe.categoria, origen, compraId, existe.id);
     return db.prepare('SELECT * FROM despensa WHERE id = ?').get(existe.id);
   }
-  const info = db.prepare('INSERT INTO despensa (usuario_id, nombre, categoria, nivel, origen, compra_id) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(usuarioId, limpio, categoriaSugerida(limpio, categoria), normNivel(nivel), origen, compraId);
+  // Un producto que se agrega por primera vez se asume LLENO (100%): lo normal es que se
+  // agregue justo despues de comprarlo. El select de nivel del formulario lo puede bajar.
+  const pct = porcentajeEntrante({ porcentaje, nivel }, 100);
+  const info = db.prepare('INSERT INTO despensa (usuario_id, nombre, categoria, nivel, porcentaje, origen, compra_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(usuarioId, limpio, categoriaSugerida(limpio, categoria), nivelDePorcentaje(pct), pct, origen, compraId);
   return db.prepare('SELECT * FROM despensa WHERE id = ?').get(info.lastInsertRowid);
 }
 
-// GET /api/despensa -> inventario + catalogo activo (para elegir rapido) + opciones
+// Ventana de proyeccion pedida por el cliente. Por defecto, la SEMANA ACTUAL: es la
+// unidad en la que se edita el plan y la que el usuario tiene delante al mirar su despensa.
+function ventanaDe(query) {
+  const inicio = /^\d{4}-\d{2}-\d{2}$/.test(query.inicio || '') ? query.inicio : lunesDe(fechaPeru());
+  const fin = /^\d{4}-\d{2}-\d{2}$/.test(query.fin || '') ? query.fin : sumarDias(inicio, 6);
+  return fin < inicio ? { inicio: fin, fin: inicio } : { inicio, fin };
+}
+
+// GET /api/despensa?inicio=&fin=  -> inventario (con la proyeccion de consumo de esa
+// ventana) + catalogo activo (para elegir rapido) + opciones
 router.get('/', (req, res) => {
+  const { inicio, fin } = ventanaDe(req.query || {});
   res.json({
-    despensa: despensaDe(req.usuario.id),
+    despensa: despensaConProyeccion(req.usuario.id, inicio, fin),
+    ventana: { inicio, fin },
     catalogo: db.prepare('SELECT id, nombre, categoria FROM ingredientes_catalogo WHERE activo = 1 ORDER BY categoria, nombre').all(),
     categorias: CATEGORIAS_ING,
     niveles: NIVELES,
   });
 });
 
-// POST /api/despensa { nombre, categoria?, nivel? } -> agrega o actualiza un ingrediente
+// POST /api/despensa { nombre, categoria?, nivel?, porcentaje? } -> agrega o actualiza
 router.post('/', (req, res) => {
   const item = guardarIngrediente(req.usuario.id, req.body || {});
   if (!item) return res.status(400).json({ error: 'Escribe el nombre del ingrediente.' });
-  res.status(201).json({ item, despensa: despensaDe(req.usuario.id) });
+  const { inicio, fin } = ventanaDe(req.query || {});
+  res.status(201).json({ item, despensa: despensaConProyeccion(req.usuario.id, inicio, fin) });
 });
 
-// PATCH /api/despensa/:id { nivel?, categoria? }
+// PATCH /api/despensa/:id { porcentaje?, nivel?, categoria? }
+// El porcentaje editado A MANO manda sobre cualquier proyeccion: el usuario es el unico
+// que sabe de verdad cuanto le queda en la olla.
 router.patch('/:id', (req, res) => {
   const it = db.prepare('SELECT * FROM despensa WHERE id = ? AND usuario_id = ?').get(Number(req.params.id), req.usuario.id);
   if (!it) return res.status(404).json({ error: 'Ingrediente no encontrado en tu despensa.' });
   const b = req.body || {};
-  db.prepare("UPDATE despensa SET nivel = ?, categoria = ?, actualizado_en = datetime('now') WHERE id = ?").run(
-    b.nivel !== undefined ? normNivel(b.nivel) : it.nivel,
+  const pct = porcentajeEntrante(b, it.porcentaje);
+  db.prepare("UPDATE despensa SET porcentaje = ?, nivel = ?, categoria = ?, actualizado_en = datetime('now') WHERE id = ?").run(
+    pct,
+    nivelDePorcentaje(pct),
     b.categoria !== undefined ? normCat(b.categoria) : it.categoria,
     it.id
   );
-  res.json({ item: db.prepare('SELECT * FROM despensa WHERE id = ?').get(it.id), despensa: despensaDe(req.usuario.id) });
+  const { inicio, fin } = ventanaDe(req.query || {});
+  res.json({
+    item: db.prepare('SELECT * FROM despensa WHERE id = ?').get(it.id),
+    despensa: despensaConProyeccion(req.usuario.id, inicio, fin),
+  });
 });
 
 // DELETE /api/despensa/:id -> se acabo / ya no lo tengo
@@ -82,49 +142,94 @@ router.delete('/:id', (req, res) => {
   const it = db.prepare('SELECT id FROM despensa WHERE id = ? AND usuario_id = ?').get(Number(req.params.id), req.usuario.id);
   if (!it) return res.status(404).json({ error: 'Ingrediente no encontrado en tu despensa.' });
   db.prepare('DELETE FROM despensa WHERE id = ?').run(it.id);
-  res.json({ mensaje: 'Quitado de la despensa.', despensa: despensaDe(req.usuario.id) });
+  const { inicio, fin } = ventanaDe(req.query || {});
+  res.json({ mensaje: 'Quitado de la despensa.', despensa: despensaConProyeccion(req.usuario.id, inicio, fin) });
 });
 
-// POST /api/despensa/compra { semana?, nota?, items: [{nombre, categoria?, nivel?}] }
-// Registra la COMPRA SEMANAL completa de una vez: crea la cabecera y vuelca sus items
-// a la despensa. Todo en una transaccion: una compra a medias dejaria a la IA
-// proponiendo platos con ingredientes que el usuario no llego a registrar.
+// POST /api/despensa/compra { semanas?, periodo_inicio?, periodo_fin?, nota?, items: [nombre,...] }
+// "Registrar compra": guarda como la compra de un periodo los productos que el usuario MARCO
+// como comprados (items = nombres). La categoria NO se toma del cliente: se resuelve
+// contra la despensa (fuente de verdad). El detalle se congela en compra_items para el
+// historial. NO reinicia la despensa: los productos que NO se marcaron conservan su stock.
+//
+// Lo que SI hace con los marcados es dejarlos al 100%: acabas de comprarlos, estan llenos.
+// Es el punto de partida de la barra, y cierra el ciclo comprar -> cocinar -> se vacia ->
+// vuelve a la lista de compras.
+//
+// El periodo se define de dos formas:
+//   - N SEMANAS enteras (semanas): inicio = lunes; fin = inicio + N*7 - 1. Preferencia sticky.
+//   - FECHAS MANUALES (periodo_inicio + periodo_fin): el usuario fija el rango a medida.
 router.post('/compra', (req, res) => {
-  const semana = lunesDe(req.body?.semana);
-  const items = Array.isArray(req.body?.items) ? req.body.items : [];
-  if (!items.length) return res.status(400).json({ error: 'Agrega al menos un ingrediente a la compra.' });
+  const b = req.body || {};
+  const nombres = Array.isArray(b.items) ? b.items.map((x) => String(x || '').trim()).filter(Boolean) : [];
+  if (!nombres.length) return res.status(400).json({ error: 'Marca al menos un producto que compraste.' });
+
+  // Resolver cada nombre marcado contra la despensa (la categoria sale de ahi, no del cliente).
+  const buscar = db.prepare('SELECT id, nombre, categoria FROM despensa WHERE usuario_id = ? AND LOWER(TRIM(nombre)) = LOWER(TRIM(?))');
+  const comprados = [];
+  const vistos = new Set();
+  for (const n of nombres) {
+    const it = buscar.get(req.usuario.id, n);
+    if (it && !vistos.has(it.nombre.toLowerCase())) { comprados.push(it); vistos.add(it.nombre.toLowerCase()); }
+  }
+  if (!comprados.length) return res.status(400).json({ error: 'Ninguno de esos productos esta en tu despensa.' });
+
+  const manualIni = /^\d{4}-\d{2}-\d{2}$/.test(b.periodo_inicio || '');
+  const manualFin = /^\d{4}-\d{2}-\d{2}$/.test(b.periodo_fin || '');
+  let inicio;
+  let fin;
+  let semanas = null; // null = periodo a medida (fechas manuales)
+  if (manualIni && manualFin) {
+    inicio = b.periodo_inicio;
+    fin = b.periodo_fin;
+    if (fin < inicio) [inicio, fin] = [fin, inicio];
+  } else {
+    const semHogar = db.prepare('SELECT semanas FROM hogar WHERE usuario_id = ?').get(req.usuario.id)?.semanas;
+    const p = periodoSemanas(b.periodo_inicio, b.semanas || semHogar || 1);
+    inicio = p.inicio; fin = p.fin; semanas = p.semanas;
+  }
+  const semana = lunesDe(inicio);
 
   const tx = db.transaction(() => {
-    const info = db.prepare('INSERT INTO compras (usuario_id, semana, nota) VALUES (?, ?, ?)')
-      .run(req.usuario.id, semana, String(req.body?.nota || '').trim().slice(0, 200) || null);
+    // N semanas queda como preferencia sticky del hogar (las fechas a medida no la tocan).
+    if (semanas) db.prepare('UPDATE hogar SET semanas = ? WHERE usuario_id = ?').run(semanas, req.usuario.id);
+    const info = db.prepare(
+      'INSERT INTO compras (usuario_id, semana, periodo_inicio, periodo_fin, nota, total_items) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(req.usuario.id, semana, inicio, fin, String(b.nota || '').trim().slice(0, 200) || null, comprados.length);
     const compraId = info.lastInsertRowid;
-    let n = 0;
-    for (const it of items) {
-      if (guardarIngrediente(req.usuario.id, { ...it, origen: 'compra', compraId })) n++;
+    const ins = db.prepare('INSERT INTO compra_items (compra_id, nombre, categoria, nivel) VALUES (?, ?, ?, ?)');
+    // Lo comprado vuelve al 100% (nivel derivado: "bastante"). El snapshot congela ese
+    // mismo estado: es el que tenia el producto AL COMPRARLO, que es lo que el historial
+    // debe recordar aunque despues se consuma.
+    const reponer = db.prepare("UPDATE despensa SET porcentaje = 100, nivel = 'bastante', compra_id = ?, actualizado_en = datetime('now') WHERE id = ?");
+    for (const it of comprados) {
+      ins.run(compraId, it.nombre, it.categoria, 'bastante');
+      reponer.run(compraId, it.id);
     }
-    db.prepare('UPDATE compras SET total_items = ? WHERE id = ?').run(n, compraId);
-    return { compraId, n };
+    return compraId;
   });
 
-  const { compraId, n } = tx();
+  const compraId = tx();
   res.status(201).json({
-    mensaje: `Compra registrada: ${n} ingrediente(s) en tu despensa.`,
+    mensaje: 'Se guardo la despensa del periodo.',
     compra_id: compraId,
-    semana,
-    guardados: n,
-    despensa: despensaDe(req.usuario.id),
+    periodo: { inicio, fin, semanas },
+    guardados: comprados.length,
+    // La proyeccion se devuelve sobre el PERIODO recien registrado, no sobre la semana
+    // actual: es la ventana que el usuario acaba de declarar que esta comprando.
+    despensa: despensaConProyeccion(req.usuario.id, inicio, fin),
   });
 });
 
-// GET /api/despensa/compras -> historial de compras del usuario.
-// total_items = lo que traia la compra ; vigentes = cuantos siguen en la despensa hoy.
+// GET /api/despensa/compras -> historial de compras (snapshots) del usuario, con su detalle.
 router.get('/compras', (req, res) => {
   const compras = db.prepare(
-    `SELECT c.id, c.semana, c.nota, c.total_items,
-            strftime('%Y-%m-%d %H:%M', c.creado_en, '-5 hours') AS creado_local,
-            (SELECT COUNT(*) FROM despensa d WHERE d.compra_id = c.id) AS vigentes
+    `SELECT c.id, c.periodo_inicio, c.periodo_fin, c.nota, c.total_items,
+            strftime('%Y-%m-%d %H:%M', c.creado_en, '-5 hours') AS creado_local
      FROM compras c WHERE c.usuario_id = ? ORDER BY c.id DESC LIMIT 20`
   ).all(req.usuario.id);
+  const itemsStmt = db.prepare('SELECT nombre, categoria, nivel FROM compra_items WHERE compra_id = ? ORDER BY categoria, nombre');
+  for (const c of compras) c.items = itemsStmt.all(c.id);
   res.json({ compras });
 });
 
