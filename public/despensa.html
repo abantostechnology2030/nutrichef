@@ -144,6 +144,7 @@
     let CATALOGO = [];
     let DESPENSA = [];
     let COMPRAS = [];
+    let FALTANTES = []; // lo que la IA dijo que falta para el plan del periodo (ver cargarFaltantes)
     let NIVELES = [];
     let CATEGORIAS = [];
     const marcadosCompra = new Set();  // nombres (lower) marcados como comprados este periodo
@@ -289,19 +290,36 @@
     //
     // conocidosCompra distingue "producto nuevo" de "producto que el usuario desmarcó": sin
     // ese registro, cada repintado volveria a marcar lo que se acaba de desmarcar.
+    // Lo que se ofrece para marcar son DOS conjuntos, no solo la despensa:
+    //   1. lo que YA tienes (aunque te quede stock: lo normal es reponerlo en la compra)
+    //   2. los FALTANTES de tu lista de compras del periodo — lo que la IA dijo que te falta
+    //      para tu plan. Son justo los que traes del mercado, y antes había que darlos de
+    //      alta uno por uno con "+ Agregar" antes de poder marcarlos.
+    // Los de (1) arrancan MARCADOS y los de (2) NO: no haber comprado algo es normal (no
+    // había en el mercado), y dar de alta un producto que no compraste es peor que un clic
+    // de más — la IA planifica alrededor de lo que encuentre en la despensa.
+    function itemsChecklist() {
+      const enDespensa = new Set(DESPENSA.map((d) => d.nombre.toLowerCase()));
+      const nuevos = FALTANTES
+        .filter((f) => !enDespensa.has(f.nombre.toLowerCase()))
+        .map((f) => ({ nombre: f.nombre, categoria: f.categoria || 'otro', falta: true }));
+      return [...DESPENSA.map((d) => ({ nombre: d.nombre, categoria: d.categoria, falta: false })), ...nuevos];
+    }
+
     function pintarChecklist() {
-      DESPENSA.forEach((d) => {
+      const items = itemsChecklist();
+      items.forEach((d) => {
         const k = d.nombre.toLowerCase();
-        if (!conocidosCompra.has(k)) { conocidosCompra.add(k); marcadosCompra.add(k); }
+        if (!conocidosCompra.has(k)) { conocidosCompra.add(k); if (!d.falta) marcadosCompra.add(k); }
       });
       const cont = document.getElementById('checklist-compra');
-      if (!DESPENSA.length) {
+      if (!items.length) {
         cont.innerHTML = '<p class="muted" style="font-size:13px">Tu despensa está vacía. Agrega productos con «+ Agregar» aquí arriba.</p>';
         document.getElementById('cc-resumen').textContent = '';
         return;
       }
       const porCat = {};
-      DESPENSA.forEach((d) => { (porCat[d.categoria] ||= []).push(d); });
+      items.forEach((d) => { (porCat[d.categoria] ||= []).push(d); });
       cont.innerHTML = CATEGORIAS.filter((c) => porCat[c]).map((cat) => `
         <div>
           <div style="margin-bottom:6px">${chipCategoria(cat)}</div>
@@ -309,12 +327,17 @@
             ${porCat[cat].map((d) => {
               const k = d.nombre.toLowerCase();
               const on = marcadosCompra.has(k);
+              // El ● marca lo que NO está todavía en tu despensa: al marcarlo, entra.
               return `<button type="button" class="btn btn-sm ${on ? '' : 'btn-ghost'}" data-check="${k.replace(/"/g, '&quot;')}"
-                title="${on ? 'Comprado' : 'Marcar como comprado'}" style="padding:5px 11px;font-size:12.5px${on ? '' : ';opacity:.7'}">${on ? '✓ ' : ''}${d.nombre}</button>`;
+                title="${d.falta ? 'De tu lista de compras — al marcarlo entra a tu despensa' : (on ? 'Comprado' : 'Marcar como comprado')}"
+                style="padding:5px 11px;font-size:12.5px${on ? '' : ';opacity:.7'}">${on ? '✓ ' : ''}${d.falta ? '● ' : ''}${d.nombre}</button>`;
             }).join('')}
           </div>
         </div>`).join('');
-      document.getElementById('cc-resumen').textContent = `· ${marcadosCompra.size} de ${DESPENSA.length} marcados`;
+      const pendientes = items.filter((d) => d.falta).length;
+      document.getElementById('cc-resumen').textContent =
+        `· ${marcadosCompra.size} de ${items.length} marcados`
+        + (pendientes ? ` · ● ${pendientes} de tu lista de compras (aún no en tu despensa)` : '');
     }
 
     document.getElementById('checklist-compra').addEventListener('click', (e) => {
@@ -324,7 +347,7 @@
       if (marcadosCompra.has(k)) marcadosCompra.delete(k); else marcadosCompra.add(k);
       pintarChecklist();
     });
-    document.getElementById('btn-marca-todos').onclick = () => { DESPENSA.forEach((d) => marcadosCompra.add(d.nombre.toLowerCase())); pintarChecklist(); };
+    document.getElementById('btn-marca-todos').onclick = () => { itemsChecklist().forEach((d) => marcadosCompra.add(d.nombre.toLowerCase())); pintarChecklist(); };
     document.getElementById('btn-marca-ninguno').onclick = () => { marcadosCompra.clear(); pintarChecklist(); };
 
     // Agregar un producto: alta INMEDIATA a la despensa + queda marcado en el checklist.
@@ -387,13 +410,32 @@
         document.getElementById('modo-fechas').classList.toggle('hidden', !fechas);
         renderPeriodo();
       }; });
-      ['c-semanas', 'c-inicio', 'c-fecha-ini', 'c-fecha-fin'].forEach((id) => { document.getElementById(id).onchange = renderPeriodo; });
+      // Los faltantes dependen del PERIODO (son los del plan de esas semanas), asi que se
+      // recargan al cambiarlo: si estiras la compra de 1 a 4 semanas, la lista crece.
+      ['c-semanas', 'c-inicio', 'c-fecha-ini', 'c-fecha-fin'].forEach((id) => {
+        document.getElementById(id).onchange = () => { renderPeriodo(); cargarFaltantes(); };
+      });
       renderPeriodo();
+    }
+
+    // Faltantes del periodo = lo que la IA marco como "no lo tienes" para los platos que ya
+    // programaste. Se ofrecen en el checklist para poder marcarlos al volver del mercado.
+    // Si el plan no esta disponible (403 del gate, o aun no hay platos), se degrada sin
+    // ruido: el checklist sigue funcionando con la despensa sola.
+    async function cargarFaltantes() {
+      const p = periodoUI();
+      if (!p.inicio || !p.fin) return;
+      try {
+        FALTANTES = (await api(`/api/plan/faltantes?inicio=${p.inicio}&fin=${p.fin}`)).items || [];
+      } catch { FALTANTES = []; }
+      if (!document.getElementById('panel-compra').classList.contains('hidden')) pintarChecklist();
     }
 
     document.getElementById('btn-guardar-compra').onclick = async () => {
       limpiarAlerta(alCompra);
-      const items = DESPENSA.map((d) => d.nombre).filter((n) => marcadosCompra.has(n.toLowerCase()));
+      // Sobre itemsChecklist(), no sobre DESPENSA: los marcados pueden incluir faltantes que
+      // todavia no estan en la despensa (el backend los da de alta al 100%).
+      const items = itemsChecklist().map((d) => d.nombre).filter((n) => marcadosCompra.has(n.toLowerCase()));
       if (!items.length) { alerta(alCompra, 'Marca al menos un producto que compraste.'); return; }
       const p = periodoUI();
       const body = { nota: document.getElementById('c-nota').value, items };
@@ -407,9 +449,13 @@
       btn.disabled = true; btn.textContent = 'Guardando…';
       try {
         const d = await api('/api/despensa/compra', { method: 'POST', body });
+        DESPENSA = d.despensa; // trae los que acaban de entrar a la despensa, ya al 100%
         document.getElementById('c-nota').value = '';
         await cargarCompras();
-        alerta(alCompra, `Se guardó la despensa del periodo ${fmtFecha(d.periodo.inicio)} – ${fmtFecha(d.periodo.fin)}.`, 'ok');
+        await cargarFaltantes(); // lo comprado deja de figurar como faltante
+        pintarDespensa();
+        alerta(alCompra, `Se guardó la despensa del periodo ${fmtFecha(d.periodo.inicio)} – ${fmtFecha(d.periodo.fin)}.`
+          + (d.nuevos ? ` Se agregaron ${d.nuevos} producto(s) nuevo(s) a tu despensa.` : ''), 'ok');
       } catch (err) { alerta(alCompra, err.error || 'No pudimos registrar la compra.'); }
       finally { btn.disabled = false; btn.textContent = 'Registrar compra'; }
     };
@@ -459,7 +505,8 @@
       let semHogar = 1;
       try { semHogar = (await api('/api/hogar')).hogar?.semanas || 1; } catch { /* el gate del plan ya redirige si aplica */ }
       initPeriodo(semHogar);
-      await cargarCompras(); // deja el banner del periodo listo en la pestaña de despensa
+      await cargarCompras();   // deja el banner del periodo listo en la pestaña de despensa
+      await cargarFaltantes(); // el checklist ofrece despensa + lo que falta para el plan
     }
     init();
   </script>

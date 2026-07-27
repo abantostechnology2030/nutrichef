@@ -87,6 +87,7 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
   // (el dedup de la despensa es correcto, pero haria que el conteo no cambie).
   const INGREDIENTE = 'Hierba de prueba ' + Date.now(); // se agrega en "Registrar compra"
   let porcentajesPrevios = []; // snapshot de la despensa antes de la compra de prueba (se restaura al final)
+  let idsPrevios = null;       // que productos existian antes: lo que aparezca de mas, lo creo el test
 
   // ================= HOGAR =================
   console.log('\n=== hogar.html ===');
@@ -196,12 +197,54 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     check(doc.querySelectorAll('#checklist-compra .cat-chip').length > 0, 'el checklist sale agrupado por categoria');
     check(marcados() === antes, `arrancan todos marcados (${marcados()} de ${antes})`);
 
+    // El checklist ofrece DOS conjuntos: lo que ya tienes + los faltantes del plan de ese
+    // periodo (marcados con ●), que son los que traes del mercado. Los faltantes arrancan
+    // SIN marcar: dar de alta algo que no compraste ensucia la despensa y la IA planifica
+    // alrededor de lo que encuentre ahi.
+    // Se apunta el periodo a una semana que SI tenga platos: con la semana actual vacia el
+    // aserto pasaria con 0 faltantes sin comprobar nada (un falso OK como los que ya me
+    // mordieron). El periodo se deja como estaba al terminar.
+    {
+      const { semanas } = await api('/api/plan/semanas', token);
+      const conPlan = semanas.sort((a, b) => b.items - a.items)[0];
+      if (!conPlan) {
+        check(false, 'el usuario de prueba no tiene ninguna semana con platos (no se pudo probar el ●)');
+      } else {
+        const fin = new Date(new Date(conPlan.semana + 'T00:00:00Z').getTime() + 6 * 86400000).toISOString().slice(0, 10);
+        const win = doc.defaultView;
+        [...doc.querySelectorAll('input[name=modo-periodo]')].find((r) => r.value === 'fechas').checked = true;
+        doc.querySelectorAll('input[name=modo-periodo]').forEach((r) => r.dispatchEvent(new win.Event('change', { bubbles: true })));
+        doc.querySelector('#c-fecha-ini').value = conPlan.semana;
+        doc.querySelector('#c-fecha-fin').value = fin;
+        doc.querySelector('#c-fecha-fin').dispatchEvent(new win.Event('change', { bubbles: true }));
+        await esperar(1200);
+
+        const falt = (await api(`/api/plan/faltantes?inicio=${conPlan.semana}&fin=${fin}`, token)).items || [];
+        const enDespensa = new Set((await api('/api/despensa', token)).despensa.map((d) => d.nombre.toLowerCase()));
+        const esperados = falt.filter((f) => !enDespensa.has(f.nombre.toLowerCase())).length;
+        const conPunto = [...doc.querySelectorAll('#checklist-compra [data-check]')].filter((b) => b.textContent.includes('●'));
+        check(esperados > 0, `la semana ${conPlan.semana} tiene ${esperados} faltantes con los que probar`);
+        check(conPunto.length === esperados, `los faltantes del plan tambien se ofrecen (● ${conPunto.length}, esperados ${esperados})`);
+        check(conPunto.every((b) => b.classList.contains('btn-ghost')), 'y arrancan SIN marcar (no se dan de alta solos)');
+        check(marcados() === antes, `los de la despensa siguen marcados y los ● no (${marcados()} marcados de ${antes + esperados})`);
+
+        // Volver al modo semanas, que es como lo encontro (el resto del test cuenta con el).
+        [...doc.querySelectorAll('input[name=modo-periodo]')].find((r) => r.value !== 'fechas').checked = true;
+        doc.querySelectorAll('input[name=modo-periodo]').forEach((r) => r.dispatchEvent(new win.Event('change', { bubbles: true })));
+        await esperar(800);
+      }
+    }
+
     // Agregar un producto con el form -> alta a la despensa + queda en el checklist marcado.
+    // Se cuenta contra el checklist, no contra la despensa: el checklist ya no es solo la
+    // despensa (incluye los faltantes del plan), asi que "antes + 1" dejo de ser el total.
+    const enChecklist = () => doc.querySelectorAll('#checklist-compra [data-check]').length;
+    const checklistAntes = enChecklist();
     doc.querySelector('#cc-nombre').value = INGREDIENTE;
     doc.querySelector('#cc-cat').value = 'verdura';
     doc.querySelector('#btn-cc-add').click();
     await esperar(900);
-    check(doc.querySelectorAll('#checklist-compra [data-check]').length === antes + 1, `agregar suma al checklist: ${antes} -> ${doc.querySelectorAll('#checklist-compra [data-check]').length}`);
+    check(enChecklist() === checklistAntes + 1, `agregar suma al checklist: ${checklistAntes} -> ${enChecklist()}`);
 
     // "Ninguno" desmarca todo y registrar debe exigir al menos uno.
     doc.querySelector('#btn-marca-ninguno').click(); await esperar(60);
@@ -215,6 +258,10 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     // realistas a proposito. Se guarda el estado para devolverlo en la limpieza: si no, cada
     // corrida dejaria al hogar de prueba con todo lleno y el planificador veria otra casa.
     porcentajesPrevios = (await apiSrv('/api/despensa')).despensa.map((d) => ({ id: d.id, porcentaje: d.porcentaje }));
+    // "Todos" marca TAMBIEN los faltantes del plan, y esos se DAN DE ALTA en la despensa al
+    // registrar. Sin anotar cuales existian antes, cada corrida le metia ~18 productos
+    // nuevos al hogar sembrado y la IA acabaria planificando alrededor de esa basura.
+    idsPrevios = new Set(porcentajesPrevios.map((d) => d.id));
     doc.querySelector('#btn-marca-todos').click(); await esperar(60);
     const comprasAntes = doc.querySelectorAll('#lista-compras > div').length;
     doc.querySelector('#btn-guardar-compra').click();
@@ -240,12 +287,21 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     compraId = sobra.compra_id;
     if (compraId) db.prepare('DELETE FROM compras WHERE id = ?').run(compraId);
   }
+  // Borrar los productos que dio de alta la compra de prueba al marcar "Todos" (los
+  // faltantes del plan). Si se quedan, el hogar sembrado deja de ser el hogar sembrado.
+  let creados = 0;
+  if (idsPrevios) {
+    for (const d of fin.despensa) {
+      if (!idsPrevios.has(d.id)) { await apiSrv(`/api/despensa/${d.id}`, { method: 'DELETE' }); creados++; }
+    }
+  }
   // Devolver los porcentajes que la compra de prueba puso a 100 (ver el comentario arriba).
   for (const p of porcentajesPrevios) {
     await apiSrv(`/api/despensa/${p.id}`, { method: 'PATCH', body: JSON.stringify({ porcentaje: p.porcentaje }) });
   }
   console.log(`\n(limpieza: producto de prueba ${sobra ? 'eliminado' : 'no encontrado'}${compraId ? ', compra de prueba borrada' : ''}`
-    + `${porcentajesPrevios.length ? `, ${porcentajesPrevios.length} niveles de despensa restaurados` : ''})`);
+    + `${creados ? `, ${creados} productos dados de alta por la prueba eliminados` : ''}`
+    + `${porcentajesPrevios.length ? `, ${porcentajesPrevios.length} niveles restaurados` : ''})`);
 
   console.log(fallos ? `\n=== ${fallos} FALLA(S) ===` : '\n=== TODO OK ===');
   process.exit(fallos ? 1 : 0);

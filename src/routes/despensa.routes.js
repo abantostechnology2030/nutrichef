@@ -164,16 +164,6 @@ router.post('/compra', (req, res) => {
   const nombres = Array.isArray(b.items) ? b.items.map((x) => String(x || '').trim()).filter(Boolean) : [];
   if (!nombres.length) return res.status(400).json({ error: 'Marca al menos un producto que compraste.' });
 
-  // Resolver cada nombre marcado contra la despensa (la categoria sale de ahi, no del cliente).
-  const buscar = db.prepare('SELECT id, nombre, categoria FROM despensa WHERE usuario_id = ? AND LOWER(TRIM(nombre)) = LOWER(TRIM(?))');
-  const comprados = [];
-  const vistos = new Set();
-  for (const n of nombres) {
-    const it = buscar.get(req.usuario.id, n);
-    if (it && !vistos.has(it.nombre.toLowerCase())) { comprados.push(it); vistos.add(it.nombre.toLowerCase()); }
-  }
-  if (!comprados.length) return res.status(400).json({ error: 'Ninguno de esos productos esta en tu despensa.' });
-
   const manualIni = /^\d{4}-\d{2}-\d{2}$/.test(b.periodo_inicio || '');
   const manualFin = /^\d{4}-\d{2}-\d{2}$/.test(b.periodo_fin || '');
   let inicio;
@@ -190,7 +180,35 @@ router.post('/compra', (req, res) => {
   }
   const semana = lunesDe(inicio);
 
+  // TODO va en una transaccion, incluida el alta de los productos nuevos: una compra a
+  // medias dejaria a la IA proponiendo platos con ingredientes que el usuario no llego a
+  // registrar, o productos dados de alta sin la compra que los explica.
   const tx = db.transaction(() => {
+    // Resolver cada nombre marcado contra la despensa. Lo que NO este todavia se DA DE ALTA:
+    // el checklist ofrece tambien los faltantes de la lista de compras (lo que la IA dijo
+    // que le falta para su plan), y esos son justo los que uno trae del mercado. Obligar a
+    // agregarlos uno por uno con "+ Agregar" antes de poder marcarlos era el camino largo
+    // para el caso mas comun. La categoria sale del catalogo, nunca del cliente.
+    const buscar = db.prepare('SELECT id, nombre, categoria FROM despensa WHERE usuario_id = ? AND LOWER(TRIM(nombre)) = LOWER(TRIM(?))');
+    const comprados = [];
+    const vistos = new Set();
+    let nuevos = 0;
+    for (const n of nombres) {
+      const clave = n.toLowerCase();
+      if (vistos.has(clave)) continue;
+      let it = buscar.get(req.usuario.id, n);
+      if (!it) {
+        // guardarIngrediente resuelve el UNIQUE a mano y hereda la categoria del catalogo.
+        const creado = guardarIngrediente(req.usuario.id, { nombre: n, porcentaje: 100, origen: 'compra' });
+        if (!creado) continue; // nombre vacio tras limpiar
+        it = { id: creado.id, nombre: creado.nombre, categoria: creado.categoria };
+        nuevos++;
+      }
+      comprados.push(it);
+      vistos.add(clave);
+    }
+    if (!comprados.length) return null;
+
     // N semanas queda como preferencia sticky del hogar (las fechas a medida no la tocan).
     if (semanas) db.prepare('UPDATE hogar SET semanas = ? WHERE usuario_id = ?').run(semanas, req.usuario.id);
     const info = db.prepare(
@@ -206,15 +224,18 @@ router.post('/compra', (req, res) => {
       ins.run(compraId, it.nombre, it.categoria, 'bastante');
       reponer.run(compraId, it.id);
     }
-    return compraId;
+    return { compraId, guardados: comprados.length, nuevos };
   });
 
-  const compraId = tx();
+  const hecho = tx();
+  if (!hecho) return res.status(400).json({ error: 'Marca al menos un producto que compraste.' });
+  const { compraId, guardados, nuevos } = hecho;
   res.status(201).json({
     mensaje: 'Se guardo la despensa del periodo.',
     compra_id: compraId,
     periodo: { inicio, fin, semanas },
-    guardados: comprados.length,
+    guardados,
+    nuevos, // cuantos entraron a la despensa por primera vez (venian de la lista de compras)
     // La proyeccion se devuelve sobre el PERIODO recien registrado, no sobre la semana
     // actual: es la ventana que el usuario acaba de declarar que esta comprando.
     despensa: despensaConProyeccion(req.usuario.id, inicio, fin),
