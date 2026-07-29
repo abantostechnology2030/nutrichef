@@ -76,20 +76,33 @@ const FORMATO_PASOS = `- "pasos": array de strings con la receta, paso a paso y 
   - Con hipertension en el hogar, nada de "sal al gusto": di cuanta.
   - NO numeres los pasos ("1.", "2.-"): el orden del array ya es el numero.`;
 
-// "consume" = que porcion del STOCK que la familia tiene se lleva este plato. Es lo que
-// hace bajar la barra de la despensa, y por eso la escala tiene que ser la misma con la que
-// se le describe la despensa en el contexto (porcentaje, no gramos).
+// "consume" = que porcion de LO QUE LA FAMILIA NECESITA DE ESE PRODUCTO EN UNA SEMANA se
+// lleva este plato. Es lo que hace bajar la barra de la despensa.
+//
+// EL ANCLA ES LA NECESIDAD, NO EL ENVASE (cambio del 2026-07-29). Antes el 100% era "el
+// envase lleno de una casa peruana", y con esa referencia los numeros no cuadraban con nada:
+// un consume 90 de arroz no queria decir "se lleva el 90% de lo que necesitas esta semana",
+// queria decir "se lleva el 90% de tu bolsa". Con la necesidad como ancla el modelo CIERRA y
+// es comprobable: cocinar todo lo planificado del periodo deja cada producto cerca de 0%, y
+// la barra por fin responde la pregunta con la que el usuario entra a esa pantalla ("¿me
+// alcanza?"). Ver "Consumo de la despensa" en CLAUDE.md.
+//
+// SIEMPRE se pide sobre UNA SEMANA, aunque la compra cubra varias: es una unidad que la IA
+// sabe estimar y mantiene los numeros en un rango con resolucion (5-50). Dividir por las
+// semanas del periodo lo hace el backend (services/consumo.js) — pidiendolo sobre 12
+// semanas, la parte de un plato seria ~1% y la barra no se moveria.
 //
 // La alternativa era una heuristica local por categoria, que es la que sigue usandose de
 // respaldo para los platos que nacieron sin este campo (ver services/consumo.js). No basta
 // sola: sin la IA, la sal y el aceite bajarian igual que la carne y una semana normal
 // dejaria los condimentos en rojo. Este campo viaja en la MISMA llamada que el plato, asi
 // que no cuesta una generacion extra de cupo.
-const FORMATO_CONSUME = `  El "consume" de cada ingrediente es un ENTERO 0-100: que porcentaje de lo que la familia TIENE en su despensa de ESE producto se gasta al cocinar este plato una vez.
-  - Piensa en el envase real de una casa peruana, no en el gramaje: una cucharadita de sal de un kilo de sal es 2, no 50.
-  - Los condimentos y abarrotes duran muchos platos (valores bajos: 2-15). Las carnes, pescados y verduras frescas se compran para el plato y se acaban en el (valores altos: 40-90).
+const FORMATO_CONSUME = `  El "consume" de cada ingrediente es un ENTERO 0-100 y su escala es LA NECESIDAD SEMANAL, no el envase: el 100% de un producto es TODO lo que esta familia necesita de ese producto para UNA SEMANA de comidas. Cuanto se lleva este plato al cocinarlo una vez.
+  - La regla practica: piensa en cuantos platos de la semana de esta familia usan ese producto y reparte 100 entre ellos. Si el arroz entra en unos 5 almuerzos, un almuerzo se lleva ~20. Si la sal entra en casi los 21 platos, un plato se lleva ~5.
+  - Por eso los condimentos y los abarrotes salen BAJOS (2-15): no porque el envase sea grande, sino porque entran en muchos platos. Las carnes, pescados y legumbres salen ALTOS (30-50): entran en pocos platos de la semana y ahi se acaban.
+  - Es por SEMANA aunque la familia haya comprado para varias: no ajustes el numero por el largo del periodo, eso se calcula aparte.
   - Si el ingrediente esta en "faltantes" (no lo tiene), pon 0: no hay stock del que descontar.
-  - Si de ese producto le queda poco, NO subas el numero por eso: "consume" es del stock que tiene, no del que necesitarias.`;
+  - Si de ese producto le queda poco, NO subas ni bajes el numero por eso: "consume" es cuanto PIDE el plato, no cuanto hay.`;
 
 const FORMATO_PLATO = `Cada plato es un objeto JSON con:
 - "nombre": nombre del plato como lo diria la familia (ej. "Ají de gallina", "Quinua atamalada").
@@ -139,13 +152,15 @@ const SYSTEM_DETALLE = `Eres un chef y nutricionista peruano.
 
 Se te dara el contexto de un hogar y una lista de platos que YA estan en su calendario. Para CADA plato, COMPLETA lo que le falta. NO cambies el plato, no propongas otro, no corrijas sus ingredientes: solo completa.
 
-Cada plato trae un campo "necesita" con lo que hay que calcular: "info", "pasos", o ambos. Devuelve SOLO los campos que ese plato pide: lo que no pide, ya lo tiene y se descartara.
+Cada plato trae un campo "necesita" con lo que hay que calcular: "info", "pasos", "consume" o varios. Devuelve SOLO los campos que ese plato pide: lo que no pide, ya lo tiene y se descartara.
 
 ${FORMATO_PASOS}
 ${FORMATO_INFO}
+- "consume": array de { "nombre", "consume" } con UNA entrada por cada ingrediente del plato, con el nombre TAL CUAL se te dio (no lo reescribas ni cambies las cantidades: solo estas poniendole un numero a cada uno).
+${FORMATO_CONSUME}
 
 Responde UNICAMENTE con un objeto JSON limpio (sin texto antes/despues ni markdown):
-{"platos":[{"id":<el id que se te dio, tal cual>,"info":{...},"pasos":[...]}, ...]}
+{"platos":[{"id":<el id que se te dio, tal cual>,"info":{...},"pasos":[...],"consume":[{"nombre":"...","consume":<0-100>}, ...]}, ...]}
 
 Devuelve exactamente una entrada por cada plato que se te dio, con su "id" original.`;
 
@@ -417,12 +432,13 @@ const MAX_TOKENS_PLANIFICADOR = 24000;
 // platos: [{ id, nombre, ingredientes, porciones, necesita: ['info'|'pasos'] }]
 //      -> { platos: [{ id, info?, pasos? }] }
 async function detallarPlatos(ctxTexto, platos) {
-  // 500 por plato: la receta (~250-300 tokens) pesa mas que la info sola (~120 medidos),
-  // asi que los 220 de cuando esto solo calculaba nutricion se quedaban cortos.
+  // 650 por plato: la receta (~250-300 tokens) pesa mas que la info sola (~120 medidos),
+  // asi que los 220 de cuando esto solo calculaba nutricion se quedaban cortos. Los ultimos
+  // 150 son el "consume" del backfill (~10 ingredientes x ~12 tokens).
   const { data, usage } = await pedir(
     SYSTEM_DETALLE,
     [{ texto: PROMPT_DETALLE(ctxTexto, platos) }],
-    Math.min(MAX_TOKENS_PLANIFICADOR, 800 + platos.length * 500)
+    Math.min(MAX_TOKENS_PLANIFICADOR, 800 + platos.length * 650)
   );
   return { resultado: data, usage };
 }

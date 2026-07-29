@@ -210,18 +210,27 @@
       document.getElementById('lbl-semana-sub').textContent = semana === d.semana_actual ? 'Semana actual' : '';
       pintarLimites(d.limites);
 
-      // "Completar platos" es BACKFILL: los platos nuevos ya nacen con receta y nutricion,
-      // asi que el boton solo aparece si hay alguno al que le falte algo (los genero una
-      // version anterior). Es una llamada a la IA y consume cupo: no se ofrece si no haria
-      // nada. El backend ademas responde gratis si no hay pendientes.
+      // "Completar platos" es BACKFILL: los platos nuevos ya nacen con receta, nutricion y
+      // el "consume" de cada ingrediente, asi que el boton solo aparece si hay alguno al que
+      // le falte algo (los genero una version anterior). Es una llamada a la IA y consume
+      // cupo: no se ofrece si no haria nada. El backend ademas responde gratis si no hay
+      // pendientes. El criterio de "incompleto" tiene que ser el MISMO que el del backend
+      // (ver POST /detallar): si aqui faltara el consume, el boton no aparecería nunca para
+      // los platos viejos y su despensa seguiria bajando por la heuristica; y si aqui fuera
+      // "alguno" en vez de "ninguno", el boton se quedaria encendido para siempre en cuanto
+      // la IA omitiera un ingrediente, cobrando una generacion por clic.
+      const sinConsume = (p) => {
+        const ings = p.ingredientes || [];
+        return ings.length > 0 && ings.every((i) => !Number.isFinite(Number(i?.consume)));
+      };
       const incompletos = d.dia_orden.reduce((n, dia) => n + d.momentos.filter((m) => {
         const it = d.plan[dia][m];
-        return it && (!it.plato.info || !it.plato.pasos);
+        return it && (!it.plato.info || !it.plato.pasos || sinConsume(it.plato));
       }).length, 0);
       const btnDet = document.getElementById('btn-detallar');
       btnDet.classList.toggle('hidden', incompletos === 0 || !!bloqueoGen());
       btnDet.textContent = `🍳 Completar platos (${incompletos})`;
-      btnDet.title = 'Pide a la IA la receta y el aporte nutricional que les falte';
+      btnDet.title = 'Pide a la IA la receta, el aporte nutricional y el gasto de despensa que les falte';
 
       const hoy = hoyISO();
       document.getElementById('calendario').innerHTML = d.dia_orden.map((dia) => {

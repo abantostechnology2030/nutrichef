@@ -110,6 +110,7 @@
                 <button class="btn btn-ghost btn-sm" id="btn-marca-ninguno" type="button">Ninguno</button>
               </div>
             </div>
+            <p class="muted" style="font-size:12.5px;margin:-2px 0 8px">Al marcar un producto se asume que compraste <b>todo lo que tu plan necesita</b> para este periodo. Si trajiste menos, baja su barra.</p>
             <div id="checklist-compra" class="stack" style="gap:12px"></div>
 
             <div class="field" style="margin-top:14px">
@@ -149,6 +150,7 @@
     let CATEGORIAS = [];
     const marcadosCompra = new Set();  // nombres (lower) marcados como comprados este periodo
     const conocidosCompra = new Set(); // nombres ya vistos por el checklist (para no re-marcar)
+    const pctCompra = new Map();       // nombre (lower) -> cuanto se compro de el (0-100)
 
     const NIVEL_TXT = { poco: '🔸 Poco', normal: '🔹 Normal', bastante: '🟢 Bastante' };
     const nivelSelect = (valor, attrs = '') =>
@@ -160,6 +162,10 @@
     // Muestra TRES numeros en una sola linea: lo que tiene, lo que se llevan los platos ya
     // programados de esta semana y con cuanto se queda. El tramo rayado es proyeccion: no
     // se ha descontado nada todavia (eso pasa al marcar la comida como cocinada en el plan).
+    //
+    // El 100% es LO QUE NECESITA PARA EL PERIODO, no "el envase lleno" (ver la cabecera de
+    // services/consumo.js). Por eso la etiqueta dice "de lo que necesitas": sin esa frase el
+    // numero no significa nada — es justo la duda que abrio este cambio.
     const claseStock = (restante) => (restante <= 20 ? 'stock-bajo' : restante <= 50 ? 'stock-medio' : 'stock-ok');
 
     function barraStock(i) {
@@ -168,8 +174,8 @@
       const restante = i.restante === undefined ? tiene : i.restante;
 
       const etiqueta = consumo > 0
-        ? `Te queda <b>${tiene}%</b> · esta semana −${consumo}% → te quedará <b>${restante}%</b>`
-        : (tiene === 0 ? 'Se te <b>acabó</b>' : `Te queda <b>${tiene}%</b>`);
+        ? `Te queda <b>${tiene}%</b> de lo que necesitas · esta semana −${consumo}% → te quedará <b>${restante}%</b>`
+        : (tiene === 0 ? 'Se te <b>acabó</b>' : `Te queda <b>${tiene}%</b> de lo que necesitas para el periodo`);
 
       return `
         <div class="stock-barra ${claseStock(restante)}" title="${tiene}% en la despensa${consumo ? `, −${consumo}% programado` : ''}">
@@ -265,7 +271,7 @@
       barra.className = `stock-barra ${claseStock(pct)}`;
       barra.querySelector('.stock-tiene').style.width = `${pct}%`;
       barra.querySelector('.stock-consumo').style.width = '0%';
-      lbl.innerHTML = pct === 0 ? 'Se te <b>acabó</b>' : `Te queda <b>${pct}%</b>`;
+      lbl.innerHTML = pct === 0 ? 'Se te <b>acabó</b>' : `Te queda <b>${pct}%</b> de lo que necesitas para el periodo`;
     });
 
     document.getElementById('lista-despensa').addEventListener('change', async (e) => {
@@ -306,6 +312,12 @@
       return [...DESPENSA.map((d) => ({ nombre: d.nombre, categoria: d.categoria, falta: false })), ...nuevos];
     }
 
+    // Cuanto se compro de cada producto marcado (clave -> 0-100). Es la MISMA escala que la
+    // barra de "Mi despensa": el 100% es LO QUE NECESITA PARA EL PERIODO. Asi que marcar un
+    // producto y dejarlo en 100 significa "compre todo el arroz que me pide el plan para este
+    // periodo", y bajarlo a 50 es "solo alcance a traer la mitad".
+    const pctDe = (k) => (pctCompra.has(k) ? pctCompra.get(k) : 100);
+
     function pintarChecklist() {
       const items = itemsChecklist();
       items.forEach((d) => {
@@ -323,14 +335,24 @@
       cont.innerHTML = CATEGORIAS.filter((c) => porCat[c]).map((cat) => `
         <div>
           <div style="margin-bottom:6px">${chipCategoria(cat)}</div>
-          <div class="row" style="flex-wrap:wrap;gap:6px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px">
             ${porCat[cat].map((d) => {
               const k = d.nombre.toLowerCase();
               const on = marcadosCompra.has(k);
+              const pct = pctDe(k);
+              const esc = k.replace(/"/g, '&quot;');
               // El ● marca lo que NO está todavía en tu despensa: al marcarlo, entra.
-              return `<button type="button" class="btn btn-sm ${on ? '' : 'btn-ghost'}" data-check="${k.replace(/"/g, '&quot;')}"
-                title="${d.falta ? 'De tu lista de compras — al marcarlo entra a tu despensa' : (on ? 'Comprado' : 'Marcar como comprado')}"
-                style="padding:5px 11px;font-size:12.5px${on ? '' : ';opacity:.7'}">${on ? '✓ ' : ''}${d.falta ? '● ' : ''}${d.nombre}</button>`;
+              // La barra solo aparece cuando está marcado: preguntar "¿cuánto compraste?"
+              // de algo que no compraste no significa nada.
+              return `<div style="border:1px solid var(--line);border-radius:12px;padding:8px 10px">
+                <button type="button" class="btn btn-sm ${on ? '' : 'btn-ghost'}" data-check="${esc}"
+                  title="${d.falta ? 'De tu lista de compras — al marcarlo entra a tu despensa' : (on ? 'Comprado' : 'Marcar como comprado')}"
+                  style="width:100%;justify-content:flex-start;padding:5px 11px;font-size:12.5px${on ? '' : ';opacity:.7'}">${on ? '✓ ' : ''}${d.falta ? '● ' : ''}${d.nombre}</button>
+                ${on ? `
+                  <input class="stock-rango" type="range" min="10" max="100" step="5" value="${pct}"
+                         data-pct-compra="${esc}" aria-label="Cuánto compraste de ${d.nombre}" style="margin-top:6px" />
+                  <div class="stock-lbl" data-lbl-compra="${esc}">Compré <b>${pct}%</b>${pct === 100 ? ' (todo lo del periodo)' : ''}</div>` : ''}
+              </div>`;
             }).join('')}
           </div>
         </div>`).join('');
@@ -346,6 +368,19 @@
       const k = b.dataset.check;
       if (marcadosCompra.has(k)) marcadosCompra.delete(k); else marcadosCompra.add(k);
       pintarChecklist();
+    });
+
+    // La barra de "cuánto compré" NO llama a la API: aquí todavía no hay compra que guardar.
+    // Solo se anota en pctCompra y se aplica al pulsar "Registrar compra". Se repinta la
+    // etiqueta a mano (no todo el checklist) para no perder el foco del control mientras se
+    // arrastra, que es lo que pasaba llamando a pintarChecklist() en cada movimiento.
+    document.getElementById('checklist-compra').addEventListener('input', (e) => {
+      const k = e.target.dataset.pctCompra;
+      if (!k) return;
+      const pct = Number(e.target.value);
+      pctCompra.set(k, pct);
+      const lbl = document.querySelector(`[data-lbl-compra="${CSS.escape(k)}"]`);
+      if (lbl) lbl.innerHTML = `Compré <b>${pct}%</b>${pct === 100 ? ' (todo lo del periodo)' : ''}`;
     });
     document.getElementById('btn-marca-todos').onclick = () => { itemsChecklist().forEach((d) => marcadosCompra.add(d.nombre.toLowerCase())); pintarChecklist(); };
     document.getElementById('btn-marca-ninguno').onclick = () => { marcadosCompra.clear(); pintarChecklist(); };
@@ -434,8 +469,11 @@
     document.getElementById('btn-guardar-compra').onclick = async () => {
       limpiarAlerta(alCompra);
       // Sobre itemsChecklist(), no sobre DESPENSA: los marcados pueden incluir faltantes que
-      // todavia no estan en la despensa (el backend los da de alta al 100%).
-      const items = itemsChecklist().map((d) => d.nombre).filter((n) => marcadosCompra.has(n.toLowerCase()));
+      // todavia no estan en la despensa (el backend los da de alta con el mismo porcentaje).
+      // Va nombre + cuanto se compro: el backend tambien acepta solo el nombre (= 100%).
+      const items = itemsChecklist()
+        .filter((d) => marcadosCompra.has(d.nombre.toLowerCase()))
+        .map((d) => ({ nombre: d.nombre, porcentaje: pctDe(d.nombre.toLowerCase()) }));
       if (!items.length) { alerta(alCompra, 'Marca al menos un producto que compraste.'); return; }
       const p = periodoUI();
       const body = { nota: document.getElementById('c-nota').value, items };
@@ -449,8 +487,9 @@
       btn.disabled = true; btn.textContent = 'Guardando…';
       try {
         const d = await api('/api/despensa/compra', { method: 'POST', body });
-        DESPENSA = d.despensa; // trae los que acaban de entrar a la despensa, ya al 100%
+        DESPENSA = d.despensa; // trae los que acaban de entrar, ya con el porcentaje comprado
         document.getElementById('c-nota').value = '';
+        pctCompra.clear(); // la proxima compra vuelve a arrancar en "lleno"
         await cargarCompras();
         await cargarFaltantes(); // lo comprado deja de figurar como faltante
         pintarDespensa();

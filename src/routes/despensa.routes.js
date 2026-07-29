@@ -146,23 +146,46 @@ router.delete('/:id', (req, res) => {
   res.json({ mensaje: 'Quitado de la despensa.', despensa: despensaConProyeccion(req.usuario.id, inicio, fin) });
 });
 
-// POST /api/despensa/compra { semanas?, periodo_inicio?, periodo_fin?, nota?, items: [nombre,...] }
-// "Registrar compra": guarda como la compra de un periodo los productos que el usuario MARCO
-// como comprados (items = nombres). La categoria NO se toma del cliente: se resuelve
-// contra la despensa (fuente de verdad). El detalle se congela en compra_items para el
-// historial. NO reinicia la despensa: los productos que NO se marcaron conservan su stock.
+// Cada producto marcado en la compra, con CUANTO se compro de el (0-100).
 //
-// Lo que SI hace con los marcados es dejarlos al 100%: acabas de comprarlos, estan llenos.
-// Es el punto de partida de la barra, y cierra el ciclo comprar -> cocinar -> se vacia ->
-// vuelve a la lista de compras.
+// Se aceptan dos formas de "items" a proposito:
+//   ["Arroz", "Pollo"]                      -> lo comprado se asume LLENO (100%)
+//   [{ nombre: "Arroz", porcentaje: 60 }]   -> cuanto se compro de cada uno
+// La primera existe porque es lo que mandaba el cliente antes de que la compra tuviera
+// barras, y porque "compre este producto" sin mas detalle sigue siendo una respuesta valida.
+// La segunda es mas exacta: no es lo mismo traer el saco de arroz que medio kilo.
+//
+// El porcentaje es la MISMA escala que la barra de la despensa ("que fraccion de lo que
+// suelo tener"), no una cantidad absoluta: seguimos sin gramos (ver la cabecera del archivo).
+function itemsComprados(v) {
+  const out = [];
+  for (const x of Array.isArray(v) ? v : []) {
+    const obj = x && typeof x === 'object';
+    const nombre = String((obj ? x.nombre : x) || '').trim();
+    if (!nombre) continue;
+    out.push({ nombre, porcentaje: porcentajeEntrante(obj ? x : {}, 100) });
+  }
+  return out;
+}
+
+// POST /api/despensa/compra { semanas?, periodo_inicio?, periodo_fin?, nota?, items: [...] }
+// "Registrar compra": guarda como la compra de un periodo los productos que el usuario MARCO
+// como comprados (ver itemsComprados: nombre + cuanto compro). La categoria NO se toma del
+// cliente: se resuelve contra la despensa (fuente de verdad). El detalle se congela en
+// compra_items para el historial. NO reinicia la despensa: los productos que NO se marcaron
+// conservan su stock.
+//
+// Lo que SI hace con los marcados es dejarlos en el porcentaje que el usuario declaro (100%
+// si no dijo nada): acabas de comprarlos, ese es el punto de partida de la barra, y cierra
+// el ciclo comprar -> cocinar -> se vacia -> vuelve a la lista de compras.
 //
 // El periodo se define de dos formas:
 //   - N SEMANAS enteras (semanas): inicio = lunes; fin = inicio + N*7 - 1. Preferencia sticky.
 //   - FECHAS MANUALES (periodo_inicio + periodo_fin): el usuario fija el rango a medida.
 router.post('/compra', (req, res) => {
   const b = req.body || {};
-  const nombres = Array.isArray(b.items) ? b.items.map((x) => String(x || '').trim()).filter(Boolean) : [];
-  if (!nombres.length) return res.status(400).json({ error: 'Marca al menos un producto que compraste.' });
+  const marcados = itemsComprados(b.items);
+  if (!marcados.length) return res.status(400).json({ error: 'Marca al menos un producto que compraste.' });
 
   const manualIni = /^\d{4}-\d{2}-\d{2}$/.test(b.periodo_inicio || '');
   const manualFin = /^\d{4}-\d{2}-\d{2}$/.test(b.periodo_fin || '');
@@ -193,18 +216,18 @@ router.post('/compra', (req, res) => {
     const comprados = [];
     const vistos = new Set();
     let nuevos = 0;
-    for (const n of nombres) {
-      const clave = n.toLowerCase();
+    for (const m of marcados) {
+      const clave = m.nombre.toLowerCase();
       if (vistos.has(clave)) continue;
-      let it = buscar.get(req.usuario.id, n);
+      let it = buscar.get(req.usuario.id, m.nombre);
       if (!it) {
         // guardarIngrediente resuelve el UNIQUE a mano y hereda la categoria del catalogo.
-        const creado = guardarIngrediente(req.usuario.id, { nombre: n, porcentaje: 100, origen: 'compra' });
+        const creado = guardarIngrediente(req.usuario.id, { nombre: m.nombre, porcentaje: m.porcentaje, origen: 'compra' });
         if (!creado) continue; // nombre vacio tras limpiar
         it = { id: creado.id, nombre: creado.nombre, categoria: creado.categoria };
         nuevos++;
       }
-      comprados.push(it);
+      comprados.push({ ...it, porcentaje: m.porcentaje });
       vistos.add(clave);
     }
     if (!comprados.length) return null;
@@ -216,13 +239,15 @@ router.post('/compra', (req, res) => {
     ).run(req.usuario.id, semana, inicio, fin, String(b.nota || '').trim().slice(0, 200) || null, comprados.length);
     const compraId = info.lastInsertRowid;
     const ins = db.prepare('INSERT INTO compra_items (compra_id, nombre, categoria, nivel) VALUES (?, ?, ?, ?)');
-    // Lo comprado vuelve al 100% (nivel derivado: "bastante"). El snapshot congela ese
-    // mismo estado: es el que tenia el producto AL COMPRARLO, que es lo que el historial
-    // debe recordar aunque despues se consuma.
-    const reponer = db.prepare("UPDATE despensa SET porcentaje = 100, nivel = 'bastante', compra_id = ?, actualizado_en = datetime('now') WHERE id = ?");
+    // Lo comprado queda en el porcentaje declarado (100% si el cliente no dijo cuanto), con
+    // el nivel DERIVADO de ese porcentaje — nunca escrito suelto, como en el resto del
+    // archivo. El snapshot congela ese mismo estado: es el que tenia el producto AL
+    // COMPRARLO, que es lo que el historial debe recordar aunque despues se consuma.
+    const reponer = db.prepare("UPDATE despensa SET porcentaje = ?, nivel = ?, compra_id = ?, actualizado_en = datetime('now') WHERE id = ?");
     for (const it of comprados) {
-      ins.run(compraId, it.nombre, it.categoria, 'bastante');
-      reponer.run(compraId, it.id);
+      const nivel = nivelDePorcentaje(it.porcentaje);
+      ins.run(compraId, it.nombre, it.categoria, nivel);
+      reponer.run(it.porcentaje, nivel, compraId, it.id);
     }
     return { compraId, guardados: comprados.length, nuevos };
   });

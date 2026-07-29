@@ -191,7 +191,7 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
 
     // La avena entra a la despensa LLENA: es el ingrediente del plato de desayuno, y sobre
     // ella se comprueba el descuento al cocinar (mas abajo). Sin IA: el plato es manual, no
-    // trae "consume", asi que el consumo sale de la heuristica por categoria (abarrote=12).
+    // trae "consume", asi que el consumo sale de la heuristica por categoria (PESO_CATEGORIA).
     await apiSrv('/api/despensa', { method: 'POST', body: JSON.stringify({ nombre: 'Avena', categoria: 'abarrote', porcentaje: 100 }) });
 
     const pl = await abrir('plan.html', token, usuario);
@@ -236,16 +236,23 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     // Mientras el plato solo esta PROGRAMADO, la despensa no se toca: lo que se ve es una
     // proyeccion. El descuento real ocurre al marcar la comida como cocinada, y desmarcar
     // lo devuelve EXACTO (lo que se resto de verdad, no lo que se volveria a estimar hoy).
+    // El numero esperado NO se fija a mano: sale del propio PESO_CATEGORIA dividido por las
+    // semanas del periodo, que es la formula real (ver services/consumo.js). Estuvo escrito
+    // como "12 => 88%" y solo seguia pasando de casualidad tras recalibrar los pesos: un
+    // hardcode aqui convierte un cambio de escala deliberado en un fallo misterioso.
+    const { PESO_CATEGORIA, semanasDelPeriodo } = require('../src/services/consumo');
+    const esperado = Math.round(PESO_CATEGORIA.abarrote / semanasDelPeriodo(usuario.id));
+
     const avena = async () => (await apiSrv('/api/despensa')).cuerpo.despensa.find((i) => i.nombre === 'Avena');
     const programada = await avena();
     check(programada.porcentaje === 100, `programar NO descuenta de la despensa (sigue en ${programada.porcentaje}%)`);
-    check(programada.consumo_previsto === 12 && programada.restante === 88,
-      `pero se proyecta el consumo: -${programada.consumo_previsto} => quedaria ${programada.restante}%`);
+    check(programada.consumo_previsto === esperado && programada.restante === 100 - esperado,
+      `pero se proyecta el consumo: -${programada.consumo_previsto} => quedaria ${programada.restante}% (esperado -${esperado})`);
 
     casillaLunes().querySelector('[data-cocinado]').click();
     await esperar(800);
     const cocinada = await avena();
-    check(cocinada.porcentaje === 88, `al marcar cocinado SI se descuenta (100% -> ${cocinada.porcentaje}%)`);
+    check(cocinada.porcentaje === 100 - esperado, `al marcar cocinado SI se descuenta (100% -> ${cocinada.porcentaje}%)`);
     check(cocinada.consumo_previsto === 0, 'y deja de proyectarse (no se cuenta dos veces)');
     check(cocinada.nivel === 'bastante', `el nivel derivado se recalcula: "${cocinada.nivel}"`);
 

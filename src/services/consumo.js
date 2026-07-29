@@ -8,34 +8,63 @@
 // Sigue sin haber gramos ni conversion de unidades (la decision de CLAUDE.md no cambio):
 // lo que se mueve es el PORCENTAJE del stock, que es como razona la familia ("ya casi no
 // me queda arroz"), no una medida de laboratorio.
-const { db, claveIng, clampPct, sumarDias, DIA_NUM } = require('../db');
+const { db, claveIng, sumarDias, DIA_NUM } = require('../db');
 
 // Fecha real (YYYY-MM-DD) de una casilla: la BD guarda dia 0=Domingo (como Date.getDay())
 // pero la semana empieza el LUNES, asi que el domingo es el SEPTIMO dia, no el primero.
 const fechaCasilla = (semana, dia) => sumarDias(semana, DIA_NUM.indexOf(dia));
 
+// ===== La escala: el 100% es LA NECESIDAD DEL PERIODO, no el envase =====
+//
+// Un producto al 100% significa "tengo todo lo que necesito de esto para el periodo que
+// compre"; al 50%, "me alcanza para la mitad". No significa "el envase esta lleno" (que es
+// lo que significaba hasta el 2026-07-29, y con esa referencia los numeros no cuadraban con
+// nada). Con la necesidad como ancla el modelo CIERRA: cocinar todo lo planificado del
+// periodo deja cada producto cerca de 0.
+//
+// Todo lo de aqui se razona sobre UNA SEMANA y se divide por las semanas del periodo al
+// final (ver semanasDelPeriodo). Pedirle a la IA el numero directamente sobre un periodo de
+// 12 semanas daria ~1% por plato: entero, redondeado, y la barra no se moveria nunca.
+
 // ===== De donde sale "cuanto consume este plato de este ingrediente" =====
 //
-// PRIMERO la IA: cada ingrediente generado trae "consume" (0-100), y es la unica fuente
-// que distingue una cucharadita de aji de medio kilo de pollo.
+// PRIMERO la IA: cada ingrediente generado trae "consume" (0-100 de la necesidad SEMANAL), y
+// es la unica fuente que distingue una cucharadita de aji de medio kilo de pollo.
 //
-// DESPUES la heuristica, para lo que nacio sin ese dato: los platos viejos, los que el
-// usuario escribio a mano en su biblioteca y los que vienen de "verificar". El peso es por
-// CATEGORIA porque es el unico dato que tenemos de un ingrediente suelto, y la diferencia
-// que de verdad importa es esa: un condimento dura meses y una carne se acaba en el plato.
-// Sin este reparto por categoria, la sal caeria al 15% en una semana.
+// DESPUES la heuristica, para lo que nacio sin ese dato: los platos que el usuario escribio a
+// mano en su biblioteca (no pasan por IA) y los viejos que aun no se completaron con
+// /detallar. El peso es por CATEGORIA porque es el unico dato que tenemos de un ingrediente
+// suelto.
+//
+// Cada peso es "100 repartido entre los platos de UNA SEMANA que usan ese producto", la
+// misma regla que se le da a la IA en FORMATO_CONSUME — si las dos fuentes no compartieran
+// criterio, dos platos iguales moverian la barra distinto segun quien los creo. El comentario
+// de cada linea es la frecuencia semanal asumida (el divisor de 100).
+//
+// LOS NUMEROS SALEN DE CONTAR UNA SEMANA REAL, no a ojo: en la semana sembrada del hogar de
+// prueba (21 platos), la cebolla entra en 14, el ajo en 12, la sal en ~18 y el pollo en 7.
+// Con el "carne: 33" que tenia al principio (que asumia 3 platos), esos 7 platos de pollo
+// proyectaban -77% de un periodo de 3 semanas: una semana no puede comerse tres cuartos de
+// una compra de tres semanas.
+//
+// AUN ASI ES UNA APROXIMACION GRUESA, y la unica que se puede hacer con la categoria como
+// unico dato: la papa y la cebolla son las dos "verdura" y no aparecen ni la misma cantidad
+// de veces ni en la misma proporcion del plato. Por eso esto es SOLO el respaldo de los
+// platos manuales; la precision de verdad la da el "consume" de la IA, que si ve el plato.
+// Ojo con un detalle de datos: en ingredientes_catalogo la SAL y el AZUCAR son 'abarrote',
+// no 'condimento', asi que se llevan el peso de abarrote.
 const PESO_CATEGORIA = {
-  condimento: 5,
-  abarrote: 12,
-  bebida: 10,
-  huevo: 20,
-  lacteo: 25,
-  legumbre: 25,
-  fruta: 30,
-  verdura: 30,
-  carne: 45,
-  pescado: 45,
-  otro: 15,
+  condimento: 6,   // comino, pimienta, oregano, culantro: ~18 platos
+  verdura: 9,      // cebolla, ajo, tomate: ~11 platos (los aromaticos dominan la categoria)
+  abarrote: 12,    // arroz, aceite, fideos, sal, azucar: ~8 platos
+  bebida: 14,      // ~7
+  carne: 16,       // ~6: el pollo entra a diario en una casa peruana
+  huevo: 16,       // ~6
+  otro: 16,        // ~6
+  fruta: 20,       // ~5
+  lacteo: 20,      // ~5
+  pescado: 33,     // ~3
+  legumbre: 50,    // lentejas, frejoles: 1-2 platos por semana
 };
 
 // ===== Emparejar el ingrediente del plato con el producto de la despensa =====
@@ -80,42 +109,53 @@ function emparejar(indice, nombreIng) {
   return candidatos.sort((a, b) => b.palabras.length - a.palabras.length)[0];
 }
 
-// Cuanto se lleva UN plato de UN ingrediente, en puntos de porcentaje.
+// Cuanto se lleva UN plato de UN ingrediente, en puntos de la necesidad SEMANAL. Sin
+// redondear ni clampear todavia: la division por el periodo y el redondeo van al final, en
+// cerrar(). Redondeando aqui, un plato de 6 puntos en un periodo de 4 semanas daria 2 en vez
+// de 1,5 y la suma de la semana se iria un 33% arriba.
+//
 // consume === 0 es una respuesta valida de la IA ("no gasta nada de esto"), asi que se
 // distingue del ausente: solo se cae a la heuristica si el dato NO vino o no es un numero.
 function consumoDeIngrediente(ing, categoria) {
   const c = Number(ing?.consume);
-  if (Number.isFinite(c) && c >= 0) return clampPct(c);
+  if (Number.isFinite(c) && c >= 0) return Math.max(0, Math.min(100, c));
   return PESO_CATEGORIA[categoria] ?? PESO_CATEGORIA.otro;
 }
 
 // ===== Como se ACUMULA el consumo de varios platos sobre el mismo producto =====
 //
-// Las dos fuentes se suman distinto, y no es un detalle:
+// SE SUMAN, las dos fuentes igual. Ambas son ya una fraccion de LA MISMA cosa (lo que la
+// familia necesita de ese producto en una semana), asi que dos platos que piden 20 cada uno
+// piden 40 de la semana. Y por eso el modelo cierra: los platos de una semana que usan sal
+// suman ~100 de la sal de esa semana.
 //
-// - LA IA da una fraccion del stock por plato ("este aji de gallina se lleva el 80% de tu
-//   aji amarillo"). Dos platos que piden 40% cada uno necesitan el 80%: se SUMAN.
-//
-// - LA HEURISTICA no sabe cuanto pide el plato; solo sabe "una verdura se gasta harto y un
-//   condimento poco". Sumarla linealmente sobre una semana de 21 platos daba resultados
-//   absurdos: el aceite y el ajo, que entran en casi todo, llegaban a 0% (medido). Una casa
-//   compra los basicos en tamaños proporcionales a lo que los usa. Asi que cada plato se
-//   lleva su fraccion de LO QUE QUEDA: total = 1 - (1-w)^n. Nunca llega a 100 y no depende
-//   de cuantos platos tenga la semana de forma explosiva.
-//
-// Con UN solo plato las dos formulas coinciden (1-(1-w)^1 = w), asi que el descuento real
-// al marcar cocinado no cambia por esto.
-function totalizar({ ia, heurW, heurN }) {
-  const porHeuristica = heurN > 0 ? 100 * (1 - (1 - heurW / 100) ** heurN) : 0;
-  return Math.round(ia + porHeuristica);
+// ANTES la heuristica se acumulaba SATURANDO (1-(1-w)^n) y no era un capricho: con el ancla
+// vieja ("100 = el envase lleno") sumar linealmente dejaba el aceite y el ajo en 0% en una
+// semana, porque una casa compra los basicos en envases proporcionales a lo que los usa. Al
+// pasar el ancla a la necesidad del periodo, esa correccion sobra: llegar a 100 tras una
+// semana de platos es exactamente lo que tiene que pasar. Si vuelves a tocar la escala,
+// vuelve a mirar esto: los dos cambios van juntos.
+function totalizar({ ia, heur }, semanas) {
+  return (ia + heur) / semanas;
 }
 
 // Acumulador por producto de despensa.
-const nuevoAcc = () => ({ ia: 0, heurW: 0, heurN: 0 });
+const nuevoAcc = () => ({ ia: 0, heur: 0 });
 function acumular(acc, pct, esHeuristico) {
-  if (esHeuristico) { acc.heurW = pct; acc.heurN++; }
+  if (esHeuristico) acc.heur += pct;
   else acc.ia += pct;
   return acc;
+}
+
+// Semanas que cubre la compra del usuario = el divisor de todo lo de arriba.
+//
+// Sale de hogar.semanas, que es la preferencia sticky que la compra usa por defecto y el
+// unico numero de "periodo" que el usuario declara de forma estable. Una compra con fechas a
+// medida (periodo_inicio/fin sueltos) no la toca, asi que ahi el divisor es el de su ultima
+// compra por semanas: es una aproximacion asumida, no un descuido.
+function semanasDelPeriodo(usuarioId) {
+  const n = db.prepare('SELECT semanas FROM hogar WHERE usuario_id = ?').get(usuarioId)?.semanas;
+  return Math.max(1, Math.min(12, Number(n) || 1));
 }
 
 // Suma el consumo de UNA casilla sobre un acumulador compartido, para que varios platos
@@ -164,7 +204,13 @@ function sumarFila(acc, indice, fila) {
 }
 
 // Colapsa el acumulador a lo que consume el resto de la app: Map(despensa_id -> puntos).
-const cerrar = (acc) => new Map([...acc].map(([id, a]) => [id, totalizar(a)]).filter(([, p]) => p > 0));
+// Aqui, y solo aqui, se divide por el periodo y se redondea: la acumulacion de arriba es
+// decimal a proposito (ver consumoDeIngrediente). Un producto que no llega a medio punto se
+// cae de la lista — con un periodo de 12 semanas, un plato de 250 no debe mover la barra.
+const cerrar = (acc, semanas) =>
+  new Map([...acc]
+    .map(([id, a]) => [id, Math.round(totalizar(a, semanas))])
+    .filter(([, p]) => p > 0));
 
 const SQL_CASILLA = `SELECT pc.id, pc.semana, pc.dia, pc.cobertura, p.ingredientes, p.faltantes
                      FROM plan_comidas pc JOIN platos p ON p.id = pc.plato_id`;
@@ -172,7 +218,7 @@ const SQL_CASILLA = `SELECT pc.id, pc.semana, pc.dia, pc.cobertura, p.ingredient
 // Consumo de UNA casilla por su id (lo que se aplica al marcarla cocinada).
 function consumoDeCasillaId(usuarioId, planComidaId, indice = indiceDespensa(usuarioId)) {
   const fila = db.prepare(`${SQL_CASILLA} WHERE pc.id = ? AND pc.usuario_id = ?`).get(planComidaId, usuarioId);
-  return fila ? cerrar(sumarFila(new Map(), indice, fila)) : new Map();
+  return fila ? cerrar(sumarFila(new Map(), indice, fila), semanasDelPeriodo(usuarioId)) : new Map();
 }
 
 // ===== Proyeccion de una ventana de fechas =====
@@ -191,7 +237,7 @@ function consumoPrevisto(usuarioId, inicio, fin) {
     if (fecha < inicio || fecha > fin) continue;
     sumarFila(acc, indice, f);
   }
-  return cerrar(acc);
+  return cerrar(acc, semanasDelPeriodo(usuarioId));
 }
 
 module.exports = {
@@ -201,4 +247,5 @@ module.exports = {
   consumoDeIngrediente,
   consumoDeCasillaId,
   consumoPrevisto,
+  semanasDelPeriodo,
 };

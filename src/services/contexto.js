@@ -37,6 +37,10 @@ function contextoDe(usuarioId) {
       dieta: hogar.dieta,
       presupuesto: hogar.presupuesto,
       comensales: hogar.comensales,
+      // Semanas que cubre su compra. Va al prompt porque el 100% de la despensa ES la
+      // necesidad del periodo: sin este dato, "queda 50%" no le dice a la IA si le sobra
+      // media semana o dos meses.
+      semanas: Math.max(1, Math.min(12, hogar.semanas || 1)),
       notas: hogar.notas || undefined,
     },
     integrantes,
@@ -49,8 +53,10 @@ function contextoDe(usuarioId) {
 // Bloque de texto que se antepone a los prompts del planificador.
 // Se construye una sola vez para que generar, regenerar y verificar "vean" lo mismo.
 function textoContexto(ctx) {
+  const sem = ctx.hogar.semanas;
   const partes = [
     `HOGAR: ${ctx.hogar.comensales} comensal(es). Region: ${ctx.hogar.region}${ctx.hogar.ciudad ? ` (${ctx.hogar.ciudad})` : ''}. Dieta: ${ctx.hogar.dieta}. Presupuesto: ${ctx.hogar.presupuesto}.`,
+    `PERIODO DE LA COMPRA: ${sem} semana(s). La despensa de abajo esta comprada para cubrir ese periodo.`,
     `INTEGRANTES: ${JSON.stringify(ctx.integrantes)}`,
   ];
   // Las alergias se repiten aparte (aunque ya vayan en integrantes) para que la
@@ -69,9 +75,13 @@ function textoContexto(ctx) {
   // real que guarda la despensa, y es el mismo lenguaje en el que la IA debe devolver el
   // "consume" de cada ingrediente. Con dos escalas distintas (palabra a la entrada, numero
   // a la salida) la estimacion no tendria contra que calibrarse.
+  //
+  // El 100% es LA NECESIDAD DEL PERIODO, no el envase lleno (ver FORMATO_CONSUME). Se dice
+  // explicitamente y con el periodo delante para que la IA lea "queda 25%" como "le alcanza
+  // para un cuarto de su periodo", que es lo que significa.
   partes.push(
     ctx.despensa.length
-      ? `DESPENSA (lo que YA tiene en casa; "queda" es el % que le sobra de ese producto, 100 = lleno, 0 = se le acabo): ${JSON.stringify(ctx.despensa.map((d) => ({ nombre: d.nombre, queda: `${d.porcentaje}%` })))}`
+      ? `DESPENSA (lo que YA tiene en casa; "queda" es el % que le sobra de ese producto MEDIDO SOBRE LO QUE NECESITA PARA EL PERIODO COMPLETO de ${sem} semana(s): 100 = tiene todo lo que necesita para el periodo, 50 = le alcanza para la mitad, 0 = se le acabo): ${JSON.stringify(ctx.despensa.map((d) => ({ nombre: d.nombre, queda: `${d.porcentaje}%` })))}`
       : 'DESPENSA: vacia (no tiene ingredientes registrados).'
   );
   if (ctx.hogar.notas) partes.push(`NOTAS DE LA FAMILIA: ${ctx.hogar.notas}`);

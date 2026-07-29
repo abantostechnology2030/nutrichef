@@ -310,6 +310,36 @@ function normIngredientes(v) {
   });
 }
 
+// Backfill del "consume" sobre los ingredientes que YA tiene el plato (ver /detallar).
+// Solo AGREGA el numero: el nombre, la cantidad y la unidad se quedan tal cual estaban. Es
+// deliberado — la receta del plato es dato del usuario y ya la vio; lo que falta es el peso
+// que mueve la barra de la despensa. Si la IA renombra un ingrediente, se ignora.
+//
+// El emparejamiento es por nombre normalizado (claveIng, el mismo de consumo.js) y no por
+// posicion: la IA reordena la lista con facilidad, y aplicarle a la sal el consume del pollo
+// vaciaria la despensa sin que el usuario tenga como notarlo.
+//
+// Devuelve el JSON a guardar, o null si no hubo nada que completar.
+function fusionarConsume(ings, respuesta) {
+  const porClave = new Map();
+  for (const r of Array.isArray(respuesta) ? respuesta : []) {
+    const clave = claveIng(String(r?.nombre || ''));
+    const c = Number(r?.consume);
+    if (clave && Number.isFinite(c)) porClave.set(clave, clampPct(c));
+  }
+  if (!porClave.size) return null;
+
+  let cambio = false;
+  const fusionados = ings.map((ing) => {
+    if (Number.isFinite(Number(ing?.consume))) return ing; // ya lo tenia: no se pisa
+    const c = porClave.get(claveIng(String(ing?.nombre || '')));
+    if (c === undefined) return ing;
+    cambio = true;
+    return { ...ing, consume: c };
+  });
+  return cambio ? JSON.stringify(fusionados) : null;
+}
+
 function crearPlato(usuarioId, p, momento, comensales, region, origen = 'ia') {
   const lista = (v) => (Array.isArray(v) ? v : []);
   const nombre = String(p?.nombre || '').trim().slice(0, 120);
@@ -499,30 +529,50 @@ router.post('/generar', requiereHogar, async (req, res) => {
   });
 });
 
-// POST /api/plan/detallar { semana } -> completa la RECETA (platos.pasos) y/o el aporte
-// nutricional (platos.info) de los platos de esa semana a los que les falte.
+// POST /api/plan/detallar { semana } -> completa la RECETA (platos.pasos), el aporte
+// nutricional (platos.info) y/o el "consume" de los ingredientes de los platos de esa
+// semana a los que les falte.
 //
-// Es SOLO backfill: los platos que genera el planificador ya nacen con receta y nutricion
-// y no pasan por aqui. Existe para los generados antes de que se pidieran esos campos (la
-// nutricion se sumo primero y la receta despues, asi que hay platos con una y sin la otra).
-// Si no falta ninguno, responde sin llamar a la IA (y sin consumir cupo): no se cobra por
-// no hacer nada.
+// Es SOLO backfill: los platos que genera el planificador ya nacen con las tres cosas y no
+// pasan por aqui. Existe para los generados antes de que se pidieran esos campos (se
+// sumaron en tres tandas: primero la nutricion, luego la receta, luego el consume, asi que
+// hay platos con unas y sin otras). Si no falta nada, responde sin llamar a la IA (y sin
+// consumir cupo): no se cobra por no hacer nada.
+//
+// El "consume" esta aqui porque sin el la barra de la despensa cae a la heuristica por
+// categoria, que no distingue una cucharadita de aji de medio kilo de pollo (ver
+// services/consumo.js). Es el unico campo del backfill que MUEVE datos del usuario.
 router.post('/detallar', requiereHogar, async (req, res) => {
   const semana = lunesDe(req.body?.semana);
   const usuario = req.usuario;
 
-  // Solo los de ESTA semana a los que les falte la receta o la nutricion. Un plato es
-  // estable: una vez calculados, ni su receta ni su aporte cambian, asi que esto es cache
+  // Solo los de ESTA semana a los que les falte algo. Un plato es estable: una vez
+  // calculados, ni su receta ni su aporte ni su consume cambian, asi que esto es cache
   // gratis para siempre.
+  //
+  // Que le falta el consume se decide en JS y no en el WHERE: vive DENTRO del JSON de
+  // ingredientes (un campo por ingrediente), y meter json_each en la consulta para esto
+  // seria mas fragil que leer las filas de una semana, que son 21 como maximo.
+  //
+  // "Le falta el consume" = NINGUN ingrediente lo tiene, no "alguno no lo tiene". Con
+  // "alguno" bastaria que la IA omitiera un ingrediente de la lista para que el plato
+  // quedara pendiente PARA SIEMPRE: el boton "Completar platos" no se apagaria nunca y cada
+  // clic costaria una generacion de cupo sin arreglar nada. Un plato que ya paso por aqui se
+  // da por hecho, y lo que la IA no puntuo se queda con la heuristica por categoria — que es
+  // exactamente donde estaba antes, asi que no se pierde nada.
+  const sinConsume = (ings) => ings.length > 0 && ings.every((i) => !Number.isFinite(Number(i?.consume)));
   const pendientes = db.prepare(
-    `SELECT DISTINCT p.id, p.nombre, p.porciones, p.ingredientes, p.pasos, p.info
+    `SELECT DISTINCT p.id, p.nombre, p.porciones, p.ingredientes, p.faltantes, p.pasos, p.info
        FROM plan_comidas pc
        JOIN platos p ON p.id = pc.plato_id
-      WHERE pc.usuario_id = ? AND pc.semana = ? AND (p.info IS NULL OR p.pasos IS NULL)`
-  ).all(usuario.id, semana);
+      WHERE pc.usuario_id = ? AND pc.semana = ?`
+  ).all(usuario.id, semana)
+    .map((p) => ({ ...p, ings: JSON.parse(p.ingredientes || '[]') }))
+    .map((p) => ({ ...p, sinConsume: sinConsume(p.ings) }))
+    .filter((p) => !p.info || !p.pasos || p.sinConsume);
 
   if (!pendientes.length) {
-    return res.json({ mensaje: 'Todos los platos de esta semana ya tienen su receta y su informacion nutricional.', detallados: 0, semana });
+    return res.json({ mensaje: 'Todos los platos de esta semana ya estan completos.', detallados: 0, semana });
   }
 
   const sinCupo = cupoAgotado(usuario, semana);
@@ -536,12 +586,15 @@ router.post('/detallar', requiereHogar, async (req, res) => {
   // A la IA le mandamos lo minimo para trabajar (nombre, porciones, ingredientes) y, en
   // "necesita", QUE le falta a cada plato: pedirle lo que el plato ya tiene seria pagar
   // dos veces y arriesgar que lo reescriba distinto.
+  // Los "faltantes" van porque la regla del consume los necesita: de un ingrediente que la
+  // familia no tiene no hay stock que descontar, asi que ese va en 0.
   const paraIA = pendientes.map((p) => ({
     id: p.id,
     nombre: p.nombre,
     porciones: p.porciones,
-    ingredientes: JSON.parse(p.ingredientes || '[]'),
-    necesita: [!p.info ? 'info' : null, !p.pasos ? 'pasos' : null].filter(Boolean),
+    ingredientes: p.ings,
+    faltantes: JSON.parse(p.faltantes || '[]'),
+    necesita: [!p.info ? 'info' : null, !p.pasos ? 'pasos' : null, p.sinConsume ? 'consume' : null].filter(Boolean),
   }));
 
   let resultado, usage;
@@ -577,6 +630,10 @@ router.post('/detallar', requiereHogar, async (req, res) => {
       if (!pendiente.pasos) {
         const pasos = normPasos(item?.pasos);
         if (pasos) { campos.push('pasos = ?'); valores.push(pasos); }
+      }
+      if (pendiente.sinConsume) {
+        const ings = fusionarConsume(pendiente.ings, item?.consume);
+        if (ings) { campos.push('ingredientes = ?'); valores.push(ings); }
       }
       if (!campos.length) continue;
 

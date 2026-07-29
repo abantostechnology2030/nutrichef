@@ -252,21 +252,50 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     doc.querySelector('#btn-guardar-compra').click(); await esperar(200);
     check(/Marca al menos un producto/.test(txt(doc, '#alerta-compra')), 'registrar sin marcados avisa que marques uno');
 
+    // Cada producto marcado trae su barra de "cuanto compre" (arranca en 100 = lleno) y los
+    // NO marcados no la tienen: preguntar cuanto compraste de algo que no compraste no
+    // significa nada. La barra es lo que hace exacta la compra ("esta vez traje medio kilo").
+    {
+      doc.querySelector('#btn-marca-todos').click(); await esperar(60);
+      const rangos = doc.querySelectorAll('#checklist-compra [data-pct-compra]');
+      check(rangos.length === enChecklist(), `cada producto marcado tiene su barra (${rangos.length} de ${enChecklist()})`);
+      check([...rangos].every((r) => Number(r.value) === 100), 'las barras arrancan en 100% (lo compraste lleno)');
+      doc.querySelector('#btn-marca-ninguno').click(); await esperar(60);
+      check(doc.querySelectorAll('#checklist-compra [data-pct-compra]').length === 0, 'sin marcar no hay barra que llenar');
+    }
+
     // "Todos" y registrar -> los marcados van al historial.
-    // OJO: registrar una compra deja los productos marcados al 100% (acabas de comprarlos).
-    // Marcando TODOS, esta prueba aplana la despensa del hogar sembrado, que tiene niveles
-    // realistas a proposito. Se guarda el estado para devolverlo en la limpieza: si no, cada
-    // corrida dejaria al hogar de prueba con todo lleno y el planificador veria otra casa.
+    // OJO: registrar una compra deja los productos marcados en el porcentaje de su barra (por
+    // defecto 100%: acabas de comprarlos). Marcando TODOS, esta prueba aplana la despensa del
+    // hogar sembrado, que tiene niveles realistas a proposito. Se guarda el estado para
+    // devolverlo en la limpieza: si no, cada corrida dejaria al hogar de prueba con todo
+    // lleno y el planificador veria otra casa.
     porcentajesPrevios = (await apiSrv('/api/despensa')).despensa.map((d) => ({ id: d.id, porcentaje: d.porcentaje }));
     // "Todos" marca TAMBIEN los faltantes del plan, y esos se DAN DE ALTA en la despensa al
     // registrar. Sin anotar cuales existian antes, cada corrida le metia ~18 productos
     // nuevos al hogar sembrado y la IA acabaria planificando alrededor de esa basura.
     idsPrevios = new Set(porcentajesPrevios.map((d) => d.id));
     doc.querySelector('#btn-marca-todos').click(); await esperar(60);
+    // Bajar la barra de UN producto de prueba a 40%: es el caso que justifica la barra
+    // ("compre, pero menos de lo normal"). Se comprueba al final que llego asi a la BD y no
+    // al 100% de siempre — sin este aserto, la barra podria estar pintada y no guardarse.
+    const rangoPrueba = doc.querySelector(`#checklist-compra [data-pct-compra="${INGREDIENTE.toLowerCase()}"]`);
+    check(!!rangoPrueba, `el producto de prueba tiene barra de cuanto compre`);
+    if (rangoPrueba) {
+      rangoPrueba.value = '40';
+      rangoPrueba.dispatchEvent(new doc.defaultView.Event('input', { bubbles: true }));
+      await esperar(60);
+      check(/Compré/.test(txt(doc, '#checklist-compra')), 'la barra muestra cuanto compraste');
+    }
     const comprasAntes = doc.querySelectorAll('#lista-compras > div').length;
     doc.querySelector('#btn-guardar-compra').click();
     await esperar(1000);
     check(/Se guardó la despensa del periodo/.test(txt(doc, '#alerta-compra')), `mensaje de exito: "${txt(doc, '#alerta-compra')}"`);
+    {
+      const tras = (await apiSrv('/api/despensa')).despensa.find((d) => d.nombre === INGREDIENTE);
+      check(tras && tras.porcentaje === 40, `lo comprado queda en el % de su barra, no al 100 (= ${tras && tras.porcentaje})`);
+      check(tras && tras.nivel === 'normal', `y el nivel se DERIVA de ese % (40 -> normal, = ${tras && tras.nivel})`);
+    }
     const comprasDespues = doc.querySelectorAll('#lista-compras > div').length;
     check(comprasDespues === comprasAntes + 1, `la compra aparece en el historial: ${comprasAntes} -> ${comprasDespues}`);
     check(/Periodo \d{2}\/\d{2}/.test(txt(doc, '#lista-compras')), 'el historial muestra el periodo (dd/mm)');

@@ -397,6 +397,45 @@ setConfigDefault('credito_claude', '7.60');
 // los flujos del planificador (generar, verificar, detallar). Vacio = sin instrucciones.
 setConfigDefault('ia_instrucciones', '');
 
+// ===== Migracion: el "consume" cambio de ESCALA (2026-07-29) =====
+//
+// Hasta esa fecha "consume" era "% del ENVASE que se lleva este plato" (100 = la bolsa de
+// arroz llena). Ahora es "% de LO QUE LA FAMILIA NECESITA EN UNA SEMANA" (ver
+// FORMATO_CONSUME en ai.service.js y la cabecera de services/consumo.js). No es un cambio
+// de formato sino de SIGNIFICADO: los numeros viejos siguen siendo enteros 0-100 validos, y
+// justo por eso nada los detectaria — un arroz que decia 90 ("casi toda la bolsa") pasaria a
+// leerse como "casi toda la necesidad de la semana", que es otra cosa.
+//
+// Asi que se BORRAN. El plato queda como "pendiente" y el usuario lo recompleta con
+// "🍳 Completar platos" (POST /api/plan/detallar, 1 llamada por semana), que ya sabe pedir
+// solo el consume. Mientras no lo haga, cae a la heuristica por categoria — que SI se
+// recalibro a la escala nueva, asi que no queda nada mezclado.
+//
+// Idempotente por la clave de config: se ejecuta una sola vez por BD. getConfig/setConfig se
+// declaran mas abajo pero son declaraciones de funcion (hoisted), asi que aqui ya existen.
+if (getConfig('consume_escala') !== 'necesidad-semanal') {
+  const filas = db.prepare("SELECT id, ingredientes FROM platos WHERE ingredientes LIKE '%consume%'").all();
+  const upd = db.prepare('UPDATE platos SET ingredientes = ? WHERE id = ?');
+  let tocados = 0;
+  db.transaction(() => {
+    for (const f of filas) {
+      let ings;
+      try { ings = JSON.parse(f.ingredientes || '[]'); } catch { continue; }
+      if (!Array.isArray(ings)) continue;
+      const limpios = ings.map((i) => {
+        if (!i || typeof i !== 'object' || i.consume === undefined) return i;
+        const { consume, ...resto } = i; // se va SOLO el consume: la receta no se toca
+        return resto;
+      });
+      if (JSON.stringify(limpios) === JSON.stringify(ings)) continue;
+      upd.run(JSON.stringify(limpios), f.id);
+      tocados++;
+    }
+    setConfig('consume_escala', 'necesidad-semanal');
+  })();
+  if (tocados) console.log(`[migracion] consume en escala vieja borrado de ${tocados} plato(s): se recompletan con "Completar platos".`);
+}
+
 // ===== Semilla del catalogo de ingredientes (solo si esta vacio) =====
 if (db.prepare('SELECT COUNT(*) c FROM ingredientes_catalogo').get().c === 0) {
   const ins = db.prepare('INSERT INTO ingredientes_catalogo (nombre, categoria) VALUES (?, ?)');

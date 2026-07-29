@@ -140,7 +140,7 @@ La BD **nació vacía**, así que el esquema está completo y limpio desde el d�
 - **hogar** (1 por usuario, UNIQUE): `region` (costa|sierra|selva), `ciudad`, `dieta`, `presupuesto`, `comensales`, **`semanas`** (1..12 = cuántas semanas cubre una compra = el "periodo"; default 1; preferencia sticky), **`configurado`** = gate del onboarding (sin hogar la IA no puede proponer nada). `cadencia` (diario|semanal|mensual) quedó **heredada y sin uso** — la reemplazó `semanas`.
 - **integrantes**: `condiciones` (JSON) y **`alergias`** (JSON) → las alergias son **exclusión dura** en el prompt, no una preferencia.
 - **ingredientes_catalogo** (admin): base para abastecer la despensa. Categorías de cocina real (abarrote/verdura/fruta/carne/pescado/lacteo/huevo/legumbre/condimento/bebida/otro). Sembrado con ~51 ingredientes peruanos.
-- **despensa**: inventario **por porcentaje** — **`porcentaje`** (0-100) es la **fuente de verdad** y **`nivel`** (`poco|normal|bastante`) quedó como campo **derivado** (`nivelDePorcentaje`: ≤30 poco, ≤70 normal, >70 bastante), que solo existe porque lo consumen el prompt de la IA y el snapshot de `compra_items`. **Nunca escribas `nivel` suelto**: se recalcula en cada escritura de `porcentaje`, para que no puedan contradecirse (una barra al 10% etiquetada "bastante"). UNIQUE por usuario + nombre normalizado. **Sigue sin haber gramos**: esa decisión no cambió (conversión de unidades + mermas). Lo que baja el porcentaje es el consumo de los platos programados, y **solo al marcarlos cocinados** — ver "Consumo de la despensa".
+- **despensa**: inventario **por porcentaje** — **`porcentaje`** (0-100) es la **fuente de verdad** y significa **qué fracción de lo que necesita para el periodo tiene** (no "qué fracción del envase"; ver el punto rojo en "Consumo de la despensa"). **`nivel`** (`poco|normal|bastante`) quedó como campo **derivado** (`nivelDePorcentaje`: ≤30 poco, ≤70 normal, >70 bastante), que solo existe porque lo consumen el prompt de la IA y el snapshot de `compra_items`. **Nunca escribas `nivel` suelto**: se recalcula en cada escritura de `porcentaje`, para que no puedan contradecirse (una barra al 10% etiquetada "bastante"). UNIQUE por usuario + nombre normalizado. **Sigue sin haber gramos**: esa decisión no cambió (conversión de unidades + mermas). Lo que baja el porcentaje es el consumo de los platos programados, y **solo al marcarlos cocinados** — ver "Consumo de la despensa".
 - **compras**: registro de una compra de un periodo = los productos que el usuario **marcó como comprados**. **`periodo_inicio`/`periodo_fin`** = el tramo que cubre (N semanas o fechas a medida); `total_items` = cuántos productos marcó. **No es un reset**: la despensa persiste y sigue cambiando. `semana` (= lunes del inicio) se conserva por compatibilidad. Ver "Compra por periodo" en Lógica.
 - **compra_items**: el **detalle congelado** de la compra (`nombre`, `categoria`, `nivel`) por cada producto marcado. Vive aparte de `despensa` (que es mutable) para que el historial de "qué compré en el periodo X" no se reescriba al editar la despensa. `ON DELETE CASCADE` con `compras`.
 - **platos**: `ingredientes` (JSON `[{nombre,cantidad,unidad}]`), `faltantes` (JSON: lo que no estaba en la despensa al generar), **`pasos`** (JSON | **NULL hasta que se pidan** — hoy siempre NULL, los llena la fase 4), `info` (JSON | idem), `nota` (adaptación por condición médica), `momento`, `porciones`, `tiempo_min`, `dificultad`, `origen` (`ia`|`propuesto`|`manual`), **`guardado`**.
@@ -180,13 +180,17 @@ La BD **nació vacía**, así que el esquema está completo y limpio desde el d�
 - **Agregar ≠ comprar (modelo 2026-07-18).** Son **dos conceptos separados**, y viven en **dos pestañas**:
   - **"🧺 Mi despensa" = SOLO ver + buscar.** Muestra el stock agrupado por categoría (con su **barra de porcentaje** y quitar) + un buscador por nombre. **No tiene formulario de agregar** — para no confundir "tener" con "comprar".
   - **"🛒 Registrar compra" = agregar + marcar.** Arriba, el **formulario "Agregar un producto"** (nombre + categoría autosugerida + nivel) → alta INMEDIATA a la despensa (`POST /api/despensa`) y queda marcado en el checklist. Debajo, el **checklist por categoría**. Ver los dos bullets siguientes.
-- **El checklist ofrece DOS conjuntos, no solo la despensa (2026-07-27).** (1) lo que **ya tienes** —aunque te quede stock: lo normal es reponerlo— y (2) los **faltantes del plan de ese periodo** (`GET /api/plan/faltantes`), marcados con **`●`**. Los de (2) son justo los que traes del mercado, y antes había que darlos de alta **uno por uno** con "+ Agregar" antes de poder marcarlos. Al registrar, `POST /compra` **da de alta** los que no existían (al 100%, con la categoría del catálogo) y responde `nuevos` para avisarlo.
+- **Cada producto marcado dice CUÁNTO se compró (2026-07-29).** Al marcarlo aparece su **barra 0-100** y **100% = "compré todo lo que mi plan necesita para este periodo"** (mismo ancla que la despensa, ver "Consumo de la despensa"). Arranca en 100 porque es el caso normal; bajarla es la excepción: *"solo alcancé a traer la mitad"*. Antes todo lo marcado iba al 100% sí o sí, y la única forma de corregirlo era ir a "Mi despensa" a mover la barra producto por producto **después** de registrar.
+  - `POST /compra` acepta **las dos formas** de `items`: `["Arroz"]` (= 100%, lo que mandaba el cliente viejo) o `[{nombre, porcentaje}]`. El `nivel` de `compra_items` **se deriva** de ese porcentaje, nunca se escribe suelto — misma regla que el resto de la despensa.
+  - La barra solo se pinta si el producto está **marcado**: preguntar cuánto compraste de algo que no compraste no significa nada. El slider va de **10 a 100** (marcar algo y declarar 0% es contradictorio); el backend sí acepta 0-100 por si otro cliente lo manda.
+  - **Sigue sin haber gramos.** El 100% es la necesidad del periodo, no una cantidad: *"compré todo el arroz del periodo"* no dice si son 2 kg o 10. Eso es a propósito (la decisión de no convertir unidades no cambió), pero el ancla ya no es arbitraria — está atada al plan.
+- **El checklist ofrece DOS conjuntos, no solo la despensa (2026-07-27).** (1) lo que **ya tienes** —aunque te quede stock: lo normal es reponerlo— y (2) los **faltantes del plan de ese periodo** (`GET /api/plan/faltantes`), marcados con **`●`**. Los de (2) son justo los que traes del mercado, y antes había que darlos de alta **uno por uno** con "+ Agregar" antes de poder marcarlos. Al registrar, `POST /compra` **da de alta** los que no existían (con el porcentaje de su barra y la categoría del catálogo) y responde `nuevos` para avisarlo.
   - **Los (1) arrancan MARCADOS y los (2) NO.** No haber comprado algo es normal (no había en el mercado), y dar de alta un producto que no compraste es peor que un clic de más: **la IA planifica alrededor de lo que encuentre en la despensa**. "Todos" sí marca ambos.
   - La lista se **recarga al cambiar el periodo**: si estiras la compra de 1 a 4 semanas, los faltantes crecen. Si el plan no está disponible (403 del gate, o aún no hay platos), degrada sin ruido a solo la despensa.
   - El alta va **dentro de la transacción** de la compra: productos dados de alta sin la compra que los explica es el mismo problema que una compra a medias.
 - **`POST /compra`** registra la compra del periodo completa **en una transacción**: una compra a medias dejaría a la IA proponiendo platos con ingredientes que el usuario no llegó a registrar.
 - **`compras.total_items`** guarda cuántos ingredientes traía la compra **al registrarla**. Los ítems viven en `despensa`, que es mutable: contar por `compra_id` daría un historial que se reescribe solo ("compré 6" pasaría a decir 5 al borrar uno). El conteo por `compra_id` sigue exponiéndose, pero como **`vigentes`**, que significa otra cosa.
-- **Registrar compra = marcar lo comprado del periodo (2026-07-18).** La pestaña "🛒 Registrar compra" muestra los productos de la despensa **por categoría con un checkbox cada uno** (arrancan **todos marcados** — lo común es que compraste tu stock; desmarca lo que ya tenías) + los botones **Todos/Ninguno**. El **formulario "Agregar un producto"** (arriba) da de alta uno que compraste y **no estaba en la despensa** (alta inmediata + queda marcado). `POST /compra` recibe **`items` = los nombres marcados**; la categoría **se resuelve contra la despensa** (no se confía en el cliente), crea la `compra` + congela el detalle en `compra_items`, responde *"Se guardó la despensa del periodo …"* y la compra **aparece en "Compras anteriores"**. Los productos **no marcados no se tocan** (su stock persiste); los **marcados vuelven al 100%** — acabas de comprarlos, están llenos, y ese es el punto de partida de la barra que cierra el ciclo *comprar → cocinar → se vacía → vuelve a la lista de compras*. El periodo se define de **dos formas**:
+- **Registrar compra = marcar lo comprado del periodo (2026-07-18).** La pestaña "🛒 Registrar compra" muestra los productos de la despensa **por categoría con un checkbox cada uno** (arrancan **todos marcados** — lo común es que compraste tu stock; desmarca lo que ya tenías) + los botones **Todos/Ninguno**. El **formulario "Agregar un producto"** (arriba) da de alta uno que compraste y **no estaba en la despensa** (alta inmediata + queda marcado). `POST /compra` recibe **`items` = lo marcado**; la categoría **se resuelve contra la despensa** (no se confía en el cliente), crea la `compra` + congela el detalle en `compra_items`, responde *"Se guardó la despensa del periodo …"* y la compra **aparece en "Compras anteriores"**. Los productos **no marcados no se tocan** (su stock persiste); los **marcados quedan en el porcentaje que el usuario declaró** — ese es el punto de partida de la barra que cierra el ciclo *comprar → cocinar → se vacía → vuelve a la lista de compras*. El periodo se define de **dos formas**:
   - **N semanas enteras** (`semanas`, 1..12): `periodoSemanas(inicio, n)` en `db.js` ancla el inicio al **lunes** y `fin = inicio + N*7 − 1`. N queda sticky en `hogar.semanas`. Como el periodo es en semanas enteras, **calza con la unidad de edición del plan** (que sigue siendo la semana): un periodo de N semanas **cubre N semanas de planificación**.
   - **Fechas a medida** (`periodo_inicio` + `periodo_fin`): el usuario fija el rango exacto; no toca la preferencia sticky.
   - **Concepto de "agotado":** pasado el periodo se entiende que se agotó y hay que volver a registrar (no hay borrado automático). El **banner** de la despensa y el **badge** del plan avisan a qué periodo pertenece (y si venció). El badge del plan muestra *"semana X de N"* del periodo activo (= la última compra registrada).
@@ -210,17 +214,55 @@ una barra que no cuadra con lo que se le descuenta:
   - **Primero la IA**: cada ingrediente generado trae **`consume`** (0-100 = qué % del stock
     se lleva ese plato), en `FORMATO_CONSUME`. Es la **única** fuente que distingue una
     cucharadita de ají de medio kilo de pollo, y **viaja en la misma llamada** que el plato,
-    así que **no cuesta una generación extra de cupo**.
+    así que **no cuesta una generación extra de cupo**. Lo piden **los tres** flujos de IA:
+    generar (`FORMATO_PLATO`), verificar (`FORMATO_COBERTURA`) y —desde 2026-07-29— el
+    backfill de `/detallar`, que es el único camino por el que un plato **ya existente** puede
+    conseguirlo.
   - **Después la heurística** (`PESO_CATEGORIA`), para lo que nació sin ese dato: los platos
-    viejos, los manuales de la biblioteca y los de *verificar*. **No es un caso raro**: hasta
-    que se regenere, es lo que ve todo usuario existente.
-- **Las dos fuentes se ACUMULAN distinto, y no es un detalle.** La IA da una fracción por
-  plato, así que dos platos que piden 40% necesitan 80%: **se suman**. La heurística no sabe
-  cuánto pide el plato, así que **satura**: `total = 1 − (1−w)^n`. Sumándola linealmente,
-  medido sobre la semana de 21 platos del hogar de prueba, **el aceite y el ajo llegaban a
-  0%** — una casa compra los básicos en tamaños proporcionales a lo que los usa. Con la
-  saturación el aceite queda en 28%. **Con un solo plato las dos fórmulas coinciden**
-  (`1−(1−w)^1 = w`), así que el descuento real al cocinar no cambia por esto.
+    manuales de la biblioteca (los escribe el usuario, no pasan por IA) y los viejos que
+    todavía no se han completado con `/detallar`.
+- **🔴 EL 100% ES LA NECESIDAD DEL PERIODO, NO EL ENVASE (cambio del 2026-07-29).** Un producto
+  al 100% significa *"tengo todo lo que necesito de esto para el periodo que compré"*; al 50%,
+  *"me alcanza para la mitad"*. **No** significa "la bolsa está llena", que es lo que significaba
+  antes. Con el envase como referencia los números no cuadraban con nada: un `consume 90` de
+  arroz quería decir "se lleva casi toda tu bolsa", no "se lleva casi todo lo que necesitas
+  esta semana" — y el usuario preguntó exactamente eso. Con la necesidad como ancla el modelo
+  **cierra y es comprobable**: cocinar todo lo planificado del periodo deja cada producto cerca
+  de 0, y la barra por fin responde *"¿me alcanza?"*.
+  - **A la IA se le pide SIEMPRE sobre UNA SEMANA** y **el backend divide por `semanas`**
+    (`semanasDelPeriodo`, que lee `hogar.semanas`). Pidiéndolo directamente sobre un periodo de
+    12 semanas, la parte de un plato sería ~1%: entero, redondeado, y la barra no se movería
+    nunca. La división y el redondeo van **solo en `cerrar()`**; la acumulación es decimal a
+    propósito (redondear por plato desviaba la suma de la semana un ~33%).
+  - **La regla que comparten la IA y la heurística: 100 repartido entre los platos de la semana
+    que usan ese producto.** Si el arroz entra en ~5 almuerzos, un almuerzo se lleva ~20; si la
+    sal entra en casi los 21 platos, ~5. Si las dos fuentes no compartieran criterio, dos platos
+    iguales moverían la barra distinto según quién los creó.
+  - **Verificado con IA real (Gemini, 2026-07-29):** un día generado devolvió `Arroz 20`
+    (era 90 con el ancla vieja), `Sal 5` (era 2), `Carne de cerdo 40`, `Pollo 30`,
+    `Comino/Pimienta 10`. Y cierra: `arroz 20 × ~5 almuerzos = 100` de la semana.
+  - **`config.consume_escala` = `'necesidad-semanal'`** marca la BD ya migrada. La migración
+    (en `db.js`) **borra el `consume` de todos los platos** porque los valores viejos siguen
+    siendo enteros 0-100 válidos y **nada los detectaría**: es un cambio de *significado*, no de
+    formato. El plato queda pendiente y el usuario lo recompleta con "🍳 Completar platos".
+- **Las dos fuentes se ACUMULAN IGUAL: se SUMAN.** Ambas son ya una fracción de lo mismo (lo
+  que la familia necesita en una semana), así que dos platos que piden 20 piden 40 de la semana.
+  Llegar a 100 tras una semana de platos es exactamente lo que debe pasar.
+  > ⚠️ **Antes la heurística SATURABA** (`total = 1 − (1−w)^n`) y no era un capricho: con el
+  > ancla vieja, sumarla linealmente dejaba el aceite y el ajo en **0%** en una semana, porque
+  > una casa compra los básicos en envases proporcionales a lo que los usa. Al pasar el ancla a
+  > la necesidad, esa corrección sobra. **Si vuelves a tocar la escala, mira las dos cosas
+  > juntas** — la fórmula de acumulación y el ancla no son independientes.
+- **`PESO_CATEGORIA` sale de CONTAR una semana real, no de estimar a ojo.** En la semana
+  sembrada del hogar de prueba (21 platos) la cebolla entra en 14, el ajo en 12, la sal en ~18 y
+  el pollo en 7. Con el `carne: 33` inicial (que asumía 3 platos), esos 7 platos de pollo
+  proyectaban **−77% de un periodo de 3 semanas** — una semana no puede comerse tres cuartos de
+  una compra de tres. Recalibrado (`carne: 16`, `verdura: 9`, `abarrote: 12`, `condimento: 6`,
+  `legumbre: 50`…), la misma semana proyecta entre −4% y −43% con media **−22%** contra un
+  objetivo de −33%. **Sigue siendo grueso**: la papa y la cebolla son las dos `verdura` y no
+  aparecen ni las mismas veces ni en la misma proporción del plato. Por eso es solo el respaldo
+  de los platos manuales. Ojo con un detalle de datos: en `ingredientes_catalogo` la **sal y el
+  azúcar son `abarrote`**, no `condimento`, así que se llevan el peso de abarrote.
 - **El emparejamiento ingrediente↔despensa aquí es LOCAL, no de la IA** (la IA sí lo hace en
   el prompt, donde tiene la despensa delante). Se compara por **conjunto de palabras, no por
   substring**: `"sal"` está contenida en `"salsa de soya"`, y descontarle el stock de sal a
@@ -228,6 +270,12 @@ una barra que no cuadra con lo que se le descuenta:
   coincidencia **exacta**, y si no, la **más específica** (para que "Ají amarillo" no se
   lleve el descuento de un "Ají" genérico). Verificado: `Pechuga de pollo → Pollo`,
   `Salsa de soya → (sin match)`.
+  - **Consecuencia que parece un bug y no lo es:** si la despensa tiene *"Pollo"* **y**
+    *"Pechuga de pollo"* como dos productos, un plato que pide "pechuga de pollo" descuenta
+    **solo de la pechuga** y el "Pollo" se queda intacto. Se reportó como *"cociné arroz con
+    pollo y el pollo sigue al 100%"* (2026-07-29) y es el comportamiento correcto: son dos
+    productos distintos en la despensa del usuario. Antes de tocar el emparejamiento, mira si
+    hay un producto **más específico** que sí bajó.
 - **Los faltantes se excluyen**: si la IA ya dijo que ese ingrediente no lo tiene (o que su
   versión normal no le sirve por una condición médica), **no puede salir de la despensa**.
   Sin esto, un hogar con "Arroz" vería bajar su arroz por un plato de *"arroz integral"* que
@@ -298,16 +346,31 @@ dispara el botón "Analizar nutrición".
   en un menú real medido salió **13 verde / 8 ámbar** (marcó "ocasional" platos propios por
   los carbohidratos frente a la diabetes del hogar). Si saliera todo verde, el semáforo sería
   decorativo — es la señal de que el prompt se rompió.
-- **`POST /api/plan/detallar`** (`tipo='detalle'`) es **solo backfill**: completa la `info`
-  y/o los `pasos` de los platos que nacieron sin ellos (la nutrición se sumó primero y la
-  receta después, así que hay platos con una y sin la otra). Los platos nuevos ya nacen con
-  las dos y **no pasan por aquí**. Es **batch** (los pendientes de la semana = 1 llamada) y,
-  si no falta ninguno, **responde sin llamar a la IA ni consumir cupo**: no se cobra por no
-  hacer nada. Una vez calculados, `info` y `pasos` son cache permanente (el plato no cambia).
-  - Cada plato le dice a la IA en **`necesita`** qué le falta (`info`, `pasos` o ambos), y la
-    ruta **solo escribe lo que faltaba**: pedir o pisar lo que el plato ya tenía sería pagar
-    dos veces y arriesgar que se lo reescriba distinto.
+- **`POST /api/plan/detallar`** (`tipo='detalle'`) es **solo backfill**: completa la `info`,
+  los `pasos` y/o el **`consume`** de los platos que nacieron sin ellos (se sumaron en tres
+  tandas —nutrición, receta, consume—, así que hay platos con unas y sin otras). Los platos
+  nuevos ya nacen con las tres y **no pasan por aquí**. Es **batch** (los pendientes de la
+  semana = 1 llamada) y, si no falta ninguno, **responde sin llamar a la IA ni consumir
+  cupo**: no se cobra por no hacer nada. Una vez calculados son cache permanente.
+  - Cada plato le dice a la IA en **`necesita`** qué le falta (`info`, `pasos`, `consume` o
+    varios), y la ruta **solo escribe lo que faltaba**: pedir o pisar lo que el plato ya tenía
+    sería pagar dos veces y arriesgar que se lo reescriba distinto.
+  - **El `consume` es el único campo del backfill que reescribe `platos.ingredientes`**, y por
+    eso `fusionarConsume()` (en `plan.routes.js`) solo **agrega el número**: nombre, cantidad
+    y unidad se quedan como estaban. El emparejamiento es por **`claveIng`, no por posición** —
+    la IA reordena la lista con facilidad, y darle a la sal el `consume` del pollo vaciaría la
+    despensa sin que el usuario tenga cómo notarlo.
+  - **"Le falta el `consume`" = NINGÚN ingrediente lo tiene, no "alguno no lo tiene".** Con
+    "alguno" bastaría que la IA omitiera un ingrediente para que el plato quedara pendiente
+    **para siempre**: el botón no se apagaría nunca y cada clic costaría una generación de cupo
+    sin arreglar nada. Lo que la IA no puntúe se queda con la heurística, que es donde estaba.
+  - **El criterio de "incompleto" está duplicado en `plan.html`** (el botón "🍳 Completar
+    platos (N)") y **tiene que coincidir con el del backend** — en las dos direcciones: si al
+    front le falta el `consume`, el botón no aparece nunca para los platos viejos; y si usa
+    "alguno" en vez de "ninguno", se queda encendido cobrando por clic.
   - Medido: 21 platos a los que les faltaba la receta = **1 llamada, 3.492/3.450 tokens, $0.0097**.
+    Un plato al que solo le faltaba el `consume` = **1.538/155 tokens, ~$0.0008** (Gemini),
+    con 5/5 ingredientes bien puntuados (`Avena 25, Plátano 35, Huevo 40, Aceite 2, Canela 0`).
 - La UI usa las clases `sem-*-bn` del **escáner**: es el mismo lenguaje visual verde/ámbar/rojo.
   Ojo con el mapeo: la BD dice **`ambar`** y la clase CSS se llama **`amarillo`**.
 
@@ -317,7 +380,7 @@ dispara el botón "Analizar nutrición".
 
 | Operación | Tokens (in / out) | Costo |
 |---|---|---|
-| **Un día (3 platos: receta + nutrición + `consume`)** | 2.222 / 1.918–2.304 | **$0.0055–0.0064** |
+| **Un día (3 platos: receta + nutrición + `consume`)** | 2.222–2.392 / 1.918–2.304 | **$0.0055–0.0064** |
 | Una semana completa = 7 días sueltos | — | **~$0.038–0.045** |
 | ~~Un día antes del `consume`~~ (referencia) | 1.823 / 1.825 | $0.0051 |
 | Un día sin receta (histórico) | 1.636 / 1.382 | $0.0039 |
@@ -388,6 +451,7 @@ dispara el botón "Analizar nutrición".
 ### Prompts del planificador (`ai.service.js`)
 - **`REGLAS_PLANIFICADOR`** son las reglas duras y las hereda todo prompt que proponga platos. Si se duplicaran, un flujo podría "olvidar" una alergia que otro sí respetaba.
 - **`contexto.js` es la fuente única** del contexto que ve la IA. Cada flujo (generar, detallar, verificar) debe usar `contextoDe()` + `textoContexto()`: si cada ruta armara el suyo, una podría omitir las alergias.
+- **El contexto lleva el PERIODO (`hogar.semanas`) y define el 100% de la despensa** en el mismo bloque: *"«queda» es el % … medido sobre lo que necesita para el periodo completo de N semana(s)"*. Sin ese dato, `queda 50%` no le dice a la IA si le sobra media semana o dos meses, y el `consume` que devuelve no tendría contra qué calibrarse.
 - **`textoContexto()` inyecta también las instrucciones generales del admin** (`config.ia_instrucciones`) al final del bloque de contexto, así que valen para **todos** los flujos con solo escribirlas una vez. Son **globales** (no por hogar) y el propio texto deja explícito que **nunca** pisan una alergia ni una condición médica — esas siempre mandan, para que una instrucción del admin no pueda bajar esa protección. Vacío = no se añade nada.
 - Las **alergias se repiten aparte** en el prompt (aunque ya vayan dentro de `integrantes`) para que la restricción dura sea imposible de pasar por alto.
 - Auditoría de una generación real (hogar con diabetes + hipertensión + intolerancia a la lactosa, alergias a maní y mariscos): **0 alérgenos, 21/21 platos usando la despensa, 0 repetidos, 21/21 con nota de adaptación**, y distinguió correctamente que "mariscos" no excluye pescado (propuso trucha).
@@ -468,6 +532,25 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 > que la heurística por categoría no puede hacer. **Falta probarlo con Claude**
 > (`setConfig('ai_modo','claude')` + `npm run smoke:plan`, ~$0.047): el fallback tapa las
 > diferencias entre proveedores y ahí ya se escondió un bug meses.
+>
+> 🔴 **Sesión 2026-07-29 — EL 100% CAMBIÓ DE SIGNIFICADO.** Era "el envase lleno" y ahora es
+> **"lo que necesitas para el periodo"**. Salió de una pregunta del usuario (*"100% significa
+> que compré todo el arroz que se necesita para el periodo?"*) que dejó ver que la referencia
+> vieja no estaba atada a nada. Con la nueva el modelo **cierra**: una semana de platos consume
+> una semana de necesidad. Lee el punto rojo de "Consumo de la despensa" **antes** de tocar
+> `PESO_CATEGORIA`, `totalizar()` o `FORMATO_CONSUME` — el ancla, la fórmula de acumulación y
+> los pesos por categoría **son un solo diseño**, no tres cosas sueltas.
+>
+> En la misma sesión: el `consume` se pide también en el **backfill de `/detallar`** (único
+> camino por el que un plato ya existente puede conseguirlo) y **cada producto de la compra dice
+> cuánto se compró** con su propia barra.
+>
+> **Lo que NO se probó:** el ancla nueva con **Claude** (solo con Gemini; misma advertencia de
+> arriba, y ahí ya se escondió un bug meses), el backfill de una semana de 21 platos de un tirón,
+> y el ciclo completo *comprar → cocinar los 21 platos → ¿queda todo cerca de 0?*, que es la
+> comprobación que cierra el modelo. **Producción sigue con el ancla vieja hasta que se
+> despliegue**, y al arrancar allí la migración borrará el `consume` de los platos existentes
+> (ver `config.consume_escala`): los usuarios verán reaparecer "🍳 Completar platos".
 
 > **La fase 4 se cerró el 2026-07-16.** El calendario ya tiene **las tres vías** para llenar
 > una casilla: *"✨ Proponer"* (la IA elige), *"✍️ Ya sé qué cocinar"* (la familia elige y la

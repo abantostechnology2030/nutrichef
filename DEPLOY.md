@@ -118,6 +118,20 @@ O por **GitHub Actions**: pestaña *Actions → Deploy to Hetzner → Run workfl
 
 El workflow respalda la BD (10 copias rodantes en `~/backups/nutrichefia`), hace pull, `npm ci`, seed, restart y **health check contra el 4005**.
 
+### ⚠️ Migraciones: corren solas al arrancar, y una de ellas TOCA DATOS
+
+`db.js` aplica sus migraciones **al importarse**, así que el `pm2 restart` las ejecuta sin que
+haya un paso aparte. Casi todas son `ALTER TABLE` inocuos, pero **la de `consume_escala`
+(2026-07-29) modifica datos de usuarios**: le borra el campo `consume` a todos los platos,
+porque ese número cambió de significado (era "% del envase", ahora es "% de lo que necesitas
+en una semana" — ver CLAUDE.md). Es idempotente: se ejecuta una sola vez por BD y deja
+`config.consume_escala = 'necesidad-semanal'`.
+
+**Qué verán los usuarios tras ese deploy:** el botón "🍳 Completar platos (N)" reaparece en las
+semanas que ya tenían platos. Es esperado — recompletar cuesta **1 generación de cupo por
+semana**. El log del arranque lo dice: `[migracion] consume en escala vieja borrado de N plato(s)`.
+Si algo sale mal, el backup rodante de la BD es el camino de vuelta.
+
 ## Lo que pasó el día del despliegue (2026-07-16)
 
 - **NO recortes la conf de nginx del repo con `sed` para quitarle el bloque SSL.** `sed '/listen 443 ssl;/,$d'` borra desde esa línea al final y **deja huérfano el `server {`** del bloque 443 → `unexpected end of file, expecting "}"` y nginx no carga. Escribe la conf de :80 **entera** y deja que certbot agregue el :443. (Nginx rechazó la conf rota y **siguió con la anterior**, así que las otras 6 apps del VPS no se cayeron: el `nginx -t` hizo su trabajo. Aun así, no repitas el atajo.)
