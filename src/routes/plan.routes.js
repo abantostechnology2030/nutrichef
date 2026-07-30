@@ -12,7 +12,7 @@
 // semana) y el costo real en el panel admin. No agregar una llamada a IA sin registrarla.
 const express = require('express');
 const {
-  db, lunesDe, fechaPeru, sumarDias, periodoDe, claveIng, clampPct, nivelDePorcentaje,
+  db, lunesDe, fechaPeru, sumarDias, periodoDe, claveIng, quitarTildes, clampPct, nivelDePorcentaje,
   MOMENTOS, DIAS, DIA_NUM, CATEGORIAS_ING,
 } = require('../db');
 const { requiereAuth } = require('../middleware/auth');
@@ -160,6 +160,79 @@ router.get('/semanas', (req, res) => {
 // Fecha real (YYYY-MM-DD) de una casilla: dia 0=Domingo (BD) -> offset lunes..domingo.
 const fechaCasilla = (semana, dia) => sumarDias(semana, DIA_NUM.indexOf(dia));
 
+// ===== Cuanto hay que comprar de cada faltante =====
+//
+// Las cantidades YA estaban en platos.ingredientes (la IA devuelve cantidad + unidad por
+// ingrediente) y la lista de compras las tiraba: te mandaba al mercado con "manzana" a secas
+// cuando en la BD decia "2 unidades" en un plato y "1 unidad" en otro. Sumarlas no cuesta una
+// llamada de IA ni un campo nuevo.
+//
+// Unidades: se unifica SOLO lo que es la misma medida escrita de otra forma ("g"/"gramos",
+// "ramita"/"rama"). NUNCA se convierte entre medidas distintas: una taza de arroz pesa ~185 g
+// y una de harina ~120, asi que "taza -> g" necesitaria una tabla POR INGREDIENTE y
+// equivocarse ahi seria un error silencioso en la cara del usuario. Si un ingrediente viene en
+// dos unidades, se muestran las dos ("500 g + 2 tazas") en vez de inventar una suma.
+//
+// Los plurales van explicitos en la tabla y NO por claveIng: su singular es "simple" y
+// convierte "dientes" en "dient" (no en "diente"), que es justo el caso de la mitad de las
+// recetas peruanas. Para nombres de ingrediente da igual (compara clave contra clave); para
+// unidades, no.
+const UNIDAD_CANON = {
+  g: 'g', gr: 'g', grs: 'g', gramo: 'g', gramos: 'g',
+  kg: 'kg', kilo: 'kg', kilos: 'kg', kilogramo: 'kg', kilogramos: 'kg',
+  ml: 'ml', mililitro: 'ml', mililitros: 'ml',
+  l: 'l', lt: 'l', litro: 'l', litros: 'l',
+  taza: 'taza', tazas: 'taza',
+  cda: 'cucharada', cucharada: 'cucharada', cucharadas: 'cucharada',
+  cdta: 'cucharadita', cucharadita: 'cucharadita', cucharaditas: 'cucharadita',
+  unidad: 'unidad', unidades: 'unidad', und: 'unidad', u: 'unidad',
+  diente: 'diente', dientes: 'diente',
+  atado: 'atado', atados: 'atado', manojo: 'atado', manojos: 'atado',
+  rama: 'rama', ramas: 'rama', ramita: 'rama', ramitas: 'rama',
+  rebanada: 'rebanada', rebanadas: 'rebanada', tajada: 'rebanada', tajadas: 'rebanada',
+  trozo: 'trozo', trozos: 'trozo', presa: 'presa', presas: 'presa',
+  pizca: 'pizca', pizcas: 'pizca',
+  hoja: 'hoja', hojas: 'hoja',
+  lata: 'lata', latas: 'lata',
+  sobre: 'sobre', sobres: 'sobre',
+  paquete: 'paquete', paquetes: 'paquete',
+};
+// Plural para MOSTRAR. Los simbolos (g, kg, ml, l) no se pluralizan nunca: "500 gs" no existe.
+const UNIDAD_PLURAL = {
+  taza: 'tazas', cucharada: 'cucharadas', cucharadita: 'cucharaditas', unidad: 'unidades',
+  diente: 'dientes', atado: 'atados', rama: 'ramas', rebanada: 'rebanadas', trozo: 'trozos',
+  presa: 'presas', pizca: 'pizcas', hoja: 'hojas', lata: 'latas', sobre: 'sobres',
+  paquete: 'paquetes',
+};
+
+// La IA escribe "unidad mediana", "unidades grandes", "trozo pequeño": el calificativo de
+// tamaño no cambia la medida y si impide agrupar, asi que se descarta.
+const TAMANOS = /\b(mediana?s?|grandes?|chica?s?|peque[nñ]a?o?s?|extra)\b/g;
+function unidadCanon(u) {
+  const limpio = quitarTildes(u)
+    .toLowerCase().trim().replace(TAMANOS, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
+  if (!limpio) return '';
+  return UNIDAD_CANON[limpio] || limpio; // una unidad que no conocemos se respeta tal cual
+}
+
+const numFmt = (n) => String(Math.round(n * 100) / 100);
+
+// Suma -> texto para el mercado. Unica conversion permitida: g->kg y ml->l a partir de 1000,
+// porque el factor es exacto y es como lo diria una persona ("1.5 kg", no "1500 g").
+function textoMedida(porUnidad) {
+  const partes = [];
+  for (const [unidad, total] of porUnidad) {
+    if (!(total > 0)) continue;
+    let n = total;
+    let u = unidad;
+    if (u === 'g' && n >= 1000) { n /= 1000; u = 'kg'; }
+    else if (u === 'ml' && n >= 1000) { n /= 1000; u = 'l'; }
+    const etiqueta = n === 1 ? u : (UNIDAD_PLURAL[u] || u);
+    partes.push(`${numFmt(n)} ${etiqueta}`.trim());
+  }
+  return partes.length ? partes.join(' + ') : null;
+}
+
 // GET /api/plan/faltantes?inicio=&fin=   |   ?compra_id=   |   ?semana=
 // Sin parametros: la semana actual. La ventana puede cruzar varias semanas ISO.
 router.get('/faltantes', (req, res) => {
@@ -185,8 +258,10 @@ router.get('/faltantes', (req, res) => {
   if (fin < inicio) [inicio, fin] = [fin, inicio];
 
   // Todas las casillas del usuario con sus faltantes (generado) y su cobertura (propuesto).
+  // Se traen tambien los INGREDIENTES del plato: son los que llevan cantidad + unidad, y los
+  // faltantes son solo nombres. Es de donde sale "cuanto comprar".
   const filas = db.prepare(
-    `SELECT pc.semana, pc.dia, pc.cobertura, p.faltantes AS p_faltantes
+    `SELECT pc.semana, pc.dia, pc.cobertura, p.faltantes AS p_faltantes, p.ingredientes AS p_ingredientes
      FROM plan_comidas pc JOIN platos p ON p.id = pc.plato_id
      WHERE pc.usuario_id = ?`
   ).all(usuario.id);
@@ -199,29 +274,59 @@ router.get('/faltantes', (req, res) => {
 
   // Consolidar deduplicando. Se conserva el PRIMER nombre visto (mejor grafia) y se
   // acumulan las fuentes (generado / propuesto) de las que vino el faltante.
-  const acc = new Map(); // clave -> { nombre, categoria, fuentes:Set, casillas:count }
-  const sumar = (nombre, fuente) => {
+  const acc = new Map(); // clave -> { nombre, categoria, fuentes:Set, casillas, porUnidad:Map }
+  const sumar = (nombre, fuente, ing) => {
     const limpio = String(nombre || '').trim();
     if (!limpio) return;
     const k = claveIng(limpio);
     if (!k) return;
     let e = acc.get(k);
-    if (!e) { e = { nombre: limpio, categoria: catMap.get(k) || 'otro', fuentes: new Set(), casillas: 0 }; acc.set(k, e); }
+    if (!e) {
+      e = { nombre: limpio, categoria: catMap.get(k) || 'otro', fuentes: new Set(), casillas: 0, porUnidad: new Map() };
+      acc.set(k, e);
+    }
     e.fuentes.add(fuente);
     e.casillas++;
+    // La cantidad puede faltar (platos manuales, o la IA que la omitio): esa aparicion no
+    // suma nada y las demas si. Sumar un 0 fingido daria un total mas bajo que la verdad,
+    // que es peor que no decir nada — el usuario compraria de menos.
+    const n = Number(ing?.cantidad);
+    if (!Number.isFinite(n) || n <= 0) return;
+    const u = unidadCanon(ing?.unidad);
+    e.porUnidad.set(u, (e.porUnidad.get(u) || 0) + n);
   };
 
   for (const f of filas) {
     if (!(fechaCasilla(f.semana, f.dia) >= inicio && fechaCasilla(f.semana, f.dia) <= fin)) continue;
-    for (const x of JSON.parse(f.p_faltantes || '[]')) sumar(x, 'generado');
+
+    // Indice de los ingredientes de ESTE plato por la misma clave que los faltantes: el
+    // faltante dice "Arroz integral" y el ingrediente tambien, pero por si acaso se compara
+    // normalizado (es lo que hace el resto de la app).
+    const ings = new Map();
+    for (const i of JSON.parse(f.p_ingredientes || '[]')) {
+      const k = claveIng(String(i?.nombre || ''));
+      if (k && !ings.has(k)) ings.set(k, i);
+    }
+    const conCantidad = (nombre) => ings.get(claveIng(String(nombre || '')));
+
+    for (const x of JSON.parse(f.p_faltantes || '[]')) sumar(x, 'generado', conCantidad(x));
     if (f.cobertura) {
-      try { for (const x of JSON.parse(f.cobertura).faltantes || []) sumar(x, 'propuesto'); }
+      try { for (const x of JSON.parse(f.cobertura).faltantes || []) sumar(x, 'propuesto', conCantidad(x)); }
       catch { /* cobertura corrupta: se ignora, no debe tumbar la lista */ }
     }
   }
 
   const items = [...acc.values()]
-    .map((e) => ({ nombre: e.nombre, categoria: e.categoria, casillas: e.casillas, fuentes: [...e.fuentes] }))
+    .map((e) => ({
+      nombre: e.nombre,
+      categoria: e.categoria,
+      casillas: e.casillas,
+      fuentes: [...e.fuentes],
+      // medida = ya listo para pintar ("3 unidades", "500 g + 2 tazas"); null si ningun plato
+      // traia cantidad. cantidades = el desglose, por si un cliente quiere formatearlo distinto.
+      medida: textoMedida(e.porUnidad),
+      cantidades: [...e.porUnidad].map(([unidad, cantidad]) => ({ unidad, cantidad: Math.round(cantidad * 100) / 100 })),
+    }))
     .sort((a, b) => CATEGORIAS_ING.indexOf(a.categoria) - CATEGORIAS_ING.indexOf(b.categoria) || a.nombre.localeCompare(b.nombre));
 
   // Agrupado por categoria en el orden del catalogo (= orden de pasillo del mercado).

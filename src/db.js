@@ -606,6 +606,9 @@ const porcentajeDeNivel = (n) => PORCENTAJE_NIVEL[String(n || '').toLowerCase()]
 // coincidir: la lista de faltantes, el emparejamiento con el catalogo y el descuento de la
 // despensa. Si cada una normalizara a su manera, "Tomates" y "tomate" serian dos productos
 // en una y el mismo en la otra. El singular solo afecta la CLAVE, nunca el nombre mostrado.
+// Se exporta porque la normalizacion de UNIDADES (plan.routes.js) la necesita igual que la de
+// nombres, y una segunda copia del regex de diacriticos es invisible en el editor: los
+// combinantes no se ven, y "arreglarla" en un sitio y no en el otro no dejaria rastro.
 const quitarTildes = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 function claveIng(nombre) {
   let k = quitarTildes(nombre).toLowerCase().trim().replace(/\s+/g, ' ');
@@ -656,6 +659,7 @@ module.exports = {
   nivelDePorcentaje,
   porcentajeDeNivel,
   claveIng,
+  quitarTildes,
   CATEGORIAS_ING,
   REGIONES,
   DIETAS,

@@ -777,7 +777,12 @@
             <div style="margin-bottom:12px">
               <div style="margin-bottom:6px">${chipCategoria(g.categoria)}</div>
               <ul style="margin:0 0 0 18px;font-size:13.5px;line-height:1.8">
-                ${g.items.map((i) => `<li>${esc(i.nombre)}${i.casillas > 1 ? ` <span class="muted" style="font-size:12px">×${i.casillas} platos</span>` : ''}${i.fuentes.includes('propuesto') && !i.fuentes.includes('generado') ? ' <span class="muted" style="font-size:11px">· verificado</span>' : ''}</li>`).join('')}
+                ${g.items.map((i) => `<li>${esc(i.nombre)}${
+                  // La cantidad va PRIMERO y en negrita: es lo que se lee delante del puesto.
+                  // Puede faltar (platos manuales sin cantidad): entonces se omite, no se
+                  // inventa un "1". Ver "medida" en GET /api/plan/faltantes.
+                  i.medida ? ` — <b>${esc(i.medida)}</b>` : ''
+                }${i.casillas > 1 ? ` <span class="muted" style="font-size:12px">×${i.casillas} platos</span>` : ''}${i.fuentes.includes('propuesto') && !i.fuentes.includes('generado') ? ' <span class="muted" style="font-size:11px">· verificado</span>' : ''}</li>`).join('')}
               </ul>
             </div>`).join('');
 
@@ -841,7 +846,22 @@
         doc.setFont('helvetica', 'normal'); doc.setFontSize(12);
         for (const i of g.items) {
           salto(50);
-          doc.text(`[ ]   ${i.nombre}${i.casillas > 1 ? `  (x${i.casillas})` : ''}`, M + 4, y); y += 20;
+          // La CANTIDAD va en negrita y pegada al nombre: es el dato que se lee de un vistazo
+          // delante del puesto del mercado. El "(xN platos)" es contexto, va al final y en gris.
+          const x = M + 4;
+          doc.text(`[ ]   ${i.nombre}`, x, y);
+          if (i.medida) {
+            const ancho = doc.getTextWidth(`[ ]   ${i.nombre}`);
+            doc.setFont('helvetica', 'bold');
+            doc.text(` —  ${i.medida}`, x + ancho, y);
+            doc.setFont('helvetica', 'normal');
+          }
+          if (i.casillas > 1) {
+            doc.setTextColor(130);
+            doc.text(`(en ${i.casillas} platos)`, W - M, y, { align: 'right' });
+            doc.setTextColor(30);
+          }
+          y += 20;
         }
         y += 10;
       }

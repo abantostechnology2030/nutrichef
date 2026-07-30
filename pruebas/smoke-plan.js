@@ -177,6 +177,23 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
   const sinDobles = falt.items.every((i, n) =>
     falt.items.findIndex((o) => o.nombre.toLowerCase() === i.nombre.toLowerCase()) === n);
   check(sinDobles, 'sin nombres duplicados en la lista consolidada');
+
+  // CUANTO comprar de cada faltante. Las cantidades ya venian en platos.ingredientes y la
+  // lista las tiraba: mandaba al mercado con "manzana" a secas. Se suman por unidad, y solo
+  // dentro de la MISMA unidad (nunca taza -> g, que necesita una tabla por ingrediente).
+  const conMedida = falt.items.filter((i) => i.medida);
+  check(conMedida.length > 0, `la lista dice cuanto comprar (${conMedida.length} de ${falt.total} con medida)`);
+  check(conMedida.every((i) => /^\d+(\.\d+)?\s+\S+/.test(i.medida)),
+    `el formato es "<numero> <unidad>": ${conMedida.slice(0, 3).map((i) => `${i.nombre}=${i.medida}`).join(', ')}`);
+  check(falt.items.every((i) => Array.isArray(i.cantidades)
+    && i.cantidades.every((c) => Number.isFinite(c.cantidad) && typeof c.unidad === 'string')),
+    'y trae el desglose por unidad (cantidades[])');
+  // Un ingrediente en varios platos debe SUMAR, no quedarse con el ultimo visto.
+  const enVarios = falt.items.find((i) => i.casillas > 1 && i.cantidades.length === 1);
+  if (enVarios) {
+    check(enVarios.cantidades[0].cantidad > 0,
+      `un faltante repetido acumula: ${enVarios.nombre} en ${enVarios.casillas} platos = ${enVarios.medida}`);
+  }
   // Y el detalle los muestra en vez del aviso de "todavia no tiene receta".
   doc2.querySelector('.dia-fila:first-child .casilla [data-ver]').click();
   await esperar(250);
