@@ -190,6 +190,8 @@ const UNIDAD_CANON = {
   atado: 'atado', atados: 'atado', manojo: 'atado', manojos: 'atado',
   rama: 'rama', ramas: 'rama', ramita: 'rama', ramitas: 'rama',
   rebanada: 'rebanada', rebanadas: 'rebanada', tajada: 'rebanada', tajadas: 'rebanada',
+  rodaja: 'rodaja', rodajas: 'rodaja',
+  porcion: 'porcion', porciones: 'porcion',
   trozo: 'trozo', trozos: 'trozo', presa: 'presa', presas: 'presa',
   pizca: 'pizca', pizcas: 'pizca',
   hoja: 'hoja', hojas: 'hoja',
@@ -201,17 +203,21 @@ const UNIDAD_CANON = {
 const UNIDAD_PLURAL = {
   taza: 'tazas', cucharada: 'cucharadas', cucharadita: 'cucharaditas', unidad: 'unidades',
   diente: 'dientes', atado: 'atados', rama: 'ramas', rebanada: 'rebanadas', trozo: 'trozos',
-  presa: 'presas', pizca: 'pizcas', hoja: 'hojas', lata: 'latas', sobre: 'sobres',
-  paquete: 'paquetes',
+  rodaja: 'rodajas', porcion: 'porciones', presa: 'presas', pizca: 'pizcas', hoja: 'hojas',
+  lata: 'latas', sobre: 'sobres', paquete: 'paquetes',
 };
 
 // La IA escribe "unidad mediana", "unidades grandes", "trozo pequeño": el calificativo de
 // tamaño no cambia la medida y si impide agrupar, asi que se descarta.
 const TAMANOS = /\b(mediana?s?|grandes?|chica?s?|peque[nñ]a?o?s?|extra)\b/g;
 function unidadCanon(u) {
-  const limpio = quitarTildes(u)
-    .toLowerCase().trim().replace(TAMANOS, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
-  if (!limpio) return '';
+  const original = quitarTildes(u).toLowerCase().trim();
+  const limpio = original.replace(TAMANOS, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
+  // La IA a veces pone SOLO el tamaño como unidad ("1 mediana", "2 medianas" — visto en
+  // produccion). Al quitar el calificativo no queda nada, pero lo que quiso decir es "1 unidad
+  // mediana": son piezas contables. Si el campo venia vacio de origen, se respeta vacio (un
+  // numero suelto, sin unidad, no se convierte en piezas por nuestra cuenta).
+  if (!limpio) return original ? 'unidad' : '';
   return UNIDAD_CANON[limpio] || limpio; // una unidad que no conocemos se respeta tal cual
 }
 
