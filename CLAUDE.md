@@ -104,7 +104,7 @@ src/
     analisis.routes.js   # escaner: /texto (cache-first), /imagen (2 fotos), /historial, DELETE
     hogar.routes.js      # hogar + CRUD de integrantes (condiciones y alergias)
     despensa.routes.js   # inventario (alta inmediata) + /compra (snapshot por periodo) + /compras (historial, con borrado)
-    plan.routes.js       # calendario 7x3 + /generar (POR DIA) + /verificar + /detallar + /copiar
+    plan.routes.js       # calendario 7x3 + /generar (POR DIA) + /verificar + /detallar + /copiar + /faltantes y /necesidad
     platos.routes.js     # biblioteca: CRUD de platos manuales + guardar/quitar (tope platos_max)
     pagos.routes.js      # info del paywall (incl. yape_qr) + comprobante Yape + /historial
     soporte.routes.js    # mensajes de contacto
@@ -180,6 +180,11 @@ La BD **nació vacía**, así que el esquema está completo y limpio desde el d�
 - **Agregar ≠ comprar (modelo 2026-07-18).** Son **dos conceptos separados**, y viven en **dos pestañas**:
   - **"🧺 Mi despensa" = SOLO ver + buscar.** Muestra el stock agrupado por categoría (con su **barra de porcentaje** y quitar) + un buscador por nombre. **No tiene formulario de agregar** — para no confundir "tener" con "comprar".
   - **"🛒 Registrar compra" = agregar + marcar.** Arriba, el **formulario "Agregar un producto"** (nombre + categoría autosugerida + nivel) → alta INMEDIATA a la despensa (`POST /api/despensa`) y queda marcado en el checklist. Debajo, el **checklist por categoría**. Ver los dos bullets siguientes.
+- **Debajo de cada producto: "🧾 Tu plan pide 16 dientes" (2026-07-30).** Sale de **`GET /api/plan/necesidad`** y va **siempre visible**, marcado o no: es el dato con el que se decide si hay que traerlo y cuánto.
+  - ⚠️ **Usa `/necesidad`, NO `/faltantes`.** `/faltantes` omite por definición todo lo que el usuario **ya tiene**, que es la mayor parte de esta lista — y es justo de eso de lo que decide si repone. Medido en el hogar de prueba: **35 ingredientes en el plan vs 18 faltantes**. Si alguien cambia la llamada a `/faltantes`, dos tercios de la pantalla se quedan sin cantidad; lo fija un aserto del smoke.
+  - Es **una sola llamada**: los faltantes (el `●`) salen de filtrar `falta === true`. Así las dos listas no pueden decir cantidades distintas del mismo ingrediente.
+  - Si no hay cantidad (el plan no usa ese producto, o sus platos son manuales sin cantidades) **no se pinta nada** — mejor que inventar una cifra. Medido: 32 de 35 con cantidad.
+  > **Ojo con dónde se busca este dato.** Las cantidades se estrenaron **solo** en *Plan de comidas → 🛒 Lista de compras*, y el usuario las fue a buscar a *Registrar compra*, que es donde de verdad las necesita (es la pantalla en la que decide qué traer del mercado). Si añades un dato del plan, pregúntate en qué pantalla se toma la decisión que ese dato informa.
 - **Cada producto marcado dice CUÁNTO se compró (2026-07-29).** Al marcarlo aparece su **barra 0-100** y **100% = "compré todo lo que mi plan necesita para este periodo"** (mismo ancla que la despensa, ver "Consumo de la despensa"). Arranca en 100 porque es el caso normal; bajarla es la excepción: *"solo alcancé a traer la mitad"*. Antes todo lo marcado iba al 100% sí o sí, y la única forma de corregirlo era ir a "Mi despensa" a mover la barra producto por producto **después** de registrar.
   - `POST /compra` acepta **las dos formas** de `items`: `["Arroz"]` (= 100%, lo que mandaba el cliente viejo) o `[{nombre, porcentaje}]`. El `nivel` de `compra_items` **se deriva** de ese porcentaje, nunca se escribe suelto — misma regla que el resto de la despensa.
   - La barra solo se pinta si el producto está **marcado**: preguntar cuánto compraste de algo que no compraste no significa nada. El slider va de **10 a 100** (marcar algo y declarar 0% es contradictorio); el backend sí acepta 0-100 por si otro cliente lo manda.

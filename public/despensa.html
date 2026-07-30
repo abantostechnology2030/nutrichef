@@ -110,7 +110,7 @@
                 <button class="btn btn-ghost btn-sm" id="btn-marca-ninguno" type="button">Ninguno</button>
               </div>
             </div>
-            <p class="muted" style="font-size:12.5px;margin:-2px 0 8px">Al marcar un producto se asume que compraste <b>todo lo que tu plan necesita</b> para este periodo. Si trajiste menos, baja su barra.</p>
+            <p class="muted" style="font-size:12.5px;margin:-2px 0 8px">Debajo de cada producto verás <b>cuánto pide tu plan</b> para este periodo. Al marcarlo se asume que compraste todo eso; si trajiste menos, baja su barra.</p>
             <div id="checklist-compra" class="stack" style="gap:12px"></div>
 
             <div class="field" style="margin-top:14px">
@@ -148,6 +148,10 @@
     let FALTANTES = []; // lo que la IA dijo que falta para el plan del periodo (ver cargarFaltantes)
     let NIVELES = [];
     let CATEGORIAS = [];
+    // Cuanto pide el plan de CADA producto en el periodo (nombre lower -> "16 dientes"), tenga
+    // o no el usuario ese producto. Es el dato que se necesita delante de cada item para
+    // decidir cuanto traer del mercado.
+    const PIDE = new Map();
     const marcadosCompra = new Set();  // nombres (lower) marcados como comprados este periodo
     const conocidosCompra = new Set(); // nombres ya vistos por el checklist (para no re-marcar)
     const pctCompra = new Map();       // nombre (lower) -> cuanto se compro de el (0-100)
@@ -341,6 +345,12 @@
               const on = marcadosCompra.has(k);
               const pct = pctDe(k);
               const esc = k.replace(/"/g, '&quot;');
+              // CUÁNTO pide el plan de este producto en el periodo (viene de
+              // GET /api/plan/necesidad, sumando las recetas). Va SIEMPRE visible, marcado o
+              // no: es el dato con el que se decide si hay que traerlo y cuánto. Puede no
+              // haberlo (el plan no usa ese producto, o sus platos son manuales sin cantidad),
+              // y entonces no se pinta nada — mejor que inventar una cifra.
+              const pide = PIDE.get(k);
               // El ● marca lo que NO está todavía en tu despensa: al marcarlo, entra.
               // La barra solo aparece cuando está marcado: preguntar "¿cuánto compraste?"
               // de algo que no compraste no significa nada.
@@ -348,6 +358,7 @@
                 <button type="button" class="btn btn-sm ${on ? '' : 'btn-ghost'}" data-check="${esc}"
                   title="${d.falta ? 'De tu lista de compras — al marcarlo entra a tu despensa' : (on ? 'Comprado' : 'Marcar como comprado')}"
                   style="width:100%;justify-content:flex-start;padding:5px 11px;font-size:12.5px${on ? '' : ';opacity:.7'}">${on ? '✓ ' : ''}${d.falta ? '● ' : ''}${d.nombre}</button>
+                ${pide ? `<div class="pide-plan" style="font-size:11.5px;color:var(--green);margin-top:5px">🧾 Tu plan pide <b>${pide}</b></div>` : ''}
                 ${on ? `
                   <input class="stock-rango" type="range" min="10" max="100" step="5" value="${pct}"
                          data-pct-compra="${esc}" aria-label="Cuánto compraste de ${d.nombre}" style="margin-top:6px" />
@@ -457,12 +468,19 @@
     // programaste. Se ofrecen en el checklist para poder marcarlos al volver del mercado.
     // Si el plan no esta disponible (403 del gate, o aun no hay platos), se degrada sin
     // ruido: el checklist sigue funcionando con la despensa sola.
+    // Se pide /necesidad y NO /faltantes: trae lo mismo mas TODO lo que el plan pide de lo que
+    // ya tienes, que es justo lo que hay que mostrar aqui (el usuario ve su despensa entera y
+    // decide si repone). Los faltantes salen de ahi filtrando por `falta`, asi que es UNA
+    // llamada en vez de dos y las cantidades no pueden discrepar entre las dos listas.
     async function cargarFaltantes() {
       const p = periodoUI();
       if (!p.inicio || !p.fin) return;
       try {
-        FALTANTES = (await api(`/api/plan/faltantes?inicio=${p.inicio}&fin=${p.fin}`)).items || [];
-      } catch { FALTANTES = []; }
+        const items = (await api(`/api/plan/necesidad?inicio=${p.inicio}&fin=${p.fin}`)).items || [];
+        PIDE.clear();
+        for (const i of items) if (i.medida) PIDE.set(i.nombre.toLowerCase(), i.medida);
+        FALTANTES = items.filter((i) => i.falta);
+      } catch { FALTANTES = []; PIDE.clear(); }
       if (!document.getElementById('panel-compra').classList.contains('hidden')) pintarChecklist();
     }
 

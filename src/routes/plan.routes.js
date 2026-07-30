@@ -239,30 +239,40 @@ function textoMedida(porUnidad) {
   return partes.length ? partes.join(' + ') : null;
 }
 
-// GET /api/plan/faltantes?inicio=&fin=   |   ?compra_id=   |   ?semana=
-// Sin parametros: la semana actual. La ventana puede cruzar varias semanas ISO.
-router.get('/faltantes', (req, res) => {
-  const usuario = req.usuario;
-
-  // Resolver la ventana [inicio, fin]. Prioridad: compra_id > inicio/fin > semana > actual.
+// Resuelve la ventana [inicio, fin] de una consulta. Prioridad: compra_id > inicio/fin >
+// semana > la semana actual. Devuelve null si el compra_id no es del usuario.
+function ventanaPedida(usuarioId, query = {}) {
   let inicio;
   let fin;
-  if (req.query.compra_id) {
+  if (query.compra_id) {
     const c = db.prepare('SELECT periodo_inicio, periodo_fin, semana FROM compras WHERE id = ? AND usuario_id = ?')
-      .get(Number(req.query.compra_id), usuario.id);
-    if (!c) return res.status(404).json({ error: 'Compra no encontrada.' });
+      .get(Number(query.compra_id), usuarioId);
+    if (!c) return null;
     inicio = c.periodo_inicio || c.semana;
     fin = c.periodo_fin || sumarDias(inicio, 6);
-  } else if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.inicio || '')) {
-    inicio = req.query.inicio;
-    fin = /^\d{4}-\d{2}-\d{2}$/.test(req.query.fin || '') ? req.query.fin : sumarDias(inicio, 6);
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(query.inicio || '')) {
+    inicio = query.inicio;
+    fin = /^\d{4}-\d{2}-\d{2}$/.test(query.fin || '') ? query.fin : sumarDias(inicio, 6);
   } else {
-    const p = periodoDe('semanal', req.query.semana);
+    const p = periodoDe('semanal', query.semana);
     inicio = p.inicio;
     fin = p.fin;
   }
-  if (fin < inicio) [inicio, fin] = [fin, inicio];
+  return fin < inicio ? { inicio: fin, fin: inicio } : { inicio, fin };
+}
 
+// Consolida los ingredientes del plan de una ventana, sumando cuanto pide cada uno.
+//
+// `soloFaltantes` es la unica diferencia entre las dos rutas que usan esto:
+//   - true  -> LISTA DE COMPRAS: solo lo que la IA dijo que NO tiene (GET /faltantes).
+//   - false -> NECESIDAD DEL PERIODO: TODO lo que el plan pide, tenga o no (GET /necesidad),
+//              con `falta` marcando cuales son faltantes. Es lo que la pantalla de
+//              "Registrar compra" necesita: ahi el usuario ve su despensa entera y quiere
+//              saber cuanto le pide el plan de CADA producto, no solo de los que le faltan.
+//
+// Vive en una sola funcion a proposito: si cada ruta sumara por su cuenta, la lista de compras
+// y la pantalla de compra dirian cantidades distintas del mismo ingrediente.
+function consolidarPlan(usuarioId, inicio, fin, { soloFaltantes }) {
   // Todas las casillas del usuario con sus faltantes (generado) y su cobertura (propuesto).
   // Se traen tambien los INGREDIENTES del plato: son los que llevan cantidad + unidad, y los
   // faltantes son solo nombres. Es de donde sale "cuanto comprar".
@@ -270,7 +280,7 @@ router.get('/faltantes', (req, res) => {
     `SELECT pc.semana, pc.dia, pc.cobertura, p.faltantes AS p_faltantes, p.ingredientes AS p_ingredientes
      FROM plan_comidas pc JOIN platos p ON p.id = pc.plato_id
      WHERE pc.usuario_id = ?`
-  ).all(usuario.id);
+  ).all(usuarioId);
 
   // Catalogo -> categoria, indexado por la misma clave para tolerar plurales/grafia.
   const catMap = new Map();
@@ -280,18 +290,19 @@ router.get('/faltantes', (req, res) => {
 
   // Consolidar deduplicando. Se conserva el PRIMER nombre visto (mejor grafia) y se
   // acumulan las fuentes (generado / propuesto) de las que vino el faltante.
-  const acc = new Map(); // clave -> { nombre, categoria, fuentes:Set, casillas, porUnidad:Map }
-  const sumar = (nombre, fuente, ing) => {
+  const acc = new Map(); // clave -> { nombre, categoria, fuentes:Set, casillas, porUnidad:Map, falta }
+  const sumar = (nombre, fuente, ing, falta) => {
     const limpio = String(nombre || '').trim();
     if (!limpio) return;
     const k = claveIng(limpio);
     if (!k) return;
     let e = acc.get(k);
     if (!e) {
-      e = { nombre: limpio, categoria: catMap.get(k) || 'otro', fuentes: new Set(), casillas: 0, porUnidad: new Map() };
+      e = { nombre: limpio, categoria: catMap.get(k) || 'otro', fuentes: new Set(), casillas: 0, porUnidad: new Map(), falta: false };
       acc.set(k, e);
     }
-    e.fuentes.add(fuente);
+    if (fuente) e.fuentes.add(fuente);
+    if (falta) e.falta = true; // basta que UN plato lo marque faltante para que haya que comprarlo
     e.casillas++;
     // La cantidad puede faltar (platos manuales, o la IA que la omitio): esa aparicion no
     // suma nada y las demas si. Sumar un 0 fingido daria un total mas bajo que la verdad,
@@ -315,10 +326,27 @@ router.get('/faltantes', (req, res) => {
     }
     const conCantidad = (nombre) => ings.get(claveIng(String(nombre || '')));
 
-    for (const x of JSON.parse(f.p_faltantes || '[]')) sumar(x, 'generado', conCantidad(x));
+    // Que ingredientes de ESTE plato son faltantes (por nombre normalizado).
+    const faltantes = new Set();
+    for (const x of JSON.parse(f.p_faltantes || '[]')) faltantes.add(claveIng(String(x)));
+    let cobFaltantes = new Set();
     if (f.cobertura) {
-      try { for (const x of JSON.parse(f.cobertura).faltantes || []) sumar(x, 'propuesto', conCantidad(x)); }
+      try { cobFaltantes = new Set((JSON.parse(f.cobertura).faltantes || []).map((x) => claveIng(String(x)))); }
       catch { /* cobertura corrupta: se ignora, no debe tumbar la lista */ }
+    }
+
+    if (soloFaltantes) {
+      for (const x of JSON.parse(f.p_faltantes || '[]')) sumar(x, 'generado', conCantidad(x), true);
+      for (const x of (() => { try { return JSON.parse(f.cobertura || '{}').faltantes || []; } catch { return []; } })()) {
+        sumar(x, 'propuesto', conCantidad(x), true);
+      }
+    } else {
+      // TODO lo que el plato pide, con su marca de faltante. Se recorre la receta (no la lista
+      // de faltantes) porque es la unica que tiene cantidad y unidad de cada ingrediente.
+      for (const [k, ing] of ings) {
+        const falta = faltantes.has(k) || cobFaltantes.has(k);
+        sumar(ing.nombre, falta ? 'generado' : null, ing, falta);
+      }
     }
   }
 
@@ -328,6 +356,7 @@ router.get('/faltantes', (req, res) => {
       categoria: e.categoria,
       casillas: e.casillas,
       fuentes: [...e.fuentes],
+      falta: e.falta,
       // medida = ya listo para pintar ("3 unidades", "500 g + 2 tazas"); null si ningun plato
       // traia cantidad. cantidades = el desglose, por si un cliente quiere formatearlo distinto.
       medida: textoMedida(e.porUnidad),
@@ -340,7 +369,28 @@ router.get('/faltantes', (req, res) => {
     .map((cat) => ({ categoria: cat, items: items.filter((i) => i.categoria === cat) }))
     .filter((g) => g.items.length);
 
-  res.json({ inicio, fin, total: items.length, items, por_categoria });
+  return { total: items.length, items, por_categoria };
+}
+
+// GET /api/plan/faltantes?inicio=&fin=   |   ?compra_id=   |   ?semana=
+// LA LISTA DE COMPRAS: solo lo que te FALTA. Sin parametros, la semana actual.
+router.get('/faltantes', (req, res) => {
+  const v = ventanaPedida(req.usuario.id, req.query || {});
+  if (!v) return res.status(404).json({ error: 'Compra no encontrada.' });
+  res.json({ ...v, ...consolidarPlan(req.usuario.id, v.inicio, v.fin, { soloFaltantes: true }) });
+});
+
+// GET /api/plan/necesidad?inicio=&fin=   |   ?compra_id=   |   ?semana=
+// LO QUE EL PLAN PIDE DEL PERIODO, tengas o no cada cosa (`falta` marca lo que no tienes).
+//
+// Existe para la pantalla de "Registrar compra": ahi el usuario ve su despensa ENTERA y lo que
+// necesita saber delante de cada producto es cuanto le pide el plan — tambien de lo que ya
+// tiene, porque de eso justamente decide si repone o no. /faltantes no sirve: por definicion
+// omite todo lo que el usuario ya tiene, que es la mayor parte de esa lista.
+router.get('/necesidad', (req, res) => {
+  const v = ventanaPedida(req.usuario.id, req.query || {});
+  if (!v) return res.status(404).json({ error: 'Compra no encontrada.' });
+  res.json({ ...v, ...consolidarPlan(req.usuario.id, v.inicio, v.fin, { soloFaltantes: false }) });
 });
 
 // ===== Aporte nutricional (platos.info) =====

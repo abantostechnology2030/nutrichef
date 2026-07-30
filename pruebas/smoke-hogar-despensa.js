@@ -230,6 +230,21 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
         check(conPunto.every((b) => b.classList.contains('btn-ghost')), 'y arrancan SIN marcar (no se dan de alta solos)');
         check(marcados() === antes, `los de la despensa siguen marcados y los ● no (${marcados()} marcados de ${antes + esperados})`);
 
+        // CUANTO pide el plan de cada producto, debajo de su nombre. Sale de
+        // GET /api/plan/necesidad, que a diferencia de /faltantes incluye tambien lo que el
+        // usuario YA tiene: aqui ve su despensa entera y es de eso de lo que decide si repone.
+        const pide = [...doc.querySelectorAll('#checklist-compra .pide-plan')];
+        check(pide.length > 0, `la pantalla de compra dice cuanto pide el plan (${pide.length} productos)`);
+        check(pide.every((el) => /Tu plan pide\s+\S+/.test(el.textContent)),
+          `con cantidad y unidad: "${(pide[0] || {}).textContent || ''}"`);
+        // La clave: NO son solo los faltantes. Si /necesidad se cambiara por /faltantes, esto
+        // caeria a los ~18 faltantes y el usuario perderia el dato de lo que ya tiene.
+        const nec = (await api(`/api/plan/necesidad?inicio=${conPlan.semana}&fin=${fin}`, token)).items || [];
+        check(nec.length > esperados,
+          `incluye lo que YA tienes, no solo los faltantes (${nec.length} en el plan vs ${esperados} faltantes)`);
+        check(nec.filter((i) => i.falta).length === esperados,
+          'y los marcados como falta coinciden con /faltantes (misma fuente, sin discrepancias)');
+
         // Volver al modo semanas, que es como lo encontro (el resto del test cuenta con el).
         [...doc.querySelectorAll('input[name=modo-periodo]')].find((r) => r.value !== 'fechas').checked = true;
         doc.querySelectorAll('input[name=modo-periodo]').forEach((r) => r.dispatchEvent(new win.Event('change', { bubbles: true })));
