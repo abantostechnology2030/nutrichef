@@ -7,7 +7,9 @@
 // No usa IA: es gratis y rapido. DEJA el hogar de prueba en un estado conocido
 // (Casa Abanto + Rosa/Luis/Ana) porque el test necesita conteos estables.
 const { JSDOM, VirtualConsole } = require('jsdom');
-const { db } = require('../src/db'); // solo para limpiar la compra de prueba al final
+// Ya no se importa src/db: la limpieza de la compra de prueba usa el endpoint
+// DELETE /api/despensa/compras/:id. Mejor asi — importar db.js abria una segunda conexion de
+// escritura a la misma BD (y le corria las migraciones) solo para un DELETE.
 
 const BASE = 'http://localhost:3002';
 const EMAIL = 'fam@test.pe';
@@ -299,22 +301,74 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     const comprasDespues = doc.querySelectorAll('#lista-compras > div').length;
     check(comprasDespues === comprasAntes + 1, `la compra aparece en el historial: ${comprasAntes} -> ${comprasDespues}`);
     check(/Periodo \d{2}\/\d{2}/.test(txt(doc, '#lista-compras')), 'el historial muestra el periodo (dd/mm)');
+    check(/periodo activo/.test(txt(doc, '#lista-compras')), 'la mas reciente se marca como "periodo activo"');
 
     // Volver a la despensa: el banner avisa a que periodo pertenece.
     doc.querySelector('#t-inventario').click(); await esperar(80);
     check(/Despensa del periodo/.test(txt(doc, '#banner-periodo')), `el banner del periodo: "${txt(doc, '#banner-periodo')}"`);
+
+    // ===== Quitar un registro del historial =====
+    // Lo que HAY QUE comprobar no es que la fila desaparezca, es que la DESPENSA NO CAMBIE:
+    // "compras" es historial y la despensa es lo que hay en casa. Si borrar un registro
+    // vaciara el inventario, el usuario perderia su despensa por limpiar una lista (y la IA
+    // planificaria alrededor de una casa vacia). Lo garantizan los FK del esquema
+    // (compra_items CASCADE, despensa.compra_id SET NULL), asi que esto es su prueba.
+    {
+      doc.querySelector('#t-compra').click(); await esperar(150);
+      const antesDeBorrar = (await apiSrv('/api/despensa')).despensa
+        .map((d) => `${d.nombre}:${d.porcentaje}`).sort().join('|');
+      const nFilas = doc.querySelectorAll('#lista-compras > div').length;
+      const botones = doc.querySelectorAll('#lista-compras [data-del-compra]');
+      check(botones.length === nFilas, `cada compra del historial tiene su boton de quitar (${botones.length} de ${nFilas})`);
+
+      botones[0].click(); await esperar(200);
+      const modal = doc.querySelector('.modal-back .modal');
+      check(!!modal, 'quitar pide confirmacion con el modal propio (no el confirm nativo)');
+      const txtModal = modal ? modal.textContent.replace(/\s+/g, ' ') : '';
+      check(/despensa no cambia/i.test(txtModal), `el modal aclara que la despensa no cambia: "${txtModal.slice(0, 90)}…"`);
+      check(/periodo activo|única/i.test(txtModal), 'y avisa que era el periodo activo');
+
+      // Cancelar NO borra nada.
+      doc.querySelector('.modal-back [data-no]').click(); await esperar(300);
+      check(doc.querySelectorAll('#lista-compras > div').length === nFilas, 'al cancelar no se borra nada');
+
+      // Confirmar si.
+      doc.querySelectorAll('#lista-compras [data-del-compra]')[0].click(); await esperar(200);
+      doc.querySelector('.modal-back [data-si]').click(); await esperar(900);
+      check(doc.querySelectorAll('#lista-compras > div').length === nFilas - 1,
+        `confirmar quita la fila del historial: ${nFilas} -> ${doc.querySelectorAll('#lista-compras > div').length}`);
+      check(/no cambió|no cambio/i.test(txt(doc, '#alerta-compra')), `avisa que la despensa no cambio: "${txt(doc, '#alerta-compra')}"`);
+
+      const despuesDeBorrar = (await apiSrv('/api/despensa')).despensa
+        .map((d) => `${d.nombre}:${d.porcentaje}`).sort().join('|');
+      check(despuesDeBorrar === antesDeBorrar, 'LA DESPENSA QUEDA IDENTICA (mismos productos y mismos %)');
+
+      // Y el registro se fue de verdad del servidor, no solo de la pantalla.
+      const hist = (await apiSrv('/api/despensa/compras')).compras;
+      check(hist.length === nFilas - 1, `y del servidor: el historial tiene ${hist.length} (antes ${nFilas})`);
+
+      // apiSrv devuelve el cuerpo, no la respuesta: el status se pide con fetch directo.
+      const fantasma = await fetch(`${BASE}/api/despensa/compras/999999`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+      });
+      check(fantasma.status === 404, `borrar una compra inexistente (o de otro) da 404 (fue ${fantasma.status})`);
+    }
   }
 
   // Limpieza: quitar los productos de prueba Y el snapshot de compra que los incluyo. Si un
   // producto se queda, la IA lo tomara como real y generara platos alrededor de el (la
-  // despensa es la entrada del planificador); la compra se borra directo en BD (no hay endpoint).
+  // despensa es la entrada del planificador).
+  //
+  // La compra de prueba normalmente YA la borro la seccion de "quitar un registro" (es la mas
+  // reciente, que es justo la que ese bloque elimina). Esto es el respaldo por si esa seccion
+  // no llego a correr: sin el, una corrida a medias dejaria la compra colgada.
   const fin = await apiSrv('/api/despensa');
   const sobra = fin.despensa.find((d) => d.nombre === INGREDIENTE);
   let compraId = null;
   if (sobra) {
+    compraId = sobra.compra_id; // null si el bloque de arriba ya borro la compra (SET NULL)
     await apiSrv(`/api/despensa/${sobra.id}`, { method: 'DELETE' });
-    compraId = sobra.compra_id;
-    if (compraId) db.prepare('DELETE FROM compras WHERE id = ?').run(compraId);
+    if (compraId) await apiSrv(`/api/despensa/compras/${compraId}`, { method: 'DELETE' });
   }
   // Borrar los productos que dio de alta la compra de prueba al marcar "Todos" (los
   // faltantes del plan). Si se quedan, el hogar sembrado deja de ser el hogar sembrado.

@@ -499,19 +499,72 @@
       finally { btn.disabled = false; btn.textContent = 'Registrar compra'; }
     };
 
+    // Quitar un registro del historial de compras.
+    //
+    // Se confirma con el modal propio confirmar() y NO con el confirm() nativo (misma regla
+    // que aprobar un pago Yape). El texto dice de frente las dos cosas que el usuario necesita
+    // saber para decidir: que su despensa NO cambia (es lo primero que uno teme al ver
+    // "Quitar" al lado de su inventario) y, si es la compra activa, que el periodo pasara a
+    // ser el de la anterior. Sin ese aviso, el banner cambiaria solo y parecería un bug.
+    document.getElementById('lista-compras').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-del-compra]');
+      if (!b) return;
+      const id = Number(b.dataset.delCompra);
+      const c = COMPRAS.find((x) => x.id === id);
+      const esActiva = COMPRAS[0] && COMPRAS[0].id === id;
+      const rango = (c && c.periodo_inicio && c.periodo_fin) ? `${fmtFecha(c.periodo_inicio)} – ${fmtFecha(c.periodo_fin)}` : 'ese periodo';
+      const siguiente = COMPRAS[1];
+
+      const mensaje = `<p>Se borra del historial la compra del periodo <b>${rango}</b>.</p>`
+        + '<p><b>Tu despensa no cambia</b>: los productos y su stock se quedan como están.</p>'
+        + (esActiva
+          ? (siguiente
+            // Las compras viejas pueden no tener el rango completo: sin fechas no se promete
+            // un periodo concreto, se dice "la anterior" y ya.
+            ? `<p>Ojo: era tu <b>periodo activo</b>, así que pasará a ser el de ${
+              (siguiente.periodo_inicio && siguiente.periodo_fin)
+                ? `<b>${fmtFecha(siguiente.periodo_inicio)} – ${fmtFecha(siguiente.periodo_fin)}</b>`
+                : '<b>tu compra anterior</b>'}.</p>`
+            : '<p>Ojo: era tu <b>única</b> compra, así que quedarás sin periodo registrado hasta que registres otra.</p>')
+          : '');
+      const ok = await confirmar(mensaje, { titulo: '¿Quitar este registro?', ok: 'Sí, quitar', peligro: true });
+      if (!ok) return;
+
+      b.disabled = true;
+      try {
+        const d = await api(`/api/despensa/compras/${id}`, { method: 'DELETE' });
+        DESPENSA = d.despensa;
+        await cargarCompras();  // repinta el historial y el banner del periodo
+        pintarDespensa();
+        // El texto se arma aqui, no se repite el de la API: los mensajes del backend van sin
+        // tildes (convencion del proyecto) y este lo lee el usuario.
+        alerta(alCompra, `Se quitó del historial la compra del periodo ${rango}. Tu despensa no cambió`
+          + (d.desvinculados ? `: sus ${d.desvinculados} producto(s) siguen ahí con su stock.` : '.'), 'ok');
+      } catch (err) {
+        b.disabled = false;
+        alerta(alCompra, err.error || 'No pudimos quitar ese registro.');
+      }
+    });
+
     async function cargarCompras() {
       const cont = document.getElementById('lista-compras');
       try {
         const { compras } = await api('/api/despensa/compras');
         COMPRAS = compras;
         cont.innerHTML = compras.length
-          ? compras.map((c) => {
+          ? compras.map((c, i) => {
               const rango = (c.periodo_inicio && c.periodo_fin) ? `${fmtFecha(c.periodo_inicio)} – ${fmtFecha(c.periodo_fin)}` : (c.periodo_inicio ? fmtFecha(c.periodo_inicio) : '—');
-              const nombres = (c.items || []).map((i) => i.nombre).join(', ');
+              const nombres = (c.items || []).map((i2) => i2.nombre).join(', ');
+              // La primera de la lista (viene ordenada por id DESC) es la que define el
+              // PERIODO ACTIVO del banner y del badge del plan: se marca para que borrarla no
+              // sea una sorpresa.
+              const activa = i === 0;
               return `<div style="border:1px solid var(--line);border-radius:12px;padding:11px 13px">
-                <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
-                  <b>Periodo ${rango}</b>
+                <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center">
+                  <b style="flex:1;min-width:130px">Periodo ${rango}${activa ? ' <span class="muted" style="font-weight:400;font-size:12px">· periodo activo</span>' : ''}</b>
                   <span class="muted" style="font-size:12.5px">${c.total_items} producto${c.total_items === 1 ? '' : 's'} · ${c.creado_local}</span>
+                  <button class="btn btn-danger btn-sm" data-del-compra="${c.id}"
+                    title="Borra este registro del historial. Tu despensa no cambia.">Quitar</button>
                 </div>
                 ${c.nota ? `<p class="muted" style="font-size:12.5px;margin-top:4px">📝 ${c.nota}</p>` : ''}
                 ${nombres ? `<p class="muted" style="font-size:12.5px;margin-top:6px">${nombres}</p>` : ''}

@@ -267,6 +267,40 @@ router.post('/compra', (req, res) => {
   });
 });
 
+// DELETE /api/despensa/compras/:id -> borra un REGISTRO del historial de compras.
+//
+// Borra el REGISTRO, NO el stock. Es la distincion que importa: "compras" es el historial de
+// "que traje del mercado y para que periodo", y la despensa es lo que hay en casa AHORA. Si
+// borrar una compra vieja vaciara la despensa, el usuario perderia su inventario por limpiar
+// una lista — y la IA planificaria alrededor de una casa vacia.
+//
+// Quien se encarga de que eso no pase es el esquema, no esta ruta:
+//   - compra_items      -> ON DELETE CASCADE  (el detalle congelado se va con su compra)
+//   - despensa.compra_id -> ON DELETE SET NULL (el producto se queda; pierde solo el vinculo)
+// Si algun dia cambias esos FK, esta ruta se vuelve destructiva sin tocarla. No los cambies.
+//
+// Efecto secundario que SI tiene y el cliente debe avisar: el banner de la despensa y el badge
+// del plan leen la compra MAS RECIENTE. Borrando esa, el "periodo activo" pasa a ser el de la
+// anterior (o ninguno). No es un dato que se pierda, pero la pantalla cambia.
+router.delete('/compras/:id', (req, res) => {
+  const it = db.prepare('SELECT id, periodo_inicio, periodo_fin FROM compras WHERE id = ? AND usuario_id = ?')
+    .get(Number(req.params.id), req.usuario.id);
+  if (!it) return res.status(404).json({ error: 'Esa compra no esta en tu historial.' });
+
+  const vinculados = db.prepare('SELECT COUNT(*) c FROM despensa WHERE usuario_id = ? AND compra_id = ?')
+    .get(req.usuario.id, it.id).c;
+  db.prepare('DELETE FROM compras WHERE id = ?').run(it.id);
+
+  const { inicio, fin } = ventanaDe(req.query || {});
+  res.json({
+    mensaje: 'Se borro el registro de esa compra. Tu despensa no cambio.',
+    // Cuantos productos quedaron sin vinculo (siguen en la despensa con su stock intacto):
+    // le sirve al cliente para decirlo sin tener que deducirlo.
+    desvinculados: vinculados,
+    despensa: despensaConProyeccion(req.usuario.id, inicio, fin),
+  });
+});
+
 // GET /api/despensa/compras -> historial de compras (snapshots) del usuario, con su detalle.
 router.get('/compras', (req, res) => {
   const compras = db.prepare(
