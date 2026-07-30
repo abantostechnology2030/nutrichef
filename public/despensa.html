@@ -38,7 +38,7 @@
               <input id="buscar-despensa" class="input" placeholder="🔍 Buscar producto…" style="width:auto;flex:1;min-width:160px;max-width:280px" />
             </div>
             <div id="banner-periodo" style="font-size:12.5px;margin-bottom:14px;background:var(--green-soft);border-radius:10px;padding:9px 12px"></div>
-            <p class="muted" style="font-size:12.5px;margin-bottom:12px">Aquí ves tu stock. Para <b>agregar</b> productos o registrar lo que compraste, ve a <b>🛒 Registrar compra</b>.</p>
+            <p class="muted" style="font-size:12.5px;margin-bottom:12px">Aquí ves tu stock de hoy. Lo que cambia de una semana a otra no es la despensa, sino <b>cuánto se lleva el plan de esa semana</b> (el tramo rayado). Para <b>agregar</b> productos o registrar lo que compraste, ve a <b>🛒 Registrar compra</b>.</p>
             <div id="lista-despensa" class="stack"></div>
           </div>
         </div>
@@ -177,8 +177,12 @@
       const consumo = i.consumo_previsto || 0;
       const restante = i.restante === undefined ? tiene : i.restante;
 
+      // "esa semana" cuando la proyeccion no es de la semana actual (se llego desde el plan
+      // mirando otra): decirle "esta semana" a los numeros de otra semana es justo el enredo
+      // que este cambio viene a quitar.
+      const cual = esSemanaActual() ? 'esta semana' : 'esa semana';
       const etiqueta = consumo > 0
-        ? `Te queda <b>${tiene}%</b> de lo que necesitas · esta semana −${consumo}% → te quedará <b>${restante}%</b>`
+        ? `Te queda <b>${tiene}%</b> de lo que necesitas · ${cual} −${consumo}% → te quedará <b>${restante}%</b>`
         : (tiene === 0 ? 'Se te <b>acabó</b>' : `Te queda <b>${tiene}%</b> de lo que necesitas para el periodo`);
 
       return `
@@ -203,6 +207,27 @@
       const s = Math.max(1, Math.min(12, parseInt(n, 10) || 1));
       return { semanas: s, inicio: ini, fin: sumarDias(ini, s * 7 - 1) };
     }
+
+    // ===== Ventana de la PROYECCION de las barras =====
+    //
+    // Es la semana cuyo consumo se proyecta, y viene por la URL desde el boton "Ver mi
+    // despensa" del plan (?inicio=&fin=). Sin ella el backend cae a la semana ACTUAL, que era
+    // el bug: mirabas el plan del 13/07, entrabas aqui y las barras hablaban del 27/07.
+    //
+    // NO es "la despensa de esa semana": hay UNA sola despensa (estado de la casa hoy). Lo que
+    // depende de la semana es cuanto se lleva el plan de esa semana, nada mas.
+    const VENTANA = (() => {
+      const q = new URLSearchParams(location.search);
+      const ok = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+      const inicio = q.get('inicio');
+      const fin = q.get('fin');
+      if (!ok(inicio)) return null; // sin parametros: el backend usa la semana actual
+      return { inicio, fin: ok(fin) ? fin : sumarDias(inicio, 6) };
+    })();
+    // Se anexa a TODA llamada que devuelve la despensa (GET, PATCH, DELETE, /compra): si solo
+    // se pasara en la carga inicial, mover una barra repintaria con la proyeccion de otra semana.
+    const qVentana = (sep = '?') => (VENTANA ? `${sep}inicio=${VENTANA.inicio}&fin=${VENTANA.fin}` : '');
+    const esSemanaActual = () => !VENTANA || VENTANA.inicio === lunesLocal(hoyPeru());
 
     // ===== Tabs =====
     const tabs = { inventario: 't-inventario', compra: 't-compra' };
@@ -247,16 +272,34 @@
         </div>`).join('');
     }
 
+    // Banner: dice DOS cosas distintas, y separarlas es el punto.
+    //   1. Que COMPRA abastecio la despensa y que periodo cubre  -> el periodo es de la compra.
+    //   2. De QUE SEMANA es la proyeccion de las barras          -> lo unico que es por semana.
+    //
+    // Antes decia "📦 Despensa del periodo 27/07 – 02/08", que se lee como que la despensa
+    // pertenece a ese periodo. No es asi: hay UNA sola despensa (el estado de la casa hoy) y la
+    // tabla no tiene columna de semana ni de periodo. Ese texto fue el origen de la confusion
+    // "¿esta despensa es de esta semana?". No vuelvas a esa redaccion.
     function pintarBanner() {
       const b = document.getElementById('banner-periodo');
       const ult = COMPRAS[0];
+      const partes = [];
+
+      partes.push('🧺 <b>Tienes una sola despensa</b>: es lo que hay en tu casa hoy.');
       if (!ult || !ult.periodo_inicio) {
-        b.innerHTML = '📦 Aún no registras la compra de un periodo. Ve a <b>🛒 Registrar compra</b>.';
-        return;
+        partes.push('🛒 Aún no registras una compra. Ve a <b>🛒 Registrar compra</b>.');
+      } else {
+        const vencido = ult.periodo_fin && hoyPeru() > ult.periodo_fin;
+        partes.push(`🛒 Tu última compra cubre del <b>${fmtFecha(ult.periodo_inicio)} – ${fmtFecha(ult.periodo_fin)}</b>`
+          + (vencido ? ' · <span style="color:var(--amber);font-weight:700">ese periodo venció, registra la compra del nuevo</span>' : ''));
       }
-      const vencido = ult.periodo_fin && hoyPeru() > ult.periodo_fin;
-      b.innerHTML = `📦 Despensa del periodo <b>${fmtFecha(ult.periodo_inicio)} – ${fmtFecha(ult.periodo_fin)}</b>`
-        + (vencido ? ' · <span style="color:var(--amber);font-weight:700">este periodo venció, registra la compra del nuevo periodo</span>' : '');
+      // Solo se anuncia la ventana cuando NO es la semana actual (es decir, cuando se llego
+      // desde el plan mirando otra semana): si no, seria ruido en el caso normal.
+      if (VENTANA && !esSemanaActual()) {
+        partes.push(`📅 Las barras muestran lo que se lleva la <b>semana del ${fmtFecha(VENTANA.inicio)} al ${fmtFecha(VENTANA.fin)}</b>`
+          + ' · <a href="/despensa.html">ver la semana actual</a>');
+      }
+      b.innerHTML = partes.join('<br>');
     }
 
     document.getElementById('buscar-despensa').oninput = pintarDespensa;
@@ -282,14 +325,14 @@
       const id = e.target.dataset.pct;
       if (!id) return;
       try {
-        DESPENSA = (await api(`/api/despensa/${id}`, { method: 'PATCH', body: { porcentaje: Number(e.target.value) } })).despensa;
+        DESPENSA = (await api(`/api/despensa/${id}${qVentana()}`, { method: 'PATCH', body: { porcentaje: Number(e.target.value) } })).despensa;
         pintarDespensa(); // repinta con la proyeccion recalculada por el servidor
       } catch (err) { alerta(alInv, err.error || 'No pudimos actualizar.'); }
     });
     document.getElementById('lista-despensa').addEventListener('click', async (e) => {
       const id = e.target.dataset.del;
       if (!id) return;
-      try { DESPENSA = (await api(`/api/despensa/${id}`, { method: 'DELETE' })).despensa; pintarDespensa(); }
+      try { DESPENSA = (await api(`/api/despensa/${id}${qVentana()}`, { method: 'DELETE' })).despensa; pintarDespensa(); }
       catch (err) { alerta(alInv, err.error || 'No pudimos quitar el producto.'); }
     });
 
@@ -402,7 +445,7 @@
       const nombre = document.getElementById('cc-nombre').value.trim();
       if (!nombre) { alerta(alCompra, 'Escribe el nombre del producto.'); return; }
       try {
-        DESPENSA = (await api('/api/despensa', { method: 'POST', body: {
+        DESPENSA = (await api(`/api/despensa${qVentana()}`, { method: 'POST', body: {
           nombre,
           categoria: document.getElementById('cc-cat').value,
           nivel: document.getElementById('cc-nivel').value,
@@ -447,9 +490,13 @@
       const lunes = lunesLocal(hoyPeru());
       document.getElementById('c-semanas').innerHTML = [1, 2, 3, 4, 5, 6, 7, 8]
         .map((n) => `<option value="${n}" ${n === semHogar ? 'selected' : ''}>${n} semana${n > 1 ? 's' : ''}</option>`).join('');
-      document.getElementById('c-inicio').value = lunes;
-      document.getElementById('c-fecha-ini').value = lunes;
-      document.getElementById('c-fecha-fin').value = sumarDias(lunes, 6);
+      // Si se llego desde el plan mirando una semana concreta, la compra arranca EN ESA semana:
+      // el usuario viene de ver que le falta ahi, y lo coherente es que registre la compra de
+      // ese periodo, no la de hoy.
+      const desde = (VENTANA && VENTANA.inicio) || lunes;
+      document.getElementById('c-inicio').value = desde;
+      document.getElementById('c-fecha-ini').value = desde;
+      document.getElementById('c-fecha-fin').value = sumarDias(desde, 6);
       document.querySelectorAll('input[name=modo-periodo]').forEach((r) => { r.onchange = () => {
         const fechas = periodoUI().modo === 'fechas';
         document.getElementById('modo-semanas').classList.toggle('hidden', fechas);
@@ -595,7 +642,7 @@
 
     async function cargar() {
       try {
-        const d = await api('/api/despensa');
+        const d = await api(`/api/despensa${qVentana()}`);
         CATALOGO = d.catalogo; DESPENSA = d.despensa; NIVELES = d.niveles; CATEGORIAS = d.categorias;
         document.getElementById('cc-cat').innerHTML = CATEGORIAS.map((c) => `<option value="${c}" ${c === 'otro' ? 'selected' : ''}>${CAT_INFO[c]?.ic || ''} ${CAT_INFO[c]?.txt || c}</option>`).join('');
         // Por defecto "bastante" (= 100%): este formulario vive en "Registrar compra", asi

@@ -50,6 +50,11 @@
             <div class="row" style="gap:8px;flex-wrap:wrap">
               <button class="btn btn-ghost btn-sm hidden" id="btn-detallar">🍳 Completar platos</button>
               <button class="btn btn-ghost btn-sm hidden" id="btn-faltantes">🛒 Lista de compras</button>
+              <!-- Abre la despensa con la proyeccion de LA SEMANA VISIBLE (le pasa inicio/fin).
+                   Sin eso, la despensa siempre proyectaba la semana ACTUAL: mirabas el plan del
+                   13/07 y las barras te hablaban del 27/07. -->
+              <button class="btn btn-ghost btn-sm" id="btn-despensa"
+                title="Abre tu despensa con lo que se lleva la semana que estás viendo">🧺 Ver mi despensa</button>
               <button class="btn btn-ghost btn-sm" id="btn-copiar">📋 Copiar otra semana</button>
             </div>
           </div>
@@ -281,15 +286,18 @@
       btn.title = `Ingredientes que te faltan para los ${programadas} plato(s) de esta semana`;
     }
 
-    // Badge del periodo: la semana visible pertenece al periodo de la ULTIMA compra
-    // registrada. Un periodo de N semanas cubre N semanas del plan (avisa "semana X de N").
+    // Badge del periodo. OJO CON EL LENGUAJE: el periodo es de la COMPRA, no de la despensa.
+    // Hay UNA sola despensa (es el estado de la casa hoy, la tabla no tiene columna de semana
+    // ni de periodo); lo que cubre N semanas es la compra que la abastecio. Antes esto decia
+    // "Despensa del periodo 27/07 – 02/08", que se lee como que cada semana tiene su propia
+    // despensa, y de ahi salio la confusion. No vuelvas a ese texto.
     let PERIODO_ACTIVO = null;
     const diasEntre = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
     function actualizarBadgePeriodo() {
       const el = document.getElementById('badge-periodo');
       const p = PERIODO_ACTIVO;
       if (!p || !p.periodo_inicio || !p.periodo_fin) {
-        el.innerHTML = '📦 <span class="muted">Aún no registras una compra. En <a href="/despensa.html">Mi despensa</a> asocias tu despensa a un periodo.</span>';
+        el.innerHTML = '🛒 <span class="muted">Aún no registras una compra. En <a href="/despensa.html">Mi despensa</a> registras la compra que abastece tu despensa.</span>';
         return;
       }
       const rango = `${fmtCorto(p.periodo_inicio)} – ${fmtCorto(p.periodo_fin)}`;
@@ -297,8 +305,8 @@
       const dentro = semana >= p.periodo_inicio && semana <= p.periodo_fin;
       const x = Math.floor(diasEntre(p.periodo_inicio, semana) / 7) + 1;
       el.innerHTML = dentro
-        ? `📦 <b>Despensa del periodo ${rango}</b> · semana ${x} de ${N}`
-        : `📦 <span class="muted">Esta semana está fuera del periodo de tu última compra (${rango}). Registra la compra de este periodo en Mi despensa.</span>`;
+        ? `🛒 <b>Tu compra del ${rango}</b> cubre esta semana (${x} de ${N}) · <span class="muted">tienes una sola despensa; lo que cambia cada semana es cuánto se lleva</span>`
+        : `🛒 <span class="muted">Esta semana está fuera del periodo de tu última compra (${rango}). Registra la compra de este periodo en Mi despensa.</span>`;
     }
     async function cargarPeriodo() {
       try { PERIODO_ACTIVO = (await api('/api/despensa/compras')).compras[0] || null; }
@@ -724,6 +732,14 @@
         } catch (err) { manejar(err); }
       });
     }
+
+    // ===== Ver mi despensa (con la proyeccion de ESTA semana) =====
+    // Se le pasa la ventana de la semana visible. Sin eso, la despensa proyectaba SIEMPRE la
+    // semana actual: mirabas el plan del 13/07, entrabas a la despensa y las barras te
+    // hablaban del 27/07 — el numero no correspondia a la semana que tenias delante.
+    document.getElementById('btn-despensa').onclick = () => {
+      location.href = `/despensa.html?inicio=${semana}&fin=${sumar(semana, 6)}`;
+    };
 
     // ===== Copiar semana =====
     document.getElementById('btn-copiar').onclick = async () => {

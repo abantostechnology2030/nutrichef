@@ -318,9 +318,15 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     check(/Periodo \d{2}\/\d{2}/.test(txt(doc, '#lista-compras')), 'el historial muestra el periodo (dd/mm)');
     check(/periodo activo/.test(txt(doc, '#lista-compras')), 'la mas reciente se marca como "periodo activo"');
 
-    // Volver a la despensa: el banner avisa a que periodo pertenece.
+    // Volver a la despensa: el banner separa las DOS cosas que antes se mezclaban.
+    // El periodo es de la COMPRA, no de la despensa (hay UNA sola, es el estado de la casa hoy).
+    // El texto viejo, "Despensa del periodo X–Y", se leia como que cada semana tiene su propia
+    // despensa y fue el origen de una confusion reportada: por eso se comprueba que NO vuelva.
     doc.querySelector('#t-inventario').click(); await esperar(80);
-    check(/Despensa del periodo/.test(txt(doc, '#banner-periodo')), `el banner del periodo: "${txt(doc, '#banner-periodo')}"`);
+    const banner = txt(doc, '#banner-periodo');
+    check(/una sola despensa/i.test(banner), `el banner dice que hay UNA despensa: "${banner.slice(0, 70)}…"`);
+    check(/Tu última compra cubre/i.test(banner), 'y que el periodo es de la compra');
+    check(!/Despensa del periodo/i.test(banner), 'y NO vuelve al texto que causaba la confusion');
 
     // ===== Quitar un registro del historial =====
     // Lo que HAY QUE comprobar no es que la fila desaparezca, es que la DESPENSA NO CAMBIE:
@@ -367,6 +373,39 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
         method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
       });
       check(fantasma.status === 404, `borrar una compra inexistente (o de otro) da 404 (fue ${fantasma.status})`);
+    }
+  }
+
+  // ================= LA DESPENSA CON LA VENTANA DE OTRA SEMANA =================
+  // La despensa se abre desde el plan con ?inicio=&fin= de la semana que se estaba viendo.
+  // Antes NO recibia ventana y el backend caia a la semana ACTUAL: mirabas el plan del 13/07,
+  // entrabas a la despensa y las barras proyectaban el consumo del 27/07. El numero no
+  // correspondia a la semana que tenias delante, y de ahi la sensacion de que la despensa y el
+  // plan iban por separado.
+  console.log('\n=== despensa.html?inicio=&fin= (proyeccion de OTRA semana) ===');
+  {
+    const { semanas } = await api('/api/plan/semanas', token);
+    const conPlan = (semanas || []).sort((a, b) => b.items - a.items)[0];
+    if (!conPlan) {
+      check(false, 'el usuario de prueba no tiene semanas con platos (no se pudo probar la ventana)');
+    } else {
+      const fin = new Date(new Date(conPlan.semana + 'T00:00:00Z').getTime() + 6 * 86400000).toISOString().slice(0, 10);
+      const conV = await abrir(`despensa.html?inicio=${conPlan.semana}&fin=${fin}`, token, usuario);
+      check(conV.errores.length === 0, `sin errores de runtime ${conV.errores.join(' | ')}`);
+
+      const b = txt(conV.doc, '#banner-periodo');
+      check(/Las barras muestran lo que se lleva la semana/i.test(b), `el banner anuncia de que semana son los numeros: "${b.slice(-80)}"`);
+      const lbls = [...conV.doc.querySelectorAll('#lista-despensa .stock-lbl')].map((e) => e.textContent.replace(/\s+/g, ' '));
+      check(lbls.some((t) => /esa semana −\d+%/.test(t)), `las barras dicen "esa semana", no "esta": "${lbls.find((t) => /esa semana/.test(t)) || lbls[0]}"`);
+      // Y la compra arranca en ESA semana: vienes de ver que te falta ahi.
+      check(conV.doc.querySelector('#c-inicio').value === conPlan.semana,
+        `la compra arranca en esa semana (${conV.doc.querySelector('#c-inicio').value})`);
+
+      // La prueba de que la ventana SIRVE de algo: sin ella los numeros son otros.
+      const sinV = await abrir('despensa.html', token, usuario);
+      const lblsHoy = [...sinV.doc.querySelectorAll('#lista-despensa .stock-lbl')].map((e) => e.textContent.replace(/\s+/g, ' '));
+      check(lbls.join('|') !== lblsHoy.join('|'),
+        'la proyeccion de esa semana DIFIERE de la de la semana actual (la ventana se respeta)');
     }
   }
 

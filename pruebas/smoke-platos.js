@@ -201,6 +201,12 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     // La lista de compras no se ofrece con la semana vacia: no hay platos de los que sacar
     // faltantes, y el boton devolvia una lista vacia que parecia un error.
     check(pl.doc.querySelector('#btn-faltantes').classList.contains('hidden'), 'con la semana vacia NO se ofrece la lista de compras');
+    // "Ver mi despensa" abre la despensa con la ventana de la semana visible. Es el puente que
+    // faltaba entre las dos pantallas: sin el, la despensa siempre proyectaba la semana actual.
+    // Va SIEMPRE visible (a diferencia de la lista de compras): ver tu stock tiene sentido
+    // aunque la semana este vacia.
+    const btnDesp = pl.doc.querySelector('#btn-despensa');
+    check(!!btnDesp && !btnDesp.classList.contains('hidden'), 'el plan ofrece "Ver mi despensa" (tambien con la semana vacia)');
 
     // Este usuario no tiene hogar: la IA no puede proponer nada (el backend daria 409),
     // pero poner un plato PROPIO no la necesita. Los dos botones no se bloquean igual.
