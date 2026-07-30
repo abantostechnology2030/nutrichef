@@ -37,7 +37,11 @@
               <h3>En mi despensa <span class="muted" id="cont-desp" style="font-weight:400;font-size:14px"></span></h3>
               <input id="buscar-despensa" class="input" placeholder="🔍 Buscar producto…" style="width:auto;flex:1;min-width:160px;max-width:280px" />
             </div>
-            <div id="banner-periodo" style="font-size:12.5px;margin-bottom:14px;background:var(--green-soft);border-radius:10px;padding:9px 12px"></div>
+            <div id="banner-periodo" style="font-size:12.5px;margin-bottom:10px;background:var(--green-soft);border-radius:10px;padding:9px 12px"></div>
+            <!-- Que ventana proyectan las barras. Se rellena en pintarVentana() y solo aparece
+                 si hay algo que elegir (si la compra cubre una sola semana, las dos opciones
+                 serian lo mismo). -->
+            <div id="sel-ventana" class="row hidden" style="gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px"></div>
             <p class="muted" style="font-size:12.5px;margin-bottom:12px">Aquí ves tu stock de hoy. Lo que cambia de una semana a otra no es la despensa, sino <b>cuánto se lleva el plan de esa semana</b> (el tramo rayado). Para <b>agregar</b> productos o registrar lo que compraste, ve a <b>🛒 Registrar compra</b>.</p>
             <div id="lista-despensa" class="stack"></div>
           </div>
@@ -177,10 +181,10 @@
       const consumo = i.consumo_previsto || 0;
       const restante = i.restante === undefined ? tiene : i.restante;
 
-      // "esa semana" cuando la proyeccion no es de la semana actual (se llego desde el plan
-      // mirando otra): decirle "esta semana" a los numeros de otra semana es justo el enredo
-      // que este cambio viene a quitar.
-      const cual = esSemanaActual() ? 'esta semana' : 'esa semana';
+      // El nombre de la ventana ("esta semana" / "esa semana" / "todo el periodo") se decide en
+      // un solo sitio: decirle "esta semana" a los numeros de otra semana, o a los de un
+      // periodo de un mes, es falso — y era justo el enredo que hubo que deshacer.
+      const cual = nombreVentana();
       const etiqueta = consumo > 0
         ? `Te queda <b>${tiene}%</b> de lo que necesitas · ${cual} −${consumo}% → te quedará <b>${restante}%</b>`
         : (tiene === 0 ? 'Se te <b>acabó</b>' : `Te queda <b>${tiene}%</b> de lo que necesitas para el periodo`);
@@ -216,18 +220,29 @@
     //
     // NO es "la despensa de esa semana": hay UNA sola despensa (estado de la casa hoy). Lo que
     // depende de la semana es cuanto se lleva el plan de esa semana, nada mas.
-    const VENTANA = (() => {
+    // La ventana puede ser UNA SEMANA o TODO EL PERIODO (varias semanas): el calculo del
+    // consumo filtra las casillas por su fecha real, asi que un rango de 4 semanas suma los
+    // platos de las 4. Cada semana por separado responde "¿me alcanza esta semana?"; el periodo
+    // completo responde "¿me alcanza hasta la proxima compra?", que es otra pregunta y la que no
+    // se podia hacer antes (mirar semana a semana no acumula: ninguna descuenta las anteriores).
+    let VENTANA = (() => {
       const q = new URLSearchParams(location.search);
       const ok = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
       const inicio = q.get('inicio');
-      const fin = q.get('fin');
-      if (!ok(inicio)) return null; // sin parametros: el backend usa la semana actual
-      return { inicio, fin: ok(fin) ? fin : sumarDias(inicio, 6) };
+      const lunesHoy = lunesLocal(hoyPeru());
+      if (!ok(inicio)) return { inicio: lunesHoy, fin: sumarDias(lunesHoy, 6) };
+      return { inicio, fin: ok(q.get('fin')) ? q.get('fin') : sumarDias(inicio, 6) };
     })();
     // Se anexa a TODA llamada que devuelve la despensa (GET, PATCH, DELETE, /compra): si solo
-    // se pasara en la carga inicial, mover una barra repintaria con la proyeccion de otra semana.
-    const qVentana = (sep = '?') => (VENTANA ? `${sep}inicio=${VENTANA.inicio}&fin=${VENTANA.fin}` : '');
-    const esSemanaActual = () => !VENTANA || VENTANA.inicio === lunesLocal(hoyPeru());
+    // se pasara en la carga inicial, mover una barra repintaria con la proyeccion de otra ventana.
+    const qVentana = (sep = '?') => `${sep}inicio=${VENTANA.inicio}&fin=${VENTANA.fin}`;
+    const diasVentana = () => Math.round((new Date(VENTANA.fin + 'T00:00:00Z') - new Date(VENTANA.inicio + 'T00:00:00Z')) / 86400000) + 1;
+    const semanasVentana = () => Math.max(1, Math.round(diasVentana() / 7));
+    const esSemanaActual = () => semanasVentana() === 1 && VENTANA.inicio === lunesLocal(hoyPeru());
+    // Como se nombra la ventana en las etiquetas de las barras. Son tres casos distintos y
+    // llamarlos igual es lo que enredaba: "esta semana" aplicado a los numeros de otra semana,
+    // o a los de un periodo de un mes, es falso.
+    const nombreVentana = () => (semanasVentana() > 1 ? 'todo el periodo' : (esSemanaActual() ? 'esta semana' : 'esa semana'));
 
     // ===== Tabs =====
     const tabs = { inventario: 't-inventario', compra: 't-compra' };
@@ -280,6 +295,48 @@
     // pertenece a ese periodo. No es asi: hay UNA sola despensa (el estado de la casa hoy) y la
     // tabla no tiene columna de semana ni de periodo. Ese texto fue el origen de la confusion
     // "¿esta despensa es de esta semana?". No vuelvas a esa redaccion.
+    // Selector de la ventana que proyectan las barras.
+    //
+    // "Esta semana" responde "¿me alcanza esta semana?"; "Todo el periodo", "¿me alcanza hasta
+    // la proxima compra?". Son preguntas distintas y la segunda no se podia hacer: mirar semana
+    // a semana NO acumula (ninguna descuenta las anteriores), asi que con una compra de 4
+    // semanas ninguna pantalla avisaba de que al final del periodo te quedabas sin aceite.
+    //
+    // Solo se ofrece si hay algo que elegir: con una compra de una sola semana las dos opciones
+    // darian el mismo numero y el selector seria ruido.
+    function pintarVentana() {
+      const cont = document.getElementById('sel-ventana');
+      const ult = COMPRAS[0];
+      const hayPeriodo = ult && ult.periodo_inicio && ult.periodo_fin
+        && Math.round((new Date(ult.periodo_fin + 'T00:00:00Z') - new Date(ult.periodo_inicio + 'T00:00:00Z')) / 86400000) + 1 > 7;
+      if (!hayPeriodo) { cont.classList.add('hidden'); cont.innerHTML = ''; return; }
+
+      const lunesHoy = lunesLocal(hoyPeru());
+      const enPeriodo = VENTANA.inicio === ult.periodo_inicio && VENTANA.fin === ult.periodo_fin;
+      const btn = (activo, datos, txt) =>
+        `<button type="button" class="btn btn-sm ${activo ? '' : 'btn-ghost'}" ${datos}
+           style="padding:4px 10px;font-size:12px${activo ? '' : ';opacity:.75'}">${txt}</button>`;
+      cont.classList.remove('hidden');
+      // Si la ventana no es ni la semana actual ni el periodo (se llego del plan mirando otra
+      // semana), NINGUNO sale activo: marcar "Esta semana" seria mentir. El banner ya dice cual es.
+      cont.innerHTML = '<span class="muted" style="font-size:12px">Ver lo que se lleva:</span>'
+        + btn(!enPeriodo && VENTANA.inicio === lunesHoy, `data-ventana="semana" data-ini="${lunesHoy}" data-fin="${sumarDias(lunesHoy, 6)}"`, '📅 Esta semana')
+        + btn(enPeriodo, `data-ventana="periodo" data-ini="${ult.periodo_inicio}" data-fin="${ult.periodo_fin}"`,
+          `📦 Todo el periodo (${fmtFecha(ult.periodo_inicio)} – ${fmtFecha(ult.periodo_fin)})`);
+    }
+
+    // Cambiar de ventana NO recarga la pagina: solo vuelve a pedir la despensa con el rango
+    // nuevo. El stock no cambia (es uno solo); lo que se recalcula es la proyeccion.
+    document.getElementById('sel-ventana').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-ventana]');
+      if (!b) return;
+      VENTANA = { inicio: b.dataset.ini, fin: b.dataset.fin };
+      try {
+        DESPENSA = (await api(`/api/despensa${qVentana()}`)).despensa;
+        pintarDespensa(); pintarBanner(); pintarVentana();
+      } catch (err) { alerta(alInv, err.error || 'No pudimos recalcular la proyección.'); }
+    });
+
     function pintarBanner() {
       const b = document.getElementById('banner-periodo');
       const ult = COMPRAS[0];
@@ -293,11 +350,13 @@
         partes.push(`🛒 Tu última compra cubre del <b>${fmtFecha(ult.periodo_inicio)} – ${fmtFecha(ult.periodo_fin)}</b>`
           + (vencido ? ' · <span style="color:var(--amber);font-weight:700">ese periodo venció, registra la compra del nuevo</span>' : ''));
       }
-      // Solo se anuncia la ventana cuando NO es la semana actual (es decir, cuando se llego
-      // desde el plan mirando otra semana): si no, seria ruido en el caso normal.
-      if (VENTANA && !esSemanaActual()) {
-        partes.push(`📅 Las barras muestran lo que se lleva la <b>semana del ${fmtFecha(VENTANA.inicio)} al ${fmtFecha(VENTANA.fin)}</b>`
-          + ' · <a href="/despensa.html">ver la semana actual</a>');
+      // Solo se anuncia la ventana cuando NO es la semana actual (se llego desde el plan mirando
+      // otra semana, o se pidio todo el periodo): si no, seria ruido en el caso normal.
+      if (!esSemanaActual()) {
+        const n = semanasVentana();
+        const rango = `del ${fmtFecha(VENTANA.inicio)} al ${fmtFecha(VENTANA.fin)}`;
+        partes.push('📅 Las barras muestran lo que se lleva '
+          + (n > 1 ? `<b>todo el periodo</b>: ${n} semanas, ${rango}` : `<b>la semana</b> ${rango}`));
       }
       b.innerHTML = partes.join('<br>');
     }
@@ -637,6 +696,7 @@
             }).join('')
           : '<p class="muted">Aún no registras compras.</p>';
         pintarBanner();
+        pintarVentana(); // necesita COMPRAS[0] para saber el rango del periodo
       } catch { cont.innerHTML = '<p class="muted">No pudimos cargar el historial.</p>'; }
     }
 

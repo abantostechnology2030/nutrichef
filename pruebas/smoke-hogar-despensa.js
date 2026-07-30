@@ -328,6 +328,52 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     check(/Tu última compra cubre/i.test(banner), 'y que el periodo es de la compra');
     check(!/Despensa del periodo/i.test(banner), 'y NO vuelve al texto que causaba la confusion');
 
+    // ===== Selector "Esta semana / Todo el periodo" =====
+    // Mirar semana a semana NO acumula: ninguna semana descuenta las anteriores. Con una compra
+    // de varias semanas, sin esta opcion no habia forma de preguntar "¿me alcanza hasta la
+    // proxima compra?" — y por eso nadie se enteraba de que al final del periodo se quedaba sin
+    // aceite. La compra de esta prueba cubre 3 semanas, asi que el selector debe ofrecerse.
+    {
+      const sel = doc.querySelector('#sel-ventana');
+      check(!!sel && !sel.classList.contains('hidden'), 'con una compra de varias semanas se ofrece elegir la ventana');
+      const opciones = [...sel.querySelectorAll('[data-ventana]')];
+      check(opciones.length === 2, `dos opciones: semana y periodo (= ${opciones.length})`);
+
+      sel.querySelector('[data-ventana="periodo"]').click(); await esperar(900);
+      const lbls = [...doc.querySelectorAll('#lista-despensa .stock-lbl')].map((e) => e.textContent.replace(/\s+/g, ' '));
+      // El periodo de la compra de esta prueba puede no tener platos (el hogar sembrado los
+      // tiene en otras semanas), y entonces no hay consumo que etiquetar. Se dice cual de los
+      // dos casos ocurrio en vez de dar un OK que no prueba nada: un aserto con rama de escape
+      // silenciosa es peor que no tenerlo.
+      const conConsumo = lbls.filter((t) => /−\d+%/.test(t)).length;
+      check(conConsumo === 0 || lbls.some((t) => /todo el periodo −\d+%/.test(t)),
+        conConsumo
+          ? `al elegir el periodo las barras dicen "todo el periodo": "${lbls.find((t) => /todo el periodo/.test(t))}"`
+          : 'el periodo de la compra no tiene platos programados: no hay consumo que etiquetar (se comprueba en el banner y en la acumulacion)');
+      check(/todo el periodo/i.test(txt(doc, '#banner-periodo')), 'y el banner anuncia que son varias semanas');
+
+      // Lo que de verdad hay que fijar: un rango de varias semanas SUMA los platos de todas.
+      // Se compara la semana con mas platos contra un rango que la contiene junto a otras.
+      const tot = (a) => a.reduce((n, d) => n + (d.consumo_previsto || 0), 0);
+      const todasSem = ((await api('/api/plan/semanas', token)).semanas || []).sort((a, b) => a.semana.localeCompare(b.semana));
+      const primera = todasSem[0];
+      const ultima = todasSem[todasSem.length - 1];
+      if (primera && ultima && primera.semana !== ultima.semana) {
+        const finPrimera = new Date(new Date(primera.semana + 'T00:00:00Z').getTime() + 6 * 86400000).toISOString().slice(0, 10);
+        const finUltima = new Date(new Date(ultima.semana + 'T00:00:00Z').getTime() + 6 * 86400000).toISOString().slice(0, 10);
+        const unaSem = tot((await api(`/api/despensa?inicio=${primera.semana}&fin=${finPrimera}`, token)).despensa);
+        const todo = tot((await api(`/api/despensa?inicio=${primera.semana}&fin=${finUltima}`, token)).despensa);
+        check(todo > unaSem, `un rango de varias semanas ACUMULA (${unaSem} pts en la semana ${primera.semana} vs ${todo} pts en el rango completo)`);
+      } else {
+        check(false, 'el usuario de prueba no tiene dos semanas con platos (no se pudo probar la acumulacion)');
+      }
+
+      // Volver a "esta semana", que es como lo encontro el resto del test.
+      sel.querySelector('[data-ventana="semana"]').click(); await esperar(700);
+      check(!/todo el periodo/i.test(txt(doc, '#lista-despensa .stock-lbl')),
+        'y se puede volver a la semana (las barras dejan de hablar del periodo)');
+    }
+
     // ===== Quitar un registro del historial =====
     // Lo que HAY QUE comprobar no es que la fila desaparezca, es que la DESPENSA NO CAMBIE:
     // "compras" es historial y la despensa es lo que hay en casa. Si borrar un registro
