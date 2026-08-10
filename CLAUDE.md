@@ -62,7 +62,7 @@ el servidor real) — ver `pruebas/README.md`.
 
 ## Estado — ✅ EN PRODUCCIÓN
 
-**https://nutrichef.solucionesctec.com** desde 2026-07-16 (ver `DEPLOY.md`). Local: `http://localhost:3002`. Admin: `admin@nutrichefia.pe` / `admin123` — **cambiar la contraseña**.
+**https://nutrichefia.solucionesctec.com** desde 2026-07-16 (dominio cambiado el 2026-08-10; antes `nutrichef.…`, ver `DEPLOY.md`). Local: `http://localhost:3002`. Admin: `admin@nutrichefia.pe` — la contraseña **en local** es `admin123`; **en producción ya se cambió**.
 
 > ⚠️ **Local y producción corren con `ai_modo='gemini'`** (verificado en las dos BD el 2026-07-27): ~3,5 s por plato, ~$0.038–0.045/semana. **Sin fallback**: si Gemini falla, la llamada devuelve 502 en vez de caer a Claude. Con Claude de prioridad son ~30 s y ~$0.14/semana (sonnet-5 en precio de lanzamiento), unas 4x. La verdad vive en la tabla `config` de **cada** BD (`SELECT * FROM config WHERE clave LIKE 'ai_%'`), no en este archivo ni en el `.env`: si comparas latencias o costos entre entornos, mírala primero.
 
@@ -535,13 +535,12 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 
 ## POR DÓNDE SEGUIR (pausa: 2026-07-18 · fases 1-5 hechas · **EN PRODUCCIÓN**)
 
-> **La app es pública:** https://nutrichef.solucionesctec.com. Cualquier cambio que subas a
+> **La app es pública:** https://nutrichefia.solucionesctec.com. Cualquier cambio que subas a
 > `main` y despliegues lo ven usuarios reales. Redeploy y trampas: `DEPLOY.md`.
 >
-> **Antes de tocar código, hay 3 cosas de operación pendientes** (ver Deuda): la contraseña
-> del admin sigue siendo `admin123` **y está en el repo**; el titular de Yape es un
+> **Quedan 2 cosas de operación pendientes** (ver Deuda): el titular de Yape es un
 > placeholder (nadie puede pagarte); y la key de Gemini es **compartida con MedicaIA y
-> NutriIA**, las tres en producción.
+> NutriIA**, las tres en producción. La contraseña del admin **ya se cambió** (2026-07-29).
 >
 > **Lo siguiente en producto es la fase 6** (pulir la UI del admin). La fase 5 (compra por
 > periodo + lista de faltantes + PDF) se cerró el 2026-07-18. Del rebranding solo falta el
@@ -684,8 +683,8 @@ Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `gener
     - **El arte venía RGB sin canal alfa (fondo blanco sólido).** Como el chef lleva **gorro y casaca blancos**, un "quitar el blanco" global lo agujereaba. Se recortó con **flood-fill del blanco DESDE LOS BORDES** (solo el fondo conectado al borde se vuelve transparente; el gorro y la casaca, rodeados por el cuerpo, se conservan). El script está en el scratchpad de esa sesión — no en el repo; si necesitas re-recortar arte nuevo, es un decodificador PNG en Node puro (`zlib`) con flood-fill + feather del halo. No había ImageMagick/PIL/sharp en la máquina.
   - ⚠️ **Falta el chef del semáforo del escáner** (3 versiones: sí / regular / no). Se retiró el de NutriIA porque `si/regular/no.png` llevaban el logo "N" en el pecho. **El sitio está reservado y estilado**: `.sem-personaje` + el campo `img` del objeto `SEM` (el banner ya lo pinta **si existe**). Con el arte listo, es rellenar, no rediseñar. Los originales de NutriIA siguen en `C:\app-nutriia\public\img\` si hicieran falta.
   - `archivos/` **SÍ se versiona** (se sacó del `.gitignore` heredado de NutriIA): ahí viven los únicos originales de marca y estaban solo en un disco.
-- **🔓 Credenciales admin en PRODUCCIÓN: `admin@nutrichefia.pe` / `admin123`.** Esa contraseña es la del `.env.example` **que está en el repo**: quien lo vea, la sabe. El sitio es público y de ahí cuelgan los pagos Yape, los planes y la config de IA. **Cambiarla.** Desde 2026-07-16 **ya se puede cambiar sin tocar la BD**: panel admin → Config → "Cambiar mi contraseña" (`PUT /api/admin/password`, exige la actual), o `node scripts/cambiar-password-admin.js "NuevaClave"` (funciona en local y en el server). Sigue sin cambiarse en producción.
+- **✅ Contraseña del admin en producción: CAMBIADA** (verificado el 2026-07-29: `admin@nutrichefia.pe` con `admin123` devuelve **401**; el usuario confirmó que la cambió él). Era la deuda de seguridad más urgente, porque `admin123` es la del `.env.example` **que está en el repo** y de ese panel cuelgan los pagos Yape, los planes y la config de IA. Se cambia sin tocar la BD desde el panel admin → Config → "Cambiar mi contraseña" (`PUT /api/admin/password`, exige la actual) o con `node scripts/cambiar-password-admin.js "NuevaClave"`. ⚠️ **En local sigue siendo `admin123`** (es lo que siembra `npm run seed`), así que no confundas los dos entornos al probar.
 - **🧾 El titular de Yape es un placeholder** ("NutriChefIA Peru"). El número sí es real (976901977). Vive en la tabla `config`, no en el `.env`: se cambia desde el panel admin. Con un titular falso nadie puede pagar.
 - **`platos.region`** se llena al generar pero no se usa en ninguna consulta todavía.
-- **Despliegue: ✅ EN PRODUCCIÓN** desde 2026-07-16 → **https://nutrichef.solucionesctec.com** (PM2 `nutrichefia`, puerto 4005, SSL con renovación automática). Repo: `github.com/abantostechnology2030/nutrichef`. Redeploy y trampas del día del despliegue en `DEPLOY.md`.
+- **Despliegue: ✅ EN PRODUCCIÓN** desde 2026-07-16 → **https://nutrichefia.solucionesctec.com** (PM2 `nutrichefia`, puerto 4005, SSL con renovación automática). Repo: `github.com/abantostechnology2030/nutrichef`. Redeploy y trampas del día del despliegue en `DEPLOY.md`.
 - **Cobertura de pruebas:** los smoke tests **no** tocan el escáner con imagen, el pago Yape ni el panel admin. Tampoco hay prueba del **fallback entre proveedores** — y ahí ya se escondió un bug meses (ver el aviso de Gemini vs Claude arriba).

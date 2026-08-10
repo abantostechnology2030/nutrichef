@@ -2,15 +2,24 @@
 
 NutriChefIA corre como **un solo proceso** Express (API + frontend estático + `/uploads`) en el VPS Hetzner compartido con eskulclass / publipropiedades / medicaIA / nutriia / finanzasia.
 
-> ✅ **Estado: EN PRODUCCIÓN** desde 2026-07-16 → **https://nutrichef.solucionesctec.com**
+> ✅ **Estado: EN PRODUCCIÓN** desde 2026-07-16 → **https://nutrichefia.solucionesctec.com**
 >
 > Verificado de punta a punta contra producción: registro → hogar → despensa → **generar un plato con IA** (3,5 s) → **verificar un plato con alérgeno** (5,7 s, avisó correctamente). SSL de Let's Encrypt con renovación automática (`certbot.timer` activo).
+
+### ⚠️ Cambio de dominio (2026-08-10): `nutrichef` → `nutrichefia`
+
+La URL de acceso pasó de `nutrichef.solucionesctec.com` a **`nutrichefia.solucionesctec.com`**.
+
+- **El certificado cubre los DOS nombres** (`certbot certonly --nginx --cert-name nutrichef.solucionesctec.com -d nutrichef... -d nutrichefia... --expand`). El *cert-name* sigue siendo el viejo: es solo el nombre del archivo en `/etc/letsencrypt/live/`, no el dominio servido — **no lo renombres** o habrá que reescribir las rutas del `ssl_certificate` en nginx.
+- **nginx sirve la app en el nombre nuevo y devuelve `301` al viejo**, conservando ruta y query (`$request_uri`). El bloque del sitio pasó a `sites-available/nutrichefia.solucionesctec.com` (el enlace viejo de `sites-enabled` se quitó).
+- 🔴 **El registro DNS del nombre viejo fue eliminado**, así que ese `301` hoy **no se alcanza**: quien tenga un marcador antiguo recibe un error de DNS, no una redirección. Si se quiere que los enlaces viejos sigan funcionando, basta con recrear `A nutrichef.solucionesctec.com → 87.99.144.139`; la redirección y el certificado ya están puestos y empezaría a funcionar solo.
+- La app **no tiene el dominio escrito en ningún sitio** (todas las rutas del frontend son relativas), así que el cambio no necesitó tocar código ni redesplegar.
 
 ## Datos de producción
 
 | Dato | Valor |
 |------|-------|
-| URL pública | `https://nutrichef.solucionesctec.com` |
+| URL pública | `https://nutrichefia.solucionesctec.com` |
 | Servidor | Hetzner VPS `87.99.144.139` (compartido; hostname `eskulclass-server`) |
 | Acceso SSH | `ssh -i C:\Users\user\.ssh\publipropiedades_deploy root@87.99.144.139` |
 | Puerto backend | **`4005`** (4000=eskulclass, 4001=publipropiedades, 4002=medicaia, 4003=nutriia, 4004=finanzasia, 3000=pp-frontend, 5555/3001=calificaprof) |
@@ -32,7 +41,7 @@ NutriChefIA corre como **un solo proceso** Express (API + frontend estático + `
 3. ~~Deploy keys~~ → dos, ambas en *Settings → Deploy keys* del repo:
    - **`push-local`** (con *write access*): la máquina de desarrollo empuja con `~/.ssh/nutrichef_push`. El repo local lo usa vía `git config core.sshCommand` — **local, no global**.
    - **`vps-eskulclass-server`** (**solo lectura**): el servidor clona con `/root/.ssh/nutrichef_deploy`. Solo necesita leer; darle escritura sería regalarle permisos que no usa.
-4. ~~DNS~~ → `A nutrichef.solucionesctec.com` → `87.99.144.139`.
+4. ~~DNS~~ → `A nutrichefia.solucionesctec.com` → `87.99.144.139`.
 5. ~~Puerto 4005 libre~~ → confirmado por inspección (`ss -lntp`), no por suposición.
 6. **Secrets de GitHub Actions** — ⬜ pendiente, solo si se quiere el deploy por workflow. Hoy el redeploy es manual por SSH (abajo).
 
@@ -85,13 +94,13 @@ pm2 start ecosystem.config.cjs && pm2 save
 curl -s http://localhost:4005/api/health   # → {"ok":true,"servicio":"NutriChefIA",...}
 
 # 2. Nginx + SSL
-sudo cp nginx.nutrichef.solucionesctec.com.conf /etc/nginx/sites-available/nutrichef.solucionesctec.com
-sudo ln -s /etc/nginx/sites-available/nutrichef.solucionesctec.com /etc/nginx/sites-enabled/
+sudo cp nginx.nutrichefia.solucionesctec.com.conf /etc/nginx/sites-available/nutrichefia.solucionesctec.com
+sudo ln -s /etc/nginx/sites-available/nutrichefia.solucionesctec.com /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d nutrichef.solucionesctec.com --redirect
+sudo certbot --nginx -d nutrichefia.solucionesctec.com --redirect
 ```
 
-> El archivo `nginx.nutrichef.solucionesctec.com.conf` del repo es una **referencia**: certbot reescribe la config viva al agregar el bloque SSL.
+> El archivo `nginx.nutrichefia.solucionesctec.com.conf` del repo es una **referencia**: certbot reescribe la config viva al agregar el bloque SSL.
 
 ## Cómo redesplegar (manual por SSH)
 
