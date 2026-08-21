@@ -611,8 +611,12 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 /* Un dia SIN NINGUN plato se distingue del que ya tiene algo: rayado suave y borde punteado.
    Antes todos los dias eran blancos y habia que contar el "0/3" para saber cuales faltaban. */
 .dia-fila.sin-programar {
-  background: repeating-linear-gradient(135deg, var(--bg) 0 10px, #eef5ec 10px 20px);
-  border-style: dashed; border-color: #cfe0cb;
+  background: #dbe7d6;          /* verde apagado, claramente mas oscuro que el blanco */
+  border-color: #bcd2b5;
 }
-/* Si es HOY, manda el realce de hoy: saber en que dia estas importa mas que saber que esta vacio. */
-.dia-fila.hoy.sin-programar { border-style: solid; border-color: var(--primary); }
+/* Sobre ese fondo, las casillas vacias necesitan mas contraste o se difuminan en el. */
+.dia-fila.sin-programar .casilla.vacia { background: #f2f7f0; border-color: #b7cfb0; }
+/* Si es HOY manda el realce de hoy: saber en que dia estas importa mas que saber que esta
+   vacio. Hace falta repetir el color porque .sin-programar va DESPUES de .dia-fila.hoy y tiene
+   la misma especificidad: sin esta regla, el borde verde del dia actual se perderia. */
+.dia-fila.hoy.sin-programar { border-color: var(--primary); }

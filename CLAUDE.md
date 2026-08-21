@@ -514,7 +514,7 @@ Se abre pulsando el nombre en el sidebar y permite cambiar nombre, email, **foto
 
 ### Plan de comidas: legibilidad (2026-08-21)
 - **Desayuno / Almuerzo / Cena** pasaron de 11px en mayúsculas y gris a 14px, sin `text-transform` (que penaliza la lectura) y con el emoji aparte a 22px (`.mom-ic`).
-- **Un día sin ningún plato** lleva `.sin-programar`: fondo rayado y borde punteado. Antes todos eran blancos y había que leer el contador `0/3` para saber cuáles faltaban. Si además es **hoy**, manda el realce de hoy: saber en qué día estás importa más que saber que está vacío.
+- **Un día sin ningún plato** lleva `.sin-programar`: **fondo sólido más oscuro** (`#dbe7d6`). Antes todos eran blancos y había que leer el contador `0/3` para saber cuáles faltaban. Sobre ese fondo las casillas vacías se aclaran, o se difuminarían en él. Si además es **hoy**, se repite el borde verde: `.sin-programar` va después de `.dia-fila.hoy` y tiene la **misma especificidad**, así que sin esa regla el realce del día actual se perdería.
 
 ## Convenciones
 
