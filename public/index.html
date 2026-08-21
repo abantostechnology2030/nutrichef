@@ -74,7 +74,7 @@
   <script>
     // Si ya hay sesion, ir directo a la app.
     if (Sesion.token && Sesion.usuario) {
-      location.href = Sesion.usuario.rol === 'admin' ? '/admin.html' : '/app.html';
+      location.href = Sesion.usuario.rol === 'admin' ? '/admin.html' : '/inicio.html';
     }
 
     // ===== Instalar PWA (solo si NO está instalada) =====
@@ -114,7 +114,7 @@
     document.getElementById('ir-registro').onclick = (e) => { e.preventDefault(); vLogin.classList.add('hidden'); vReg.classList.remove('hidden'); };
     document.getElementById('ir-login').onclick = (e) => { e.preventDefault(); vReg.classList.add('hidden'); vLogin.classList.remove('hidden'); };
 
-    function redirigir(u) { location.href = u.rol === 'admin' ? '/admin.html' : '/app.html'; }
+    function redirigir(u) { location.href = u.rol === 'admin' ? '/admin.html' : '/inicio.html'; }
 
     document.getElementById('form-login').onsubmit = async (e) => {
       e.preventDefault();

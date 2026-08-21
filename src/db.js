@@ -84,6 +84,14 @@ db.exec(`
   );
 `);
 
+// Migracion: foto de perfil. Se guarda como DATA URL en la propia fila y no como archivo en
+// disco: el navegador la comprime a 256px antes de enviarla (~15-40 KB), asi no hay que montar
+// subida de archivos, ni servir /uploads, ni limpiar huerfanos cuando alguien se da de baja.
+// El tope de tamano lo impone la ruta que la escribe.
+if (!db.prepare('PRAGMA table_info(usuarios)').all().some((c) => c.name === 'foto')) {
+  db.exec('ALTER TABLE usuarios ADD COLUMN foto TEXT');
+}
+
 // ===== PAGOS (Yape, aprobados a mano por el admin) =====
 db.exec(`
   CREATE TABLE IF NOT EXISTS pagos (
@@ -546,7 +554,7 @@ function usuarioPublico(id) {
 
   const u = db
     .prepare(
-      `SELECT u.id, u.nombre, u.email, u.rol, u.plan_id, u.analisis_restantes, u.plan_expira,
+      `SELECT u.id, u.nombre, u.email, u.foto, u.rol, u.plan_id, u.analisis_restantes, u.plan_expira,
               p.nombre AS plan_nombre, p.precio AS plan_precio, p.analisis AS plan_analisis,
               p.historial_max AS plan_historial, p.platos_max AS plan_platos_max,
               p.semanas_max AS plan_semanas_max, p.generaciones_max AS plan_generaciones_max,
@@ -564,6 +572,7 @@ function usuarioPublico(id) {
     id: u.id,
     nombre: u.nombre,
     email: u.email,
+    foto: u.foto || null,
     rol: u.rol,
     plan_id: u.plan_id,
     plan_nombre: esAdmin ? 'Administrador' : u.plan_nombre || 'Free',

@@ -46,7 +46,7 @@ async function api(ruta, { method = 'GET', body, isForm = false } = {}) {
 function exigirSesion({ admin = false } = {}) {
   const u = Sesion.usuario;
   if (!Sesion.token || !u) { location.href = '/index.html'; return null; }
-  if (admin && u.rol !== 'admin') { location.href = '/app.html'; return null; }
+  if (admin && u.rol !== 'admin') { location.href = '/inicio.html'; return null; }
   return u;
 }
 
@@ -68,7 +68,8 @@ function pintarSidebar(seccionActiva) {
   const u = Sesion.usuario;
   const esAdmin = u?.rol === 'admin';
   const items = [
-    { id: 'inicio', href: '/app.html', ic: '🔍', txt: 'Analizar producto' },
+    { id: 'inicio', href: '/inicio.html', ic: '🏠', txt: 'Inicio' },
+    { id: 'analizar', href: '/app.html', ic: '🔍', txt: 'Analizar producto' },
   ];
   if (u?.incluye_planificador) {
     items.push({ id: 'plan', href: '/plan.html', ic: '📅', txt: 'Plan de comidas' });
@@ -88,10 +89,12 @@ function pintarSidebar(seccionActiva) {
     <div class="brand"><img src="/img/logo.png?v=2" alt="NutriChefIA" class="brand-logo" /></div>
     <nav class="nav">${nav}</nav>
     <div class="sidebar-foot">
-      <div class="userbox">
-        <div class="avatar">${iniciales(u?.nombre)}</div>
-        <div class="meta"><b>${u?.nombre || ''}</b><span>${u?.rol === 'admin' ? 'Administrador' : ('Plan ' + (u?.plan_nombre || 'Free'))}</span></div>
-      </div>
+      <button type="button" class="userbox-btn" title="Ver y editar mi perfil">
+        <div class="userbox">
+          <div class="avatar">${u?.foto ? `<img src="${u.foto}" alt="" />` : iniciales(u?.nombre)}</div>
+          <div class="meta"><b>${u?.nombre || ''}</b><span>${u?.rol === 'admin' ? 'Administrador' : ('Plan ' + (u?.plan_nombre || 'Free'))}</span></div>
+        </div>
+      </button>
       <button class="btn btn-block btn-sm" style="background:var(--logo-green);color:#fff" onclick="Sesion.cerrar(); location.href='/index.html'">Cerrar sesion</button>
     </div>`;
 }
@@ -389,3 +392,171 @@ function _guardarPrefsMascota(p) {
     if (caja.style.left) ubicar(parseFloat(caja.style.left), parseFloat(caja.style.top));
   });
 })();
+
+// ===== Barra inferior (solo movil) =====
+// Las 5 secciones principales a un pulgar de distancia, como en NutriIA. En el telefono el
+// sidebar esta escondido tras el boton de menu, asi que navegar costaba dos toques.
+//
+// NO se pinta para el admin: su navegacion es otra (panel, pagos, config) y no cabe en cinco
+// iconos. Tampoco en login/registro, que no tienen .main.
+(function pintarBottomNav() {
+  const u = Sesion.usuario;
+  if (!Sesion.token || !u || u.rol === 'admin') return;
+  if (!document.querySelector('.main')) return;
+  if (document.querySelector('.bottomnav')) return;
+
+  const ruta = location.pathname;
+  const items = [
+    { href: '/inicio.html', ic: '🏠', txt: 'Inicio' },
+    { href: '/app.html', ic: '🔍', txt: 'Analizar' },
+  ];
+  // Las tres del planificador solo si su plan lo incluye: enlaces que llevan a un 403 son peor
+  // que no tenerlos.
+  if (u.incluye_planificador) {
+    items.push({ href: '/plan.html', ic: '📅', txt: 'Plan' });
+    items.push({ href: '/despensa.html', ic: '🧺', txt: 'Despensa' });
+    items.push({ href: '/platos.html', ic: '🍲', txt: 'Platos' });
+  }
+
+  const nav = document.createElement('nav');
+  nav.className = 'bottomnav';
+  nav.innerHTML = items
+    .map((i) => `<a href="${i.href}" class="${ruta.endsWith(i.href) ? 'active' : ''}"><span class="bn-ic">${i.ic}</span>${i.txt}</a>`)
+    .join('');
+  document.body.appendChild(nav);
+})();
+
+// ===== Perfil del usuario (modal) =====
+//
+// Se abre pulsando el nombre en el sidebar. Vive aqui y no en una pagina propia porque se
+// alcanza desde CUALQUIER pantalla: sacarlo a /perfil.html obligaria a salir de lo que se
+// estaba haciendo y volver.
+//
+// La foto se comprime EN EL NAVEGADOR a 256px antes de subirla, y se guarda como data URL en
+// la fila del usuario. Sin compresion, una foto de celular son varios MB de base64 en la BD
+// (que ademas se respalda entera en cada despliegue).
+function comprimirFoto(file, maxLado = 256, calidad = 0.72) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) return reject(new Error('Archivo no valido'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const escala = Math.min(1, maxLado / Math.max(img.width, img.height));
+      const w = Math.round(img.width * escala);
+      const h = Math.round(img.height * escala);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', calidad));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
+    img.src = url;
+  });
+}
+
+function abrirPerfil() {
+  const u = Sesion.usuario || {};
+  let foto = u.foto || null;
+
+  const back = document.createElement('div');
+  back.className = 'modal-back show';
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:460px;text-align:left">
+    <h3>👤 Mi perfil</h3>
+    <div class="modal-body">
+      <div id="perfil-alerta" class="alert"></div>
+
+      <div class="row" style="gap:14px;align-items:center;margin-bottom:16px">
+        <div class="foto-preview" id="p-foto"></div>
+        <div class="stack" style="gap:6px">
+          <input type="file" id="p-file" accept="image/*" style="display:none" />
+          <button class="btn btn-ghost btn-sm" type="button" id="p-elegir">📷 Elegir foto</button>
+          <button class="btn btn-ghost btn-sm hidden" type="button" id="p-quitar">Quitar foto</button>
+          <span class="muted" style="font-size:11.5px">Se guarda pequeña (256px)</span>
+        </div>
+      </div>
+
+      <div class="field"><label>Nombre</label><input id="p-nombre" value="${esc(u.nombre || '')}" /></div>
+      <div class="field"><label>Email</label><input id="p-email" type="email" value="${esc(u.email || '')}" /></div>
+      <button class="btn btn-sm btn-block" type="button" id="p-guardar">Guardar cambios</button>
+
+      <div style="border-top:1px solid var(--line);margin:18px 0 12px"></div>
+      <h4 style="margin-bottom:8px">🔒 Cambiar contraseña</h4>
+      <div class="field"><label>Contraseña actual</label><input id="p-pass-act" type="password" autocomplete="current-password" /></div>
+      <div class="field"><label>Nueva contraseña</label><input id="p-pass-new" type="password" autocomplete="new-password" placeholder="Mínimo 6 caracteres" /></div>
+      <button class="btn btn-ghost btn-sm btn-block" type="button" id="p-cambiar-pass">Cambiar contraseña</button>
+    </div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" type="button" data-cerrar>Cerrar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+
+  const $ = (id) => back.querySelector('#' + id);
+  const al = $('perfil-alerta');
+  const cerrar = () => back.remove();
+  back.querySelector('[data-cerrar]').onclick = cerrar;
+  back.onclick = (e) => { if (e.target === back) cerrar(); };
+
+  const iniciales = (n) => (n || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
+  function pintarFoto() {
+    $('p-foto').innerHTML = foto ? `<img src="${foto}" alt="" />` : iniciales(u.nombre);
+    $('p-quitar').classList.toggle('hidden', !foto);
+  }
+  pintarFoto();
+
+  $('p-elegir').onclick = () => $('p-file').click();
+  $('p-file').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    limpiarAlerta(al);
+    try { foto = await comprimirFoto(file); pintarFoto(); }
+    catch { alerta(al, 'No pudimos procesar esa imagen.'); }
+    e.target.value = '';
+  };
+  $('p-quitar').onclick = () => { foto = null; pintarFoto(); };
+
+  $('p-guardar').onclick = async () => {
+    limpiarAlerta(al);
+    const body = { nombre: $('p-nombre').value, email: $('p-email').value, foto };
+    if (!String(body.nombre).trim()) { alerta(al, 'Escribe tu nombre.'); return; }
+    const btn = $('p-guardar');
+    btn.disabled = true;
+    try {
+      const d = await api('/api/auth/perfil', { method: 'PATCH', body });
+      Sesion.actualizarUsuario(d.usuario);
+      alerta(al, 'Perfil actualizado.', 'ok');
+      // El sidebar muestra nombre y foto: se repinta para que el cambio se vea al momento y no
+      // al recargar. Se conserva la seccion activa.
+      const sb = document.getElementById('sidebar');
+      if (sb) {
+        const act = sb.querySelector('.nav a.active');
+        sb.innerHTML = pintarSidebar(act ? act.getAttribute('href').replace(/^\/|\.html$/g, '') : '');
+        activarMenuMovil();
+      }
+    } catch (err) { alerta(al, err.error || 'No pudimos guardar tu perfil.'); }
+    finally { btn.disabled = false; }
+  };
+
+  $('p-cambiar-pass').onclick = async () => {
+    limpiarAlerta(al);
+    const actual = $('p-pass-act').value;
+    const nueva = $('p-pass-new').value;
+    if (!actual || !nueva) { alerta(al, 'Escribe tu contraseña actual y la nueva.'); return; }
+    const btn = $('p-cambiar-pass');
+    btn.disabled = true;
+    try {
+      await api('/api/auth/password', { method: 'POST', body: { actual, nueva } });
+      $('p-pass-act').value = '';
+      $('p-pass-new').value = '';
+      alerta(al, 'Contraseña actualizada.', 'ok');
+    } catch (err) { alerta(al, err.error || 'No pudimos cambiar la contraseña.'); }
+    finally { btn.disabled = false; }
+  };
+}
+
+// El bloque del usuario en el sidebar abre el perfil. Se engancha por delegacion en el body
+// para que siga funcionando cuando el sidebar se repinta tras guardar.
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.userbox-btn')) abrirPerfil();
+});

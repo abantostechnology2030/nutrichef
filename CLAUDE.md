@@ -44,6 +44,7 @@ npm start          # node src/server.js
 npm run dev        # node --watch src/server.js  <- usar este al desarrollar
 
 npm run smoke        # smoke test de hogar + despensa (gratis, ~10s, servidor arriba)
+npm run smoke:inicio # dashboard + barra inferior + perfil (gratis, ~10s)
 npm run smoke:platos # smoke test de la biblioteca + el calendario sin IA (gratis, ~15s)
 npm run smoke:plan   # calendario + generar + verificar con IA REAL (4 llamadas, ~60s)
                      #   -> $0.012 con gemini | $0.047 con claude  (segun ai_prioridad!)
@@ -100,7 +101,8 @@ src/
     freemium.js          # candadoFreemium + descontarAnalisis: el candado del ESCANER
     planificador.js      # requierePlanificador (gate del plan) + requiereHogar (onboarding)
   routes/
-    auth.routes.js       # /registro, /login, /yo
+    auth.routes.js       # /registro, /login, /yo, /perfil (PATCH), /password (POST)
+    inicio.routes.js     # dashboard: comidas de hoy + estadisticas de uso (sin IA)
     analisis.routes.js   # escaner: /texto (cache-first), /imagen (2 fotos), /historial, DELETE
     hogar.routes.js      # hogar + CRUD de integrantes (condiciones y alergias)
     despensa.routes.js   # inventario (alta inmediata) + /compra (snapshot por periodo) + /compras (historial, con borrado)
@@ -114,6 +116,7 @@ src/
     contexto.js          # arma el contexto del hogar para los prompts (fuente unica)
 public/
   index.html             # login / registro
+  inicio.html            # DASHBOARD: saludo, comidas de hoy, plan y estadisticas
   app.html               # ESCANER de productos (semaforo)
   hogar.html             # familia, condiciones medicas, alergias, region
   despensa.html          # ver la despensa (buscar) + registrar compra (agregar producto + marcar comprados)
@@ -483,6 +486,35 @@ Las **alergias** son exclusión **absoluta** en el prompt (nunca "preferencia").
 ### Flujo de pago Yape + vencimiento
 Usuario sube comprobante (`numero_operacion` único, un pago pendiente a la vez) → `pendiente` → admin aprueba → transacción asigna el plan, **reinicia `analisis_restantes`** y fija `plan_expira` = hoy + `dias_vigencia` (si renueva antes de vencer, extiende desde la fecha vigente). Al vencer, `usuarioPublico` **degrada a Free** en el siguiente acceso (perezoso, sin cron).
 - **Aprobar/rechazar usan el modal propio `confirmar()`**, no el `confirm()` nativo (2026-07-16). El de aprobar **pregunta si ya se verificó el Yape** antes de activar el plan — la aprobación es irreversible (asigna plan y reinicia cupos), así que la fricción es a propósito. El input del QR de Yape está en español ("Seleccionar imagen…", input nativo oculto tras un `<label>`).
+
+### Dashboard de inicio (`inicio.routes.js` + `inicio.html`) — 2026-08-21
+Es la pantalla de aterrizaje tras el login (antes se caia directo al escáner). Muestra saludo por hora, **las comidas de hoy con su fecha**, el plan actual, el periodo de compra y 8 tarjetas de estadísticas.
+- **Una sola llamada** (`GET /api/inicio`) devuelve todo. Armarlo desde el cliente serían **cuatro** peticiones en la pantalla que más se abre, y cada una trae cargas completas (todos los platos, toda la despensa) para acabar mostrando un número.
+- **No usa IA ni consume cupo:** son conteos sobre datos que ya están en la BD.
+- `fechaCasilla` repite el criterio de `plan.routes.js` (`DIA_NUM`, domingo = séptimo día). Si aquí se calculara distinto, el dashboard mostraría como "hoy" los platos de otro día.
+- El **consumo de la despensa** se mide como `100 − promedio(porcentaje)`, coherente con que el 100% significa *"tengo todo lo que el plan necesita para el periodo"*.
+- El **uso de IA suma las dos fuentes** (`generaciones` y `analisis`), como el panel admin: contar solo una dejaría fuera la mitad del gasto.
+- El saludo usa la hora de **Perú**, no la del navegador: un reloj en otra zona daría "buenas noches" a media mañana.
+- Una comida sin planificar **se muestra** invitando a llenarla; esconderla haría creer que el día está completo.
+- Lo cubre `npm run smoke:inicio`, que además **cruza los conteos con `/api/despensa` y `/api/hogar`**: si el dashboard contara por su cuenta, dos pantallas dirían números distintos de lo mismo.
+
+### Barra inferior en móvil (`api.js`) — 2026-08-21
+Cinco secciones (Inicio, Analizar, Plan, Despensa, Platos) fijas abajo, como en NutriIA. En el teléfono el sidebar está tras el botón de menú, así que navegar costaba dos toques.
+- **No se pinta para el admin** (su navegación es otra y no cabe en cinco iconos) ni en login/registro.
+- Las tres del planificador solo aparecen si el plan lo incluye: un enlace que lleva a un 403 es peor que no tenerlo.
+- ⚠️ **Entra exactamente en el mismo breakpoint en que se esconde el sidebar (760px).** Si entrara antes (860, como en NutriIA) habría un tramo con **las dos navegaciones a la vez**. El `.main` reserva 76px abajo o la barra tapa el final del contenido.
+
+### Perfil del usuario (modal en `api.js`) — 2026-08-21
+Se abre pulsando el nombre en el sidebar y permite cambiar nombre, email, **foto** y contraseña.
+- Es un **modal y no una página**: se alcanza desde cualquier pantalla, y sacarlo a `/perfil.html` obligaría a abandonar lo que se estaba haciendo.
+- **La foto se guarda como data URL en `usuarios.foto`**, no como archivo en disco: el navegador la comprime a 256px (~15-40 KB) antes de enviarla, así no hay subida de archivos, ni `/uploads` que servir, ni huérfanos que limpiar. El backend valida el prefijo `data:image/...` y **topa el tamaño en 400 KB** — sin ese tope, cualquiera metería megas de base64 en una fila que además se respalda entera en cada despliegue.
+- ⚠️ **`usuarioPublico` tiene una lista EXPLÍCITA de columnas**: al añadir `foto` hubo que agregarla también al `SELECT`, o la ruta guardaba bien y devolvía `null`. Ya me pasó. Si añades una columna de usuario que el front deba ver, tócalo en los dos sitios.
+- **Cambiar la contraseña exige la actual** aunque la sesión esté abierta: si alguien deja el navegador abierto, no debería poder cambiarla y dejar fuera al dueño de la cuenta.
+- En jsdom hay que **doblar `canvas`** (`getContext`/`toDataURL`): no lo implementa, y la compresión de la foto lo toca al cargar.
+
+### Plan de comidas: legibilidad (2026-08-21)
+- **Desayuno / Almuerzo / Cena** pasaron de 11px en mayúsculas y gris a 14px, sin `text-transform` (que penaliza la lectura) y con el emoji aparte a 22px (`.mom-ic`).
+- **Un día sin ningún plato** lleva `.sin-programar`: fondo rayado y borde punteado. Antes todos eran blancos y había que leer el contador `0/3` para saber cuáles faltaban. Si además es **hoy**, manda el realce de hoy: saber en qué día estás importa más que saber que está vacío.
 
 ## Convenciones
 

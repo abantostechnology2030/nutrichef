@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Inicio</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Inicio</h2>
+        <div class="spacer"></div>
+        <span class="analisis-pill" id="pill-inicio">…</span>
+      </header>
+
+      <div class="content stack">
+        <div id="alerta-inicio" class="alert"></div>
+
+        <!-- Saludo -->
+        <div class="card hero-saludo">
+          <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+            <div style="min-width:0">
+              <h2 id="saludo" style="margin:0 0 4px">…</h2>
+              <p class="muted" id="saludo-sub" style="margin:0;font-size:13.5px"></p>
+            </div>
+            <div class="hero-chef">👨‍🍳</div>
+          </div>
+        </div>
+
+        <!-- Comidas de hoy -->
+        <div class="card">
+          <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+            <h3 style="margin:0">🍽️ Hoy comes</h3>
+            <span class="muted" id="lbl-fecha-hoy" style="font-size:13px"></span>
+          </div>
+          <div id="hoy-platos" class="grid grid-3"></div>
+        </div>
+
+        <!-- Estadisticas -->
+        <h3 style="margin:4px 0 0">📊 Tu actividad</h3>
+        <div id="stats" class="grid grid-4"></div>
+
+        <!-- Plan y periodo -->
+        <div class="grid grid-2">
+          <div class="card" id="card-plan"></div>
+          <div class="card" id="card-periodo"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <img class="mascota" src="/img/mascota-home.png" alt="" aria-hidden="true" />
+
+  <script src="/js/api.js"></script>
+  <script>
+    const U = exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('inicio');
+    activarMenuMovil();
+    const alIni = document.getElementById('alerta-inicio');
+
+    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const DIAS_TXT = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    function fechaLarga(iso) {
+      const d = new Date(iso + 'T00:00:00Z');
+      return `${DIAS_TXT[d.getUTCDay()]} ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]}`;
+    }
+    const fmtCorto = (iso) => { const [, m, d] = iso.split('-'); return `${d}/${m}`; };
+
+    // El saludo depende de la hora de PERU, no de la del navegador: alguien puede tener el
+    // reloj del equipo en otra zona y le diriamos "buenas noches" a media mañana.
+    function saludoPorHora() {
+      const h = new Date(Date.now() - 5 * 3600 * 1000).getUTCHours();
+      if (h < 12) return { txt: 'Buenos días', ic: '🌅' };
+      if (h < 19) return { txt: 'Buenas tardes', ic: '☀️' };
+      return { txt: 'Buenas noches', ic: '🌙' };
+    }
+
+    // Tarjeta de estadistica. El color NO es decorativo: agrupa por tema (plan en verde,
+    // despensa en naranja, hogar en morado, IA en azul), para que la fila se lea de un vistazo.
+    function tarjeta({ ic, valor, txt, sub, tono, href }) {
+      const cuerpo = `
+        <span class="stat-ic">${ic}</span>
+        <b class="stat-valor">${valor}</b>
+        <span class="stat-txt">${txt}</span>
+        ${sub ? `<span class="stat-sub">${sub}</span>` : ''}`;
+      return href
+        ? `<a class="stat-card tono-${tono}" href="${href}">${cuerpo}</a>`
+        : `<div class="stat-card tono-${tono}">${cuerpo}</div>`;
+    }
+
+    const MOM_IC = { desayuno: '🥣', almuerzo: '🍛', cena: '🍽️' };
+    const MOM_TXT = { desayuno: 'Desayuno', almuerzo: 'Almuerzo', cena: 'Cena' };
+
+    async function cargar() {
+      let d;
+      try { d = await api('/api/inicio'); }
+      catch (err) { alerta(alIni, err.error || 'No pudimos cargar tu inicio.'); return; }
+
+      // ===== Saludo =====
+      const s = saludoPorHora();
+      const nombre = (d.usuario?.nombre || '').split(' ')[0];
+      document.getElementById('saludo').textContent = `${s.ic} ${s.txt}, ${nombre}`;
+      const conPlan = d.hoy_platos.filter((h) => h.plato).length;
+      document.getElementById('saludo-sub').innerHTML = conPlan
+        ? `Hoy tienes <b>${conPlan}</b> comida(s) planificada(s). ${fechaLarga(d.hoy)}.`
+        : `Hoy no tienes comidas planificadas. <a href="/plan.html">Arma tu día</a> · ${fechaLarga(d.hoy)}.`;
+      document.getElementById('lbl-fecha-hoy').textContent = fechaLarga(d.hoy);
+      document.getElementById('pill-inicio').innerHTML = `👨‍🍳 Plan ${d.usuario?.plan_nombre || 'Free'}`;
+
+      // ===== Comidas de hoy =====
+      // Una casilla vacia NO se esconde: se muestra invitando a llenarla. Ocultarla haria
+      // creer que el dia esta completo.
+      document.getElementById('hoy-platos').innerHTML = d.hoy_platos.map((h) => {
+        if (!h.plato) {
+          return `<a class="hoy-card vacia" href="/plan.html">
+            <span class="hoy-mom">${MOM_IC[h.momento]} ${MOM_TXT[h.momento]}</span>
+            <span class="hoy-nombre muted">Sin planificar</span>
+            <span class="hoy-accion">+ Planificar</span>
+          </a>`;
+        }
+        const p = h.plato;
+        const kcal = p.info && p.info.calorias ? `${p.info.calorias} kcal` : '';
+        return `<a class="hoy-card ${h.cocinado ? 'cocinado' : ''}" href="/plan.html">
+          <span class="hoy-mom">${MOM_IC[h.momento]} ${MOM_TXT[h.momento]}</span>
+          <span class="hoy-ic">${iconoPlato(p.nombre, h.momento)}</span>
+          <span class="hoy-nombre">${esc(p.nombre)}</span>
+          <span class="hoy-meta">
+            ${p.tiempo_min ? `⏱️ ${p.tiempo_min} min` : ''}
+            ${kcal ? ` · ${kcal}` : ''}
+            ${h.cocinado ? ' · ✅ cocinado' : ''}
+          </span>
+        </a>`;
+      }).join('');
+
+      // ===== Estadisticas =====
+      const t = d.stats;
+      document.getElementById('stats').innerHTML = [
+        tarjeta({ ic: '📅', valor: t.semanas_programadas, txt: 'Semanas programadas', sub: `${t.casillas_llenas} platos en el calendario`, tono: 'verde', href: '/plan.html' }),
+        tarjeta({ ic: '🍲', valor: t.platos_guardados, txt: 'Platos en tu biblioteca', sub: `${t.platos_creados} creados en total`, tono: 'naranja', href: '/platos.html' }),
+        tarjeta({ ic: '🧺', valor: t.despensa_productos, txt: 'Productos en despensa', sub: t.despensa_agotados ? `${t.despensa_agotados} casi agotado(s)` : 'ninguno por acabarse', tono: 'ambar', href: '/despensa.html' }),
+        tarjeta({ ic: '📉', valor: `${t.consumo_despensa}%`, txt: 'Consumido de tu compra', sub: 'promedio de todos tus productos', tono: 'rojo', href: '/despensa.html' }),
+        tarjeta({ ic: '👨‍👩‍👧', valor: t.integrantes, txt: 'Integrantes del hogar', sub: d.hogar && d.hogar.ciudad ? d.hogar.ciudad : 'configura tu hogar', tono: 'morado', href: '/hogar.html' }),
+        tarjeta({ ic: '✨', valor: t.generaciones_total, txt: 'Generaciones de IA', sub: `${t.generaciones_semana} esta semana`, tono: 'azul' }),
+        tarjeta({ ic: '🔍', valor: t.analisis_total, txt: 'Productos escaneados', sub: d.usuario?.ilimitado ? 'escaneos ilimitados' : `te quedan ${d.usuario?.analisis_restantes ?? 0}`, tono: 'celeste', href: '/app.html' }),
+        tarjeta({ ic: '🍽️', valor: t.casillas_llenas, txt: 'Comidas planificadas', sub: 'desde que empezaste', tono: 'verde-claro', href: '/plan.html' }),
+      ].join('');
+
+      // ===== Plan actual =====
+      const u = d.usuario || {};
+      const lim = (v) => (v == null ? 'Ilimitado' : v);
+      document.getElementById('card-plan').innerHTML = `
+        <h3 style="margin-bottom:10px">💳 Tu plan</h3>
+        <div class="row" style="align-items:center;gap:10px;margin-bottom:12px">
+          <span class="badge ${u.plan_nombre === 'Premium' ? 'badge-premium' : ''}" style="font-size:14px">${esc(u.plan_nombre || 'Free')}</span>
+          ${u.dias_restantes != null ? `<span class="muted" style="font-size:13px">Te quedan <b>${u.dias_restantes}</b> día(s)</span>` : ''}
+        </div>
+        <div class="stack" style="gap:6px;font-size:13px">
+          <div class="row" style="justify-content:space-between"><span class="muted">Escaneos restantes</span><b>${u.ilimitado ? 'Ilimitado' : (u.analisis_restantes ?? 0)}</b></div>
+          <div class="row" style="justify-content:space-between"><span class="muted">Generaciones IA por semana</span><b>${lim(u.generaciones_max)}</b></div>
+          <div class="row" style="justify-content:space-between"><span class="muted">Platos guardados</span><b>${t.platos_guardados} / ${lim(u.platos_max)}</b></div>
+          <div class="row" style="justify-content:space-between"><span class="muted">Semanas programables</span><b>${lim(u.semanas_max)}</b></div>
+        </div>
+        <a class="btn btn-sm btn-block" href="/mi-plan.html" style="margin-top:12px">Ver mi suscripción</a>`;
+
+      // ===== Periodo de compra =====
+      const c = d.compra;
+      const hoyISO = d.hoy;
+      let cuerpoPeriodo;
+      if (!c || !c.periodo_inicio) {
+        cuerpoPeriodo = `<p class="muted" style="font-size:13.5px">Aún no registras una compra. Regístrala para que la IA sepa con qué cuentas.</p>
+          <a class="btn btn-sm btn-block" href="/despensa.html" style="margin-top:10px">Registrar mi compra</a>`;
+      } else {
+        const vencido = c.periodo_fin && hoyISO > c.periodo_fin;
+        cuerpoPeriodo = `
+          <p style="font-size:13.5px;margin-bottom:8px">Tu compra cubre del <b>${fmtCorto(c.periodo_inicio)}</b> al <b>${fmtCorto(c.periodo_fin)}</b>.</p>
+          <p class="muted" style="font-size:12.5px;margin-bottom:10px">${c.total_items} producto(s) registrados.
+            ${vencido ? '<span style="color:var(--amber);font-weight:700">Ese periodo ya venció.</span>' : ''}</p>
+          <div class="stack" style="gap:6px;font-size:13px">
+            <div class="row" style="justify-content:space-between"><span class="muted">Productos en despensa</span><b>${t.despensa_productos}</b></div>
+            <div class="row" style="justify-content:space-between"><span class="muted">Consumido (promedio)</span><b>${t.consumo_despensa}%</b></div>
+          </div>
+          <a class="btn btn-sm btn-block" href="/despensa.html" style="margin-top:12px">Ver mi despensa</a>`;
+      }
+      document.getElementById('card-periodo').innerHTML = `<h3 style="margin-bottom:10px">🛒 Tu compra</h3>${cuerpoPeriodo}`;
+    }
+
+    cargar();
+  </script>
+</body>
+</html>

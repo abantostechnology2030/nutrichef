@@ -23,6 +23,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ===== API =====
 app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/inicio', require('./routes/inicio.routes'));  // dashboard de bienvenida (sin IA)
 app.use('/api/analisis', require('./routes/analisis.routes')); // escaner de productos
 app.use('/api/hogar', require('./routes/hogar.routes'));       // familia, condiciones, region
 app.use('/api/despensa', require('./routes/despensa.routes')); // inventario + compra semanal
