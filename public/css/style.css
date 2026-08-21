@@ -410,3 +410,91 @@ tbody tr:hover { background: var(--bg); }
   .hamb { display: block; }
   .content { padding: 18px; }
 }
+
+/* ===== Mascota arrastrable y ocultable =====
+   La imagen deja de ser decorativa (`pointer-events:none`) y pasa a ser agarrable. Va dentro
+   de .mascota-caja, que es la que se mueve y la que cuelga el boton de cerrar; asi el arrastre
+   y el boton no pelean por el mismo elemento. `touch-action:none` es imprescindible: sin eso,
+   en el telefono el navegador interpreta el arrastre como scroll y la mascota no se mueve. */
+.mascota-caja { position: fixed; right: 14px; bottom: 74px; z-index: 6; touch-action: none; }
+.mascota-caja .mascota {
+  position: static; width: 128px; height: auto; display: block;
+  pointer-events: auto; cursor: grab; user-select: none; -webkit-user-drag: none;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .22));
+}
+.mascota-caja.arrastrando .mascota { cursor: grabbing; }
+.mascota-cerrar {
+  position: absolute; top: -6px; right: -6px; width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid var(--line); background: #fff; color: var(--muted);
+  font-size: 15px; line-height: 1; cursor: pointer; box-shadow: var(--shadow-sm);
+  display: grid; place-items: center; padding: 0; font-family: inherit;
+}
+.mascota-cerrar:hover { background: var(--primary-soft); color: var(--primary); }
+.mascota-volver {
+  position: fixed; right: 14px; bottom: 74px; z-index: 6; border: 1px solid var(--line);
+  background: #fff; border-radius: 999px; padding: 7px 13px; font-size: 12.5px;
+  font-weight: 700; color: var(--muted); cursor: pointer; box-shadow: var(--shadow-sm);
+  font-family: inherit;
+}
+.mascota-volver:hover { color: var(--ink); }
+.mascota-caja.hidden, .mascota-volver.hidden { display: none; }
+@media (max-width: 760px) {
+  .mascota-caja .mascota { width: 84px; }
+  .mascota-caja, .mascota-volver { bottom: 78px; right: 8px; }
+}
+
+/* ===== Avatares de los integrantes del hogar =====
+   El avatar es un EMOJI que elige el usuario (mismo modelo que NutriIA): sin subida de
+   archivos, sin almacenamiento y sin moderacion de imagenes. Un hogar se reconoce de un
+   vistazo, que es justo lo que se pedia. */
+.avatar-op {
+  width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--line); background: #fff;
+  font-size: 22px; line-height: 1; cursor: pointer; display: grid; place-items: center;
+  padding: 0; transition: .12s; font-family: inherit;
+}
+.avatar-op:hover { border-color: var(--secondary); }
+.avatar-op.on { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 3px var(--primary-soft); }
+/* Grande, junto al nombre: es el que pidio el usuario ("que se muestre grande junto a su nombre"). */
+.avatar-fam {
+  width: 56px; height: 56px; flex-shrink: 0; border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-soft), var(--secondary-soft));
+  border: 2px solid var(--line);
+  display: grid; place-items: center; font-size: 30px; line-height: 1;
+}
+@media (max-width: 760px) { .avatar-fam { width: 46px; height: 46px; font-size: 24px; } }
+
+/* ===== Iconos de ingrediente / plato =====
+   Van sobre un circulo de color suave (no sueltos): asi se leen como un elemento de la interfaz
+   y no como un emoji perdido en el texto, y ademas se alinean solos en las listas. El color
+   sale de la CATEGORIA, para que la despensa se pueda barrer con la vista por tipo de producto. */
+.ing-ic {
+  display: inline-grid; place-items: center; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 50%;
+  font-size: 16px; line-height: 1; background: var(--primary-soft);
+}
+.ing-ic-lg { width: 42px; height: 42px; font-size: 23px; }
+.ing-ic-sm { width: 24px; height: 24px; font-size: 13px; }
+/* Un color por categoria (los mismos tonos que usan los chips de categoria). */
+.ic-abarrote   { background: #fdf1dc; }
+.ic-verdura    { background: #e4f5e0; }
+.ic-fruta      { background: #ffe6e6; }
+.ic-carne      { background: #ffe3e0; }
+.ic-pescado    { background: #dff1fb; }
+.ic-lacteo     { background: #eef0fb; }
+.ic-huevo      { background: #fdf4d8; }
+.ic-legumbre   { background: #f0e9df; }
+.ic-condimento { background: #f2f0ea; }
+.ic-bebida     { background: #e6f4f6; }
+.ic-otro       { background: #f0f0f0; }
+
+/* El icono grande de un plato en "Mis platos" y en el detalle de la receta. */
+.plato-ic {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 58px; height: 58px; border-radius: 16px;
+  font-size: 32px; line-height: 1;
+  background: linear-gradient(135deg, var(--primary-soft), var(--secondary-soft));
+  border: 1px solid var(--line);
+}
+@media (max-width: 760px) { .plato-ic { width: 48px; height: 48px; font-size: 26px; } }
+/* Lista de ingredientes de la receta: cada uno con su icono alineado. */
+.ing-linea { display: flex; align-items: center; gap: 9px; padding: 3px 0; }

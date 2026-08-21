@@ -165,6 +165,13 @@ db.exec(`
   );
 `);
 
+// Migracion: avatar del integrante (un emoji). La tabla nacio sin esta columna, asi que se
+// agrega aparte. NULL = el usuario todavia no eligio, y quien lo pinta pone el de por defecto:
+// se deja NULL en vez de rellenar filas para no reescribir datos que nadie ha tocado.
+if (!db.prepare('PRAGMA table_info(integrantes)').all().some((c) => c.name === 'avatar')) {
+  db.exec('ALTER TABLE integrantes ADD COLUMN avatar TEXT');
+}
+
 // ===== CATALOGO DE INGREDIENTES (administrado por el admin) =====
 // Lista base con la que el usuario abastece su despensa mas rapido.
 db.exec(`
@@ -623,6 +630,18 @@ const PRESUPUESTOS = ['bajo', 'medio', 'alto'];
 // Sugerencias para el formulario del hogar. NO son una lista cerrada: el usuario puede
 // escribir cualquier otra condicion o alergia y se guarda igual (texto libre).
 // Condiciones -> la IA ADAPTA el plato. Alergias -> la IA EXCLUYE el ingrediente (duro).
+// Avatares que se ofrecen para los integrantes. Es solo una LISTA DE SUGERENCIAS del
+// formulario, igual que las condiciones y las alergias: la columna es texto libre, asi que si
+// manana se agregan mas, las que ya eligieron los usuarios siguen valiendo.
+const AVATAR_DEFAULT = '\u{1F642}';
+const AVATARES = [
+  '\u{1F642}', '\u{1F466}', '\u{1F467}', '\u{1F9D2}', '\u{1F476}', '\u{1F468}', '\u{1F469}',
+  '\u{1F9D1}', '\u{1F474}', '\u{1F475}', '\u{1F9D4}', '\u{1F469}\u200D\u{1F9B0}',
+  '\u{1F468}\u200D\u{1F9B3}', '\u{1F9B8}', '\u{1F9B8}\u200D\u2640\uFE0F',
+  '\u{1F431}', '\u{1F436}', '\u{1F98A}', '\u{1F43B}', '\u{1F981}', '\u{1F42F}',
+  '\u{1F428}', '\u{1F984}', '\u{1F43C}', '\u{1F438}', '\u{1F427}',
+];
+
 const CONDICIONES_COMUNES = [
   'diabetes', 'hipertension', 'colesterol alto', 'trigliceridos altos', 'sobrepeso',
   'obesidad', 'anemia', 'gastritis', 'colon irritable', 'celiaquia',
@@ -666,4 +685,6 @@ module.exports = {
   PRESUPUESTOS,
   CONDICIONES_COMUNES,
   ALERGIAS_COMUNES,
+  AVATARES,
+  AVATAR_DEFAULT,
 };

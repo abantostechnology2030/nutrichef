@@ -112,6 +112,7 @@
       return `
         <div class="result-section">
           <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+            <span class="plato-ic">${iconoPlato(p.nombre, p.momento)}</span>
             <div style="min-width:0;flex:1">
               <h4 style="margin-bottom:6px">${esc(p.nombre)}</h4>
               <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">
@@ -192,7 +193,7 @@
       const p = PLATOS.find((x) => x.id === id);
       if (!p) return;
       const ings = p.ingredientes.length
-        ? `<ul style="margin:0 0 14px 18px">${p.ingredientes.map((i) => `<li>${esc(i.nombre)}${i.cantidad ? ` — ${esc(i.cantidad)} ${esc(i.unidad)}` : ''}</li>`).join('')}</ul>`
+        ? `<div style="margin:0 0 14px">${p.ingredientes.map((i) => `<div class="ing-linea"><span class="ing-ic ing-ic-sm">${iconoIngrediente(i.nombre)}</span><span>${esc(i.nombre)}${i.cantidad ? ` — <b>${esc(i.cantidad)} ${esc(i.unidad)}</b>` : ''}</span></div>`).join('')}</div>`
         : '<p class="muted" style="margin-bottom:14px">Sin ingredientes anotados.</p>';
       const pasos = p.pasos?.length
         ? `<h4 style="margin-bottom:6px">Preparación</h4><ol style="margin:0 0 14px 18px">${p.pasos.map((s) => `<li style="margin-bottom:4px">${esc(s)}</li>`).join('')}</ol>`
@@ -201,7 +202,7 @@
       const back = document.createElement('div');
       back.className = 'modal-back show';
       back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:560px">
-        <h3>${esc(p.nombre)}</h3>
+        <h3><span style="margin-right:6px">${iconoPlato(p.nombre, p.momento)}</span>${esc(p.nombre)}</h3>
         <div class="modal-body">
           <h4 style="margin-bottom:6px">Ingredientes</h4>
           ${ings}

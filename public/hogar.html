@@ -72,6 +72,13 @@
             <h4 id="form-int-titulo" style="margin-bottom:10px">Nuevo integrante</h4>
             <div id="alerta-int" class="alert"></div>
             <input type="hidden" id="i-id" />
+            <!-- El avatar va PRIMERO: es lo que identifica a la persona de un vistazo en la
+                 lista. Es un emoji, no una foto: sin subida de archivos ni almacenamiento. -->
+            <div class="field">
+              <label>Avatar</label>
+              <input type="hidden" id="i-avatar" />
+              <div id="avatar-picker" class="row" style="flex-wrap:wrap;gap:8px"></div>
+            </div>
             <div class="grid grid-2">
               <div class="field"><label>Nombre</label><input id="i-nombre" placeholder="Ej: Rosa" /></div>
               <div class="field"><label>Edad (opcional)</label><input id="i-edad" type="number" min="0" max="120" placeholder="Ej: 58" /></div>
@@ -179,10 +186,13 @@
         return `
           <div class="card" style="padding:14px">
             <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
-              <div style="flex:1;min-width:200px">
-                <b>${i.nombre}</b> ${i.edad != null ? `<span class="muted">· ${i.edad} años</span>` : ''}
+              <div class="row" style="flex:1;min-width:200px;gap:12px;align-items:flex-start">
+                <span class="avatar-fam">${i.avatar || '🙂'}</span>
+                <div style="flex:1;min-width:140px">
+                <b style="font-size:16px">${i.nombre}</b> ${i.edad != null ? `<span class="muted">· ${i.edad} años</span>` : ''}
                 <div class="row" style="flex-wrap:wrap;gap:5px;margin-top:7px">${cond} ${alerg} ${nada}</div>
                 ${i.notas ? `<p class="muted" style="font-size:12.5px;margin-top:7px">${i.notas}</p>` : ''}
+                </div>
               </div>
               <div class="row" style="gap:6px">
                 <button class="btn btn-ghost btn-sm" data-editar="${i.id}">Editar</button>
@@ -225,6 +235,23 @@
     };
 
     // ===== Integrantes =====
+    // El avatar elegido vive en un input oculto; el picker solo lo escribe. Asi el guardado
+    // lee un unico sitio, igual que el resto de campos del formulario.
+    const AVATAR_POR_DEFECTO = '🙂';
+    function pintarAvatarPicker() {
+      const sel = document.getElementById('i-avatar').value || AVATAR_POR_DEFECTO;
+      const lista = (OPC.avatares && OPC.avatares.length) ? OPC.avatares : [AVATAR_POR_DEFECTO];
+      document.getElementById('avatar-picker').innerHTML = lista
+        .map((a) => `<button type="button" class="avatar-op ${a === sel ? 'on' : ''}" data-avatar="${a}">${a}</button>`)
+        .join('');
+    }
+    document.getElementById('avatar-picker').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-avatar]');
+      if (!b) return;
+      document.getElementById('i-avatar').value = b.dataset.avatar;
+      pintarAvatarPicker();
+    });
+
     function abrirFormInt(it) {
       limpiarAlerta(alInt);
       document.getElementById('form-int-titulo').textContent = it ? `Editar a ${it.nombre}` : 'Nuevo integrante';
@@ -232,6 +259,8 @@
       document.getElementById('i-nombre').value = it ? it.nombre : '';
       document.getElementById('i-edad').value = it && it.edad != null ? it.edad : '';
       document.getElementById('i-notas').value = it && it.notas ? it.notas : '';
+      document.getElementById('i-avatar').value = (it && it.avatar) || AVATAR_POR_DEFECTO;
+      pintarAvatarPicker();
       condSel = it ? [...it.condiciones] : [];
       alergSel = it ? [...it.alergias] : [];
       repintarChips();
@@ -265,6 +294,7 @@
         condiciones: condSel,
         alergias: alergSel,
         notas: document.getElementById('i-notas').value,
+        avatar: document.getElementById('i-avatar').value || AVATAR_POR_DEFECTO,
       };
       if (!body.nombre.trim()) { alerta(alInt, 'Escribe el nombre del integrante.'); return; }
       try {

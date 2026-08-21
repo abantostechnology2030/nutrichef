@@ -492,6 +492,15 @@ Usuario sube comprobante (`numero_operacion` único, un pago pendiente a la vez)
 - **Frontend:** helpers en `public/js/api.js` (`Sesion`, `api()`, `exigirSesion()`, `pintarSidebar()`, `confirmar()`, `CAT_INFO`/`chipCategoria()`, `MOMENTO_INFO`). Token en `localStorage` (`nutrichefia_token`/`nutrichefia_user`).
 - **Nombres en la UI:** "**Mi suscripción**" = pagos (`mi-plan.html`). "**Plan de comidas**" = el calendario (`plan.html`). No llamar "plan" a los dos.
 - **Fuente única de categorías:** `CATEGORIAS_ING` en `db.js` y `CAT_INFO` en `api.js` deben coincidir.
+- **Iconos (2026-08-21):** `iconoIngrediente(nombre, categoria)` e `iconoPlato(nombre, momento)` viven en `api.js` y los usan la despensa, "Mis platos" y el detalle del plato. El icono se **deriva del nombre**, el usuario no elige nada — misma filosofía que la categoría automática de la despensa.
+  - ⚠️ **El emparejamiento es por PALABRA COMPLETA, no por substring**, por la misma razón que en `services/consumo.js`: `"sal"` está dentro de `"salsa de soya"` y `"papa"` dentro de `"papaya"`. Con substring, la salsa saldría con el icono de la sal. Las palabras se recorren **en orden** y gana la primera con icono, así `"caldo de pollo"` sale como caldo y no como pollo.
+  - La lista salió de **inventariar los ingredientes reales** (51 del catálogo + 162 distintos en los platos de producción), no de imaginarlos. Cobertura medida: **51/51 del catálogo**. Lo que no se reconoce cae al icono de **su categoría**, que nunca falla.
+  - `ICONO_FRASE` es para lo que la primera palabra no describe (`"aceite de oliva"` → 🫒 y no 🫙). Si un icono resulta engañoso, es mejor **quitarlo** y dejar el de la categoría: la beterraga estuvo saliendo con icono de tomate (rojo y redondo, pero no es un tomate) y se retiró por eso.
+- **Avatar de los integrantes (2026-08-21):** `integrantes.avatar` es un **emoji** (TEXT, migración idempotente en `db.js`), elegido de `AVATARES` con el picker de `hogar.html` y pintado grande con `.avatar-fam` junto al nombre. Es emoji y no foto **a propósito**: sin subida de archivos, sin almacenamiento y sin moderación de imágenes.
+  - El tope es de **8 caracteres, no 1-2**: un emoji compuesto (una familia, un tono de piel) son varios puntos de código unidos con ZWJ, y cortarlo por la mitad deja un símbolo roto.
+  - Las filas creadas antes de la columna tienen `NULL` y el default se aplica **al leerlas** (`integrantesDe`), no rellenando la tabla: no se reescriben datos que el usuario no ha tocado.
+- **Mascota arrastrable y ocultable (2026-08-21, portado de NutriIA):** `api.js` envuelve `img.mascota` en `.mascota-caja`, le añade el botón de cerrar y el arrastre con **pointer events** (vale igual para ratón y dedo). La preferencia (posición y si está oculta) va a `localStorage` — **por dispositivo, no por cuenta**: donde estorba es en el teléfono, y guardarlo en el servidor obligaría a sincronizar algo que no lo necesita.
+  - `touch-action: none` en `.mascota-caja` es **imprescindible**: sin eso el navegador del móvil interpreta el arrastre como scroll y la mascota no se mueve.
 - **Modales (`.modal` en `style.css`):** son `max-height:90vh` + columna flex con el `.modal-body` scrolleable — la cabecera (`h3`) y la fila de botones (`.row`) quedan **siempre visibles**. Antes, en PC, un modal alto (detalle del plato, form) se salía de pantalla y ocultaba los botones. Todo modal debe seguir el patrón `h3 + .modal-body + .row` para heredar esto; el contenido largo va **dentro** de `.modal-body`.
 
 ## Configuración (.env)
@@ -518,6 +527,15 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 > Al escribir un smoke test nuevo: **debe limpiar lo que crea** y **no debe depender de la
 > corrida anterior** (fijar el estado al empezar o usar nombres únicos). Ambos errores ya
 > me costaron falsos negativos.
+>
+> **Y tampoco debe depender de la FECHA en que se corra** (2026-08-21). El aserto del
+> checklist de compra daba por hecho que la ventana por defecto no pisaba ninguna semana con
+> platos, y eso dejó de ser cierto solo por pasar el tiempo: el periodo por defecto alcanzó la
+> semana sembrada, aparecieron 2 faltantes (`●`) y el conteo exacto falló **sin que nadie
+> tocara la app**. Ahora el número esperado se **calcula** (despensa + faltantes de esa
+> ventana) en vez de fijarse. En la misma línea, el test fija `hogar.semanas` al empezar:
+> es una preferencia **sticky** que se queda con el valor de la última compra registrada por
+> cualquier prueba, así que heredarla cambiaba el tamaño de la ventana entre corridas.
 >
 > **Limpiar al final NO alcanza:** si la corrida se cae a medias, deja basura que hace
 > fallar la SIGUIENTE con un error que no tiene nada que ver con lo que se prueba (a

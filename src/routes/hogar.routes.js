@@ -6,6 +6,7 @@
 const express = require('express');
 const {
   db, usuarioPublico, REGIONES, DIETAS, PRESUPUESTOS, CONDICIONES_COMUNES, ALERGIAS_COMUNES,
+  AVATARES, AVATAR_DEFAULT,
 } = require('../db');
 const { requiereAuth } = require('../middleware/auth');
 const { requierePlanificador } = require('../middleware/planificador');
@@ -44,11 +45,19 @@ function asegurarHogar(usuarioId) {
   return hogarDe(usuarioId);
 }
 
+// El avatar es un EMOJI (texto libre, tope corto). Se limita a 8 caracteres porque un emoji
+// compuesto —una familia, o un tono de piel— son varios puntos de codigo unidos con ZWJ, y
+// cortarlo a 1-2 lo partiria por la mitad dejando un simbolo roto.
+const limpiarAvatar = (v) => String(v || '').trim().slice(0, 8) || AVATAR_DEFAULT;
+
 const integrantesDe = (hogarId) =>
   db.prepare('SELECT * FROM integrantes WHERE hogar_id = ? ORDER BY id').all(hogarId).map((i) => ({
     ...i,
     condiciones: JSON.parse(i.condiciones || '[]'),
     alergias: JSON.parse(i.alergias || '[]'),
+    // Los integrantes creados antes de esta columna tienen NULL: se les da el de por defecto
+    // aqui y no en la BD, para no tener que reescribir filas que el usuario no ha tocado.
+    avatar: i.avatar || AVATAR_DEFAULT,
   }));
 
 // Mantiene los dos invariantes del hogar:
@@ -72,6 +81,7 @@ function estado(usuarioId) {
       presupuestos: PRESUPUESTOS,
       condiciones_comunes: CONDICIONES_COMUNES,
       alergias_comunes: ALERGIAS_COMUNES,
+      avatares: AVATARES,
     },
   };
 }
@@ -109,9 +119,9 @@ router.post('/integrantes', (req, res) => {
 
   const edad = b.edad === '' || b.edad == null ? null : Math.min(120, Math.max(0, parseInt(b.edad, 10) || 0));
   const info = db.prepare(
-    'INSERT INTO integrantes (hogar_id, nombre, edad, condiciones, alergias, notas) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO integrantes (hogar_id, nombre, edad, condiciones, alergias, notas, avatar) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(h.id, nombre, edad, JSON.stringify(normLista(b.condiciones)), JSON.stringify(normLista(b.alergias)),
-        String(b.notas || '').trim().slice(0, 200) || null);
+        String(b.notas || '').trim().slice(0, 200) || null, limpiarAvatar(b.avatar));
 
   recalcularHogar(h.id);
   res.status(201).json({
@@ -128,12 +138,13 @@ router.patch('/integrantes/:id', (req, res) => {
   if (!it) return res.status(404).json({ error: 'Integrante no encontrado.' });
 
   const b = req.body || {};
-  db.prepare('UPDATE integrantes SET nombre = ?, edad = ?, condiciones = ?, alergias = ?, notas = ? WHERE id = ?').run(
+  db.prepare('UPDATE integrantes SET nombre = ?, edad = ?, condiciones = ?, alergias = ?, notas = ?, avatar = ? WHERE id = ?').run(
     b.nombre !== undefined ? String(b.nombre).trim().slice(0, 60) || it.nombre : it.nombre,
     b.edad !== undefined ? (b.edad === '' || b.edad === null ? null : Math.min(120, Math.max(0, parseInt(b.edad, 10) || 0))) : it.edad,
     b.condiciones !== undefined ? JSON.stringify(normLista(b.condiciones)) : it.condiciones,
     b.alergias !== undefined ? JSON.stringify(normLista(b.alergias)) : it.alergias,
     b.notas !== undefined ? String(b.notas || '').trim().slice(0, 200) || null : it.notas,
+    b.avatar !== undefined ? limpiarAvatar(b.avatar) : (it.avatar || AVATAR_DEFAULT),
     it.id
   );
   res.json({ ...estado(req.usuario.id), usuario: usuarioPublico(req.usuario.id) });

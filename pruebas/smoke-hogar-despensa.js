@@ -78,7 +78,10 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
 
   const previo = await apiSrv('/api/hogar');
   for (const i of previo.integrantes) await apiSrv(`/api/hogar/integrantes/${i.id}`, { method: 'DELETE' });
-  await apiSrv('/api/hogar', { method: 'PUT', body: JSON.stringify({ nombre: 'Casa Abanto', region: 'sierra', ciudad: 'Cusco', dieta: 'omnivora', presupuesto: 'medio' }) });
+  // semanas se fija AQUI a proposito: es una preferencia sticky que se queda con el valor de
+  // la ultima compra registrada (por esta prueba o por cualquier otra). Heredarla hacia que el
+  // periodo por defecto cambiara de tamano entre corridas y con el los conteos del checklist.
+  await apiSrv('/api/hogar', { method: 'PUT', body: JSON.stringify({ nombre: 'Casa Abanto', region: 'sierra', ciudad: 'Cusco', dieta: 'omnivora', presupuesto: 'medio', semanas: 3 }) });
   for (const it of [
     { nombre: 'Rosa', edad: 58, condiciones: ['diabetes', 'hipertension'], alergias: [] },
     { nombre: 'Luis', edad: 12, condiciones: [], alergias: ['mani', 'mariscos'] },
@@ -110,12 +113,24 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     const luis = [...tarjetas].map((c) => c.textContent).find((t) => t.includes('Luis')) || '';
     check(luis.includes('mani') && luis.includes('mariscos'), 'Luis muestra sus alergias');
 
+    // Avatar: cada integrante lo muestra GRANDE junto a su nombre. Es un emoji elegido por el
+    // usuario, no una foto (sin subida de archivos ni almacenamiento).
+    check(doc.querySelectorAll('#lista-integrantes .avatar-fam').length === 3,
+      `los 3 integrantes muestran su avatar grande (= ${doc.querySelectorAll('#lista-integrantes .avatar-fam').length})`);
+    check([...doc.querySelectorAll('#lista-integrantes .avatar-fam')].every((e) => e.textContent.trim().length > 0),
+      'y ninguno sale vacio (los creados antes de la columna caen al de por defecto)');
+
     // Abrir el formulario y comprobar los chips de sugerencias.
     doc.querySelector('#btn-nuevo-int').click();
     await esperar(120);
     check(!doc.querySelector('#form-int').classList.contains('hidden'), 'el formulario de integrante se abre');
     check(doc.querySelectorAll('#chips-cond [data-chip]').length === 16, `16 chips de condiciones (= ${doc.querySelectorAll('#chips-cond [data-chip]').length})`);
     check(doc.querySelectorAll('#chips-alerg [data-chip]').length === 10, `10 chips de alergias (= ${doc.querySelectorAll('#chips-alerg [data-chip]').length})`);
+    // El selector de avatar sale del catalogo del servidor (opciones.avatares), no de una lista
+    // repetida en el HTML: si se amplia, se amplia en un solo sitio.
+    const ops = doc.querySelectorAll('#avatar-picker [data-avatar]');
+    check(ops.length > 5, `el formulario ofrece avatares para elegir (= ${ops.length})`);
+    check(doc.querySelectorAll('#avatar-picker .avatar-op.on').length === 1, 'y hay exactamente uno seleccionado');
 
     // Toggle de un chip.
     const chip = doc.querySelector('#chips-cond [data-chip="diabetes"]');
@@ -178,6 +193,13 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     doc.querySelector('#buscar-despensa').dispatchEvent(new doc.defaultView.Event('input'));
     await esperar(80);
     check(doc.querySelectorAll('#lista-despensa [data-del]').length === 0, 'el buscador filtra la despensa');
+    // Cada producto de la despensa lleva su icono de color. El icono lo deriva
+    // iconoIngrediente() del NOMBRE, asi que no hay nada que el usuario tenga que elegir.
+    doc.querySelector('#buscar-despensa').value = '';
+    doc.querySelector('#buscar-despensa').dispatchEvent(new doc.defaultView.Event('input'));
+    await esperar(80);
+    const conIcono = doc.querySelectorAll('#lista-despensa .ing-ic').length;
+    check(conIcono === antes, `cada producto de la despensa lleva su icono (${conIcono} de ${antes})`);
     doc.querySelector('#buscar-despensa').value = '';
     doc.querySelector('#buscar-despensa').dispatchEvent(new doc.defaultView.Event('input'));
     await esperar(60);
@@ -195,9 +217,30 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     // pasaria SIEMPRE (asi estuvo, dando un falso OK en el desmarcado). El estado marcado se
     // lee de la clase: sin "btn-ghost" = marcado.
     const marcados = () => [...doc.querySelectorAll('#checklist-compra [data-check]')].filter((b) => !b.classList.contains('btn-ghost')).length;
-    check(doc.querySelectorAll('#checklist-compra [data-check]').length === antes, `el checklist lista los ${antes} productos (= ${doc.querySelectorAll('#checklist-compra [data-check]').length})`);
+    // El checklist ofrece DOS conjuntos: la despensa + los faltantes del plan de ese periodo
+    // (los ●). Cuantos ● haya depende de si la ventana por defecto pisa una semana con platos,
+    // o sea de la FECHA en que se corra: por eso el numero esperado se calcula, no se fija.
+    // La ventana por defecto es "N semanas desde el lunes", y N sale de #c-semanas: NO de
+    // #c-fecha-fin, que solo se usa en el modo "fechas exactas" (leerlo aqui daba una ventana
+    // de un solo dia y por tanto 0 faltantes, mientras la pantalla mostraba 2).
+    const ini = doc.querySelector('#c-inicio').value;
+    const nSem = parseInt(doc.querySelector('#c-semanas').value, 10) || 1;
+    const finV = new Date(new Date(ini + 'T00:00:00Z').getTime() + (nSem * 7 - 1) * 86400000).toISOString().slice(0, 10);
+    const faltVentana = ini
+      ? ((await api(`/api/plan/faltantes?inicio=${ini}&fin=${finV}`, token)).items || [])
+      : [];
+    const nombresDespensa = new Set((await api('/api/despensa', token)).despensa.map((d) => d.nombre.toLowerCase()));
+    const puntos = faltVentana.filter((f) => !nombresDespensa.has(f.nombre.toLowerCase())).length;
+    const esperadoChecklist = antes + puntos;
+    check(doc.querySelectorAll('#checklist-compra [data-check]').length === esperadoChecklist,
+      `el checklist lista la despensa (${antes}) + los faltantes del plan (${puntos}) = ${esperadoChecklist} (= ${doc.querySelectorAll('#checklist-compra [data-check]').length})`);
     check(doc.querySelectorAll('#checklist-compra .cat-chip').length > 0, 'el checklist sale agrupado por categoria');
-    check(marcados() === antes, `arrancan todos marcados (${marcados()} de ${antes})`);
+    // Icono de color por producto, tambien en el checklist de compra.
+    check(doc.querySelectorAll('#checklist-compra .ing-ic').length === esperadoChecklist,
+      `cada producto del checklist lleva su icono (= ${doc.querySelectorAll('#checklist-compra .ing-ic').length} de ${esperadoChecklist})`);
+    // Los ● arrancan sin marcar a proposito (no haber comprado algo es normal), asi que los
+    // marcados de salida son exactamente los de la despensa.
+    check(marcados() === antes, `los de la despensa arrancan marcados y los ● no (${marcados()} de ${antes + puntos})`);
 
     // El checklist ofrece DOS conjuntos: lo que ya tienes + los faltantes del plan de ese
     // periodo (marcados con ●), que son los que traes del mercado. Los faltantes arrancan

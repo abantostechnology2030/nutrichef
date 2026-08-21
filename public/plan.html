@@ -529,7 +529,11 @@
       const p = it.plato;
       const ing = p.ingredientes.map((i) => {
         const falta = p.faltantes.some((f) => f.toLowerCase() === String(i.nombre).toLowerCase());
-        return `<li${falta ? ' style="color:var(--amber);font-weight:700"' : ''}>${[i.cantidad, i.unidad, i.nombre].filter(Boolean).join(' ')}${falta ? ' 🛒' : ''}</li>`;
+        // Lo que FALTA sigue destacado en ambar con su carrito: el icono no debe tapar esa
+        // senal, que es la que dice si hay que ir al mercado.
+        return `<div class="ing-linea"${falta ? ' style="color:var(--amber);font-weight:700"' : ''}>`
+          + `<span class="ing-ic ing-ic-sm">${iconoIngrediente(i.nombre)}</span>`
+          + `<span>${[i.cantidad, i.unidad, i.nombre].filter(Boolean).join(' ')}${falta ? ' 🛒' : ''}</span></div>`;
       }).join('');
       const back = document.createElement('div');
       back.className = 'modal-back show';

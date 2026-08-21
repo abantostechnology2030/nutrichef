@@ -278,6 +278,7 @@
             ${porCat[cat].map((i) => `
               <div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px">
                 <div class="row" style="justify-content:space-between;gap:10px;align-items:center">
+                  <span class="ing-ic ing-ic-lg ic-${i.categoria}">${iconoIngrediente(i.nombre, i.categoria)}</span>
                   <b style="flex:1;min-width:120px">${i.nombre}</b>
                   <button class="btn btn-danger btn-sm" data-del="${i.id}">Quitar</button>
                 </div>
@@ -457,6 +458,10 @@
               // La barra solo aparece cuando está marcado: preguntar "¿cuánto compraste?"
               // de algo que no compraste no significa nada.
               return `<div style="border:1px solid var(--line);border-radius:12px;padding:8px 10px">
+                <div class="row" style="gap:8px;align-items:center;margin-bottom:6px">
+                  <span class="ing-ic ic-${d.categoria}">${iconoIngrediente(d.nombre, d.categoria)}</span>
+                  <span style="font-size:12.5px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.nombre}</span>
+                </div>
                 <button type="button" class="btn btn-sm ${on ? '' : 'btn-ghost'}" data-check="${esc}"
                   title="${d.falta ? 'De tu lista de compras — al marcarlo entra a tu despensa' : (on ? 'Comprado' : 'Marcar como comprado')}"
                   style="width:100%;justify-content:flex-start;padding:5px 11px;font-size:12.5px${on ? '' : ';opacity:.7'}">${on ? '✓ ' : ''}${d.falta ? '● ' : ''}${d.nombre}</button>
