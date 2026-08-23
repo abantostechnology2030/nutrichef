@@ -560,3 +560,51 @@ function abrirPerfil() {
 document.addEventListener('click', (e) => {
   if (e.target.closest('.userbox-btn')) abrirPerfil();
 });
+
+// ===== Modal de espera de la IA =====
+//
+// Generar un dia tarda ~3,5 s con Gemini y hasta ~30 s si el admin pone Claude de prioritario;
+// verificar un plato puede irse a ~190 s (medido). El aviso vivia en la etiqueta del boton, que
+// mide 11px y solo cabe "✨…": el usuario se quedaba medio minuto sin señales claras y creia
+// que la app se habia colgado. Ya paso una vez.
+//
+// El modal NO se puede cerrar: ni con la cruz, ni pulsando el fondo, ni con Escape. La llamada
+// ya esta en vuelo y cerrarlo no la cancelaria — solo dejaria al usuario creyendo que aborto
+// algo que en realidad sigue corriendo y le va a cambiar el calendario debajo.
+//
+// Los mensajes ROTAN cada 3,5 s. No es adorno: en una espera larga, un texto quieto se lee como
+// "esto se colgo", y el contador de segundos deja claro que el reloj sigue corriendo.
+function modalCargando({ ic = '👨‍🍳', titulo = 'Cocinando…', texto = '', pasos = [] } = {}) {
+  const back = document.createElement('div');
+  back.className = 'modal-back show modal-cargando';
+  back.innerHTML = `<div class="modal cargando-caja" role="status" aria-live="polite">
+    <div class="cargando-ic">${ic}</div>
+    <h3 class="cargando-titulo">${titulo}</h3>
+    ${texto ? `<p class="cargando-texto">${texto}</p>` : ''}
+    <div class="cargando-barra"><span></span></div>
+    <p class="cargando-paso" data-paso>${pasos[0] || ''}</p>
+    <p class="cargando-reloj" data-reloj></p>
+  </div>`;
+  document.body.appendChild(back);
+
+  const elPaso = back.querySelector('[data-paso]');
+  const elReloj = back.querySelector('[data-reloj]');
+  const desde = Date.now();
+  let i = 0;
+
+  const rot = pasos.length > 1
+    ? setInterval(() => { i = (i + 1) % pasos.length; elPaso.textContent = pasos[i]; }, 3500)
+    : null;
+  const reloj = setInterval(() => {
+    const s = Math.round((Date.now() - desde) / 1000);
+    elReloj.textContent = s >= 3 ? `${s} s` : '';
+  }, 1000);
+
+  return {
+    cerrar() {
+      if (rot) clearInterval(rot);
+      clearInterval(reloj);
+      back.remove();
+    },
+  };
+}

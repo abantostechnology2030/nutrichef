@@ -533,6 +533,12 @@ Se abre pulsando el nombre en el sidebar y permite cambiar nombre, email, **foto
   - Las filas creadas antes de la columna tienen `NULL` y el default se aplica **al leerlas** (`integrantesDe`), no rellenando la tabla: no se reescriben datos que el usuario no ha tocado.
 - **Mascota arrastrable y ocultable (2026-08-21, portado de NutriIA):** `api.js` envuelve `img.mascota` en `.mascota-caja`, le añade el botón de cerrar y el arrastre con **pointer events** (vale igual para ratón y dedo). La preferencia (posición y si está oculta) va a `localStorage` — **por dispositivo, no por cuenta**: donde estorba es en el teléfono, y guardarlo en el servidor obligaría a sincronizar algo que no lo necesita.
   - `touch-action: none` en `.mascota-caja` es **imprescindible**: sin eso el navegador del móvil interpreta el arrastre como scroll y la mascota no se mueve.
+- **Modal de espera de la IA (`modalCargando()` en `api.js`, 2026-08-21):** generar un día lo abre a pantalla completa con el chef animado, el título grande, una barra indeterminada, **mensajes que rotan** cada 3,5 s y los segundos transcurridos.
+  - El aviso vivía en la etiqueta del botón, que mide 11px y solo cabe `✨…`: el usuario se quedaba esperando sin señales claras y creía que la app se había colgado (ya pasó una vez).
+  - **No se puede cerrar** — ni con cruz, ni pulsando el fondo. La llamada ya está en vuelo y cerrarlo no la cancelaría: solo dejaría al usuario creyendo que abortó algo que sigue corriendo y le va a cambiar el calendario debajo.
+  - La barra es **indeterminada a propósito**: la IA responde de una vez, así que fingir un porcentaje sería mentir.
+  - Los mensajes rotan porque en una espera larga un texto quieto se lee como *"esto se colgó"*. Respeta `prefers-reduced-motion`.
+  - ⚠️ **Se cierra en el `finally`**, también cuando la IA falla: si quedara abierto tras un 502, la pantalla se quedaría bloqueada sin decir por qué.
 - **Modales (`.modal` en `style.css`):** son `max-height:90vh` + columna flex con el `.modal-body` scrolleable — la cabecera (`h3`) y la fila de botones (`.row`) quedan **siempre visibles**. Antes, en PC, un modal alto (detalle del plato, form) se salía de pantalla y ocultaba los botones. Todo modal debe seguir el patrón `h3 + .modal-body + .row` para heredar esto; el contenido largo va **dentro** de `.modal-body`.
 
 ## Configuración (.env)

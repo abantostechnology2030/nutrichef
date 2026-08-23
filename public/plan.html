@@ -394,20 +394,34 @@
     async function generar(casillas, btn) {
       limpiarAlerta(alPlan);
       if (btn) cargando(btn, true, casillas.length > 1 ? '✨ Cocinando…' : '✨…');
-      // AVISO OBLIGATORIO: la IA tarda ~25s por plato y ~30s por dia (medido). El boton de
-      // la casilla mide 11px y solo puede mostrar "✨…": sin este mensaje el usuario se
-      // queda medio minuto mirando una pantalla sin señales y cree que la app no responde.
-      // Ya paso. Si tocas esto, deja algo que diga que se esta trabajando Y cuanto tarda.
-      alerta(alPlan, casillas.length > 1
-        ? '✨ Cocinando los platos del día. La IA tarda unos 30 segundos'
-        : '✨ Pensando tu plato. La IA tarda unos 25 segundos', 'info');
+      // AVISO OBLIGATORIO: la IA tarda ~3,5s por dia con Gemini y hasta ~30s si el admin pone
+      // Claude de prioritario (medido). El boton de la casilla mide 11px y solo cabe "✨…":
+      // sin un aviso grande el usuario se queda mirando una pantalla sin señales y cree que la
+      // app no responde. Ya paso. Si tocas esto, deja algo que diga que se esta trabajando.
+      const dia = casillas.length > 1;
+      const esperando = modalCargando({
+        ic: '👨‍🍳',
+        titulo: dia ? 'Cocinando tu día…' : 'Pensando tu plato…',
+        texto: dia
+          ? 'La IA está armando los platos con lo que tienes en tu despensa.'
+          : 'La IA está eligiendo un plato con lo que tienes en tu despensa.',
+        pasos: [
+          '🧺 Revisando tu despensa…',
+          '👨‍👩‍👧 Mirando las condiciones y alergias de tu hogar…',
+          '🍲 Buscando platos de tu región…',
+          '⚖️ Ajustando las porciones a tus comensales…',
+          '📝 Escribiendo la receta y el aporte nutricional…',
+        ],
+      });
       try {
         const d = await api('/api/plan/generar', { method: 'POST', body: { semana, casillas } });
         DATA.plan = d.plan; DATA.limites = { ...DATA.limites, ...d.limites };
         pintar();
         alerta(alPlan, d.mensaje, 'ok');
       } catch (err) { manejar(err); }
-      finally { if (btn) cargando(btn, false); }
+      // El modal se cierra SIEMPRE, tambien si la IA falla: si quedara abierto tras un 502, la
+      // pantalla se quedaria bloqueada sin decir por que.
+      finally { esperando.cerrar(); if (btn) cargando(btn, false); }
     }
 
     // El boton del dia. Por defecto llena SOLO las casillas vacias: el usuario mezcla

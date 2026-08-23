@@ -620,3 +620,43 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
    vacio. Hace falta repetir el color porque .sin-programar va DESPUES de .dia-fila.hoy y tiene
    la misma especificidad: sin esta regla, el borde verde del dia actual se perderia. */
 .dia-fila.hoy.sin-programar { border-color: var(--primary); }
+
+/* ===== Modal de espera de la IA ===== */
+/* Sin cursor de "pulsable" en el fondo: este modal no se cierra a mano (la llamada esta en
+   vuelo), y un fondo que parece clicable invita a intentarlo. */
+.modal-cargando { cursor: default; }
+.cargando-caja { max-width: 380px; text-align: center; padding: 30px 26px 24px; }
+.cargando-ic {
+  font-size: 62px; line-height: 1; margin-bottom: 10px;
+  animation: cocinando 1.6s ease-in-out infinite;
+}
+@keyframes cocinando {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50%      { transform: translateY(-8px) rotate(3deg); }
+}
+.cargando-titulo { font-size: 22px; margin: 0 0 6px; }
+.cargando-texto { font-size: 14px; color: var(--muted); margin: 0 0 16px; line-height: 1.45; }
+
+/* Barra INDETERMINADA: no sabemos el progreso real (la IA responde de una vez), y fingir un
+   porcentaje seria mentir. Solo indica que algo sigue en marcha. */
+.cargando-barra {
+  height: 6px; border-radius: 999px; background: var(--primary-soft);
+  overflow: hidden; margin-bottom: 14px;
+}
+.cargando-barra span {
+  display: block; height: 100%; width: 40%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  animation: barra-va 1.3s ease-in-out infinite;
+}
+@keyframes barra-va {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.cargando-paso { font-size: 13px; color: var(--ink); font-weight: 600; margin: 0; min-height: 19px; }
+.cargando-reloj { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; min-height: 15px; }
+
+/* Quien prefiera menos movimiento (ajuste del sistema) ve el modal quieto, no roto. */
+@media (prefers-reduced-motion: reduce) {
+  .cargando-ic { animation: none; }
+  .cargando-barra span { animation: none; width: 100%; opacity: .55; }
+}
