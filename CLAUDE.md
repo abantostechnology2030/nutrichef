@@ -725,6 +725,14 @@ offset del día vía `DIA_NUM`). Une las dos fuentes:
   evaluarse, lo que rompía el smoke en jsdom. Fuentes estándar (helvetica): sin emojis, usa
   `[ ]` como casilla para marcar en el mercado.
 
+### Admin: uso e importe de IA POR USUARIO (2026-08-23)
+`GET /api/admin/usuarios?desde=&hasta=` devuelve, por usuario, **cuántas llamadas a la IA hizo** y **cuánto costaron en soles**.
+- **Suma las DOS fuentes** (`analisis` + `generaciones`), igual que `/resumen`: contar solo una escondía la mitad del gasto, y aquí el planificador es lo caro (un día ≈ 10 escaneos). La tabla desglosa *"N del planificador · N del escáner"*.
+- **El costo se calcula por proveedor**, con las mismas `TARIFAS` del resumen: Claude cuesta ~6x lo que Gemini por token, así que promediar daría una cifra inventada.
+- **** (soles por dólar, default **3.40**) es editable desde el panel. Las tarifas de los proveedores están en USD y el negocio cobra en soles; sin este número había que convertir a mano. Se guarda con las demás claves numéricas de la config.
+- **El rango de fechas se compara en hora de PERÚ** (`date(creado_en, '-5 hours')`). Sin el desfase, todo lo hecho entre las 19:00 y la medianoche caería en el día siguiente y los totales no cuadrarían con lo que ve el usuario. Una fecha con formato inválido **se ignora** en vez de romper la consulta.
+- ⚠️ **En la columna de llamadas NO va el símbolo ∞.** Las llamadas *hechas* son siempre un número; lo que sí puede ser ilimitado es el **tope del plan**, y eso vive en la columna de *escaneos restantes* (que dice "ilimitados", no ∞).
+
 ### Fase 6 — admin
 Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `generaciones`). Falta pulir la UI: mostrar el desglose de generaciones por tipo (menu/dia/plato/detalle/verificar) y el aviso de crédito.
 

@@ -408,6 +408,9 @@ setConfigDefault('ai_prioridad', 'gemini');
 // Credito recargado por proveedor (USD) para estimar el saldo restante y avisar.
 setConfigDefault('credito_gemini', '10.67');
 setConfigDefault('credito_claude', '7.60');
+// Soles por dolar, editable desde el admin. Las tarifas de los proveedores estan en USD y el
+// negocio cobra en soles: sin este numero el panel obliga a convertir a mano.
+setConfigDefault('tipo_cambio', '3.40');
 // Instrucciones generales que el admin le da a la IA: se anteponen al contexto de TODOS
 // los flujos del planificador (generar, verificar, detallar). Vacio = sin instrucciones.
 setConfigDefault('ia_instrucciones', '');

@@ -185,11 +185,22 @@
 
         <!-- USUARIOS -->
         <div id="panel-usuarios" class="card hidden">
-          <h3 style="margin-bottom:14px">Usuarios</h3>
+          <h3 style="margin-bottom:6px">Usuarios</h3>
+          <p class="muted" style="font-size:12.5px;margin-bottom:12px">
+            Las <b>llamadas a la IA</b> suman el escáner y el planificador. Sin fechas se cuenta
+            <b>todo el histórico</b>; con un rango, solo lo hecho en esas fechas (hora de Perú).
+          </p>
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+            <div class="field" style="margin:0"><label>Desde</label><input id="u-desde" type="date" class="input" style="width:auto" /></div>
+            <div class="field" style="margin:0"><label>Hasta</label><input id="u-hasta" type="date" class="input" style="width:auto" /></div>
+            <button class="btn btn-sm" id="btn-filtrar-usuarios" type="button">Filtrar</button>
+            <button class="btn btn-ghost btn-sm" id="btn-limpiar-usuarios" type="button">Todo el histórico</button>
+            <span class="muted" id="u-resumen" style="font-size:12.5px;margin-left:auto"></span>
+          </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Plan</th><th>Análisis</th><th>Cambiar plan</th></tr></thead>
-              <tbody id="tbody-usuarios"><tr><td colspan="6" class="muted">Cargando…</td></tr></tbody>
+              <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Plan</th><th>Escaneos restantes</th><th>Llamadas IA</th><th>Costo</th><th>Cambiar plan</th></tr></thead>
+              <tbody id="tbody-usuarios"><tr><td colspan="8" class="muted">Cargando…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -233,6 +244,12 @@
               <div class="field"><label>Claude</label><input id="c-credito_claude" type="number" step="0.01" min="0" placeholder="7.60" /></div>
             </div>
             <p class="muted" style="font-size:12px;margin:-6px 0 12px">Ingresa el monto en dólares (ej. 40 soles ≈ $10.67). Sirve para estimar el saldo y avisar cuando se esté agotando.</p>
+
+            <div class="field">
+              <label>Tipo de cambio (soles por dólar)</label>
+              <input id="c-tipo_cambio" type="number" step="0.01" min="0.01" placeholder="3.40" />
+              <span class="muted" style="font-size:12px">Las tarifas de los proveedores están en dólares. Con esto el panel muestra el costo de cada usuario <b>en soles</b>.</span>
+            </div>
 
             <button class="btn btn-block" type="submit">Guardar</button>
           </form>
@@ -642,23 +659,58 @@
     // ===== Usuarios =====
     async function cargarUsuarios() {
       const tbody = document.getElementById('tbody-usuarios');
-      tbody.innerHTML = '<tr><td colspan="6" class="muted">Cargando…</td></tr>';
-      const [{ usuarios }, { planes }] = await Promise.all([api('/api/admin/usuarios'), api('/api/admin/planes')]);
+      tbody.innerHTML = '<tr><td colspan="8" class="muted">Cargando…</td></tr>';
+      const desde = document.getElementById('u-desde').value;
+      const hasta = document.getElementById('u-hasta').value;
+      const q = new URLSearchParams();
+      if (desde) q.set('desde', desde);
+      if (hasta) q.set('hasta', hasta);
+      const [d, { planes }] = await Promise.all([
+        api('/api/admin/usuarios' + (q.toString() ? '?' + q : '')),
+        api('/api/admin/planes'),
+      ]);
+      const usuarios = d.usuarios;
       PLANES = planes;
+
+      const soles = (n) => 'S/ ' + (Number(n) || 0).toFixed(2);
+      const totalLlamadas = usuarios.reduce((a, u) => a + (u.llamadas_ia || 0), 0);
+      const totalSoles = usuarios.reduce((a, u) => a + (u.costo_soles || 0), 0);
+      document.getElementById('u-resumen').innerHTML =
+        `<b>${totalLlamadas}</b> llamada(s) · <b>${soles(totalSoles)}</b> · T.C. ${d.tipo_cambio}` +
+        (d.desde || d.hasta ? ` · del ${d.desde || '…'} al ${d.hasta || '…'}` : ' · todo el histórico');
+
       tbody.innerHTML = usuarios.map((u) => {
         const opts = planes.map((p) => `<option value="${p.id}" ${p.id === u.plan_id ? 'selected' : ''}>${p.nombre}</option>`).join('');
+        // Los escaneos RESTANTES sí pueden ser ilimitados (es un tope del plan), pero las
+        // llamadas HECHAS son siempre un número: ahí el infinito no significaba nada.
+        const restantes = u.plan_analisis === null
+          ? '<span class="muted">ilimitados</span>'
+          : u.analisis_restantes;
+        const detalle = `${u.generaciones || 0} del planificador · ${u.escaneos || 0} del escáner`;
         return `
           <tr>
             <td><b>${u.nombre}</b></td>
             <td>${u.email}</td>
             <td>${u.rol}</td>
             <td>${u.plan_nombre || '—'}</td>
-            <td>${u.plan_analisis === null ? '∞' : u.analisis_restantes}</td>
+            <td>${restantes}</td>
+            <td title="${detalle}"><b>${u.llamadas_ia || 0}</b>
+              <div class="muted" style="font-size:11px">${detalle}</div></td>
+            <td title="${(u.tokens_in || 0).toLocaleString()} tokens de entrada · ${(u.tokens_out || 0).toLocaleString()} de salida">
+              <b>${soles(u.costo_soles)}</b>
+              <div class="muted" style="font-size:11px">US$ ${(u.costo_usd || 0).toFixed(4)}</div></td>
             <td>${u.rol === 'admin' ? '<span class="muted">—</span>' :
               `<select class="input cambiar-plan" data-id="${u.id}" style="width:auto;padding:6px 10px">${opts}</select>`}</td>
           </tr>`;
       }).join('');
     }
+
+    document.getElementById('btn-filtrar-usuarios').onclick = () => cargarUsuarios();
+    document.getElementById('btn-limpiar-usuarios').onclick = () => {
+      document.getElementById('u-desde').value = '';
+      document.getElementById('u-hasta').value = '';
+      cargarUsuarios();
+    };
 
     document.getElementById('tbody-usuarios').addEventListener('change', async (e) => {
       const sel = e.target;
@@ -693,6 +745,7 @@
       aiModo.value = config.ai_modo || 'ambos';
       document.getElementById('c-ai_prioridad').value = config.ai_prioridad || 'gemini';
       document.getElementById('c-credito_gemini').value = config.credito_gemini || '';
+      document.getElementById('c-tipo_cambio').value = config.tipo_cambio || '';
       document.getElementById('c-credito_claude').value = config.credito_claude || '';
       document.getElementById('c-ia_instrucciones').value = config.ia_instrucciones || '';
       togglePrioridad();
@@ -708,6 +761,7 @@
           ai_modo: aiModo.value,
           ai_prioridad: document.getElementById('c-ai_prioridad').value,
           credito_gemini: document.getElementById('c-credito_gemini').value,
+          tipo_cambio: document.getElementById('c-tipo_cambio').value,
           credito_claude: document.getElementById('c-credito_claude').value,
           ia_instrucciones: document.getElementById('c-ia_instrucciones').value,
         }});

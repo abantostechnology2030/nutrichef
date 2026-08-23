@@ -265,6 +265,17 @@ router.post('/pagos/:id/rechazar', (req, res) => {
 });
 
 // ===== USUARIOS =====
+// GET /api/admin/usuarios?desde=YYYY-MM-DD&hasta=YYYY-MM-DD
+//
+// Devuelve, por usuario, CUANTAS llamadas a la IA hizo y CUANTO costaron en soles.
+//
+// Las llamadas se cuentan de las DOS fuentes (el escaner en 'analisis' y el planificador en
+// 'generaciones'), igual que /resumen: contar solo una escondia la mitad del gasto — y en este
+// producto el planificador es lo caro (un dia ~= 10 escaneos).
+//
+// El rango de fechas se compara en hora de PERU (UTC-5). Sin el desfase, todo lo hecho entre
+// las 19:00 y la medianoche caeria en el dia siguiente y los totales del admin no cuadrarian
+// con lo que el usuario ve.
 router.get('/usuarios', (req, res) => {
   const usuarios = db
     .prepare(
@@ -274,7 +285,51 @@ router.get('/usuarios', (req, res) => {
        ORDER BY u.id DESC`
     )
     .all();
-  res.json({ usuarios });
+
+  const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const desde = FECHA_RE.test(req.query.desde || '') ? req.query.desde : null;
+  const hasta = FECHA_RE.test(req.query.hasta || '') ? req.query.hasta : null;
+  const cond = [];
+  const args = [];
+  if (desde) { cond.push("date(creado_en, '-5 hours') >= date(?)"); args.push(desde); }
+  if (hasta) { cond.push("date(creado_en, '-5 hours') <= date(?)"); args.push(hasta); }
+  const where = cond.length ? 'WHERE ' + cond.join(' AND ') : '';
+
+  // Una sola pasada por cada tabla, con el MISMO filtro de fechas. Se agrupa tambien por
+  // proveedor porque las tarifas son distintas (Claude cuesta ~6x lo que Gemini por token).
+  const filas = db.prepare(
+    `SELECT usuario_id, prov, tipo, COUNT(*) llamadas, COALESCE(SUM(i),0) i, COALESCE(SUM(o),0) o FROM (
+       SELECT usuario_id, COALESCE(NULLIF(proveedor,''),'gemini') prov, 'analisis' tipo,
+              input_tokens i, output_tokens o, creado_en FROM analisis
+       UNION ALL
+       SELECT usuario_id, COALESCE(NULLIF(proveedor,''),'gemini') prov, 'generacion' tipo,
+              input_tokens i, output_tokens o, creado_en FROM generaciones
+     ) ${where} GROUP BY usuario_id, prov, tipo`
+  ).all(...args);
+
+  const tipoCambio = parseFloat(getConfig('tipo_cambio') || '3.40') || 3.40;
+  const acc = {};
+  for (const f of filas) {
+    const a = (acc[f.usuario_id] ||= { llamadas: 0, escaneos: 0, generaciones: 0, input: 0, output: 0, usd: 0 });
+    const t = TARIFAS[f.prov] || TARIFAS.gemini;
+    a.llamadas += f.llamadas;
+    if (f.tipo === 'analisis') a.escaneos += f.llamadas; else a.generaciones += f.llamadas;
+    a.input += f.i;
+    a.output += f.o;
+    a.usd += (f.i / 1e6) * t.in + (f.o / 1e6) * t.out;
+  }
+  for (const u of usuarios) {
+    const a = acc[u.id] || { llamadas: 0, escaneos: 0, generaciones: 0, input: 0, output: 0, usd: 0 };
+    u.llamadas_ia = a.llamadas;
+    u.escaneos = a.escaneos;
+    u.generaciones = a.generaciones;
+    u.tokens_in = a.input;
+    u.tokens_out = a.output;
+    u.costo_usd = a.usd;
+    u.costo_soles = a.usd * tipoCambio;
+  }
+
+  res.json({ usuarios, tipo_cambio: tipoCambio, desde, hasta });
 });
 
 // PATCH /api/admin/usuarios/:id  { plan_id?, analisis_restantes? }
@@ -382,7 +437,7 @@ router.put('/config', (req, res) => {
     setConfig('ia_instrucciones', String(cambios.ia_instrucciones).trim().slice(0, 1500));
   }
   // Credito recargado por proveedor (USD)
-  for (const k of ['credito_gemini', 'credito_claude']) {
+  for (const k of ['credito_gemini', 'credito_claude', 'tipo_cambio']) {
     if (cambios[k] !== undefined && cambios[k] !== null && cambios[k] !== '') {
       const n = parseFloat(cambios[k]);
       if (!Number.isNaN(n) && n >= 0) setConfig(k, String(n));
