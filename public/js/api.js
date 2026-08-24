@@ -205,31 +205,30 @@ const ICONO_ING = {
   avena: '\u{1F963}', harina: '\u{1F33E}', trigo: '\u{1F33E}',
   fideos: '\u{1F35D}', fideo: '\u{1F35D}', tallarin: '\u{1F35D}', tallarines: '\u{1F35D}',
   pasta: '\u{1F35D}', spaghetti: '\u{1F35D}',
-  aceite: '\u{1FAD9}', mantequilla: '\u{1F9C8}', margarina: '\u{1F9C8}',
+  aceite: '\u{1F9F4}', mantequilla: '\u{1F9C8}', margarina: '\u{1F9C8}',
   vinagre: '\u{1F376}', salsa: '\u{1F376}', sillao: '\u{1F376}', soya: '\u{1F376}',
   sal: '\u{1F9C2}', azucar: '\u{1F36C}', panela: '\u{1F36C}', chancaca: '\u{1F36C}',
   miel: '\u{1F36F}', algarrobina: '\u{1F36F}',
   ajo: '\u{1F9C4}', comino: '\u{1F9C2}', pimienta: '\u{1F9C2}', oregano: '\u{1F33F}',
   culantro: '\u{1F33F}', cilantro: '\u{1F33F}', perejil: '\u{1F33F}', huacatay: '\u{1F33F}',
   paico: '\u{1F33F}', hierbabuena: '\u{1F33F}', albahaca: '\u{1F33F}', laurel: '\u{1F33F}',
-  canela: '\u{1FAB5}', clavo: '\u{1F330}', kion: '\u{1FADA}', jengibre: '\u{1FADA}',
-  achiote: '\u{1F336}', aji: '\u{1F336}', pimiento: '\u{1FAD1}', rocoto: '\u{1F336}', paprika: '\u{1F336}',
+  canela: '\u{1F9C2}', clavo: '\u{1F330}', kion: '\u{1F33F}', jengibre: '\u{1F33F}',
+  achiote: '\u{1F336}', aji: '\u{1F336}', pimiento: '\u{1F336}', rocoto: '\u{1F336}', paprika: '\u{1F336}',
   papa: '\u{1F954}', papas: '\u{1F954}', camote: '\u{1F360}', yuca: '\u{1F954}', olluco: '\u{1F954}',
   zapallo: '\u{1F383}', calabaza: '\u{1F383}',
   cebolla: '\u{1F9C5}', tomate: '\u{1F345}', zanahoria: '\u{1F955}', lechuga: '\u{1F96C}',
   espinaca: '\u{1F96C}', acelga: '\u{1F96C}', brocoli: '\u{1F966}', coliflor: '\u{1F966}',
-  apio: '\u{1F96C}', poro: '\u{1F96C}', pepino: '\u{1F952}', vainitas: '\u{1FAD8}', vainita: '\u{1FAD8}',
+  apio: '\u{1F96C}', poro: '\u{1F96C}', pepino: '\u{1F952}', vainitas: '\u{1F96B}', vainita: '\u{1F96B}',
   esparragos: '\u{1F96C}', alcachofa: '\u{1F96C}',
   champinones: '\u{1F344}', champinon: '\u{1F344}', hongos: '\u{1F344}',
-  aceitunas: '\u{1FAD2}', aceituna: '\u{1FAD2}',
-  frejoles: '\u{1FAD8}', frejol: '\u{1FAD8}', frijoles: '\u{1FAD8}', frijol: '\u{1FAD8}',
-  lentejas: '\u{1FAD8}', lenteja: '\u{1FAD8}', garbanzos: '\u{1FAD8}', pallares: '\u{1FAD8}',
-  habas: '\u{1FAD8}', haba: '\u{1FAD8}', arvejas: '\u{1FAD8}', arveja: '\u{1FAD8}',
-  alverjas: '\u{1FAD8}', alverja: '\u{1FAD8}', guisantes: '\u{1FAD8}', tarwi: '\u{1FAD8}', chocho: '\u{1FAD8}',
+  frejoles: '\u{1F96B}', frejol: '\u{1F96B}', frijoles: '\u{1F96B}', frijol: '\u{1F96B}',
+  lentejas: '\u{1F96B}', lenteja: '\u{1F96B}', garbanzos: '\u{1F96B}', pallares: '\u{1F96B}',
+  habas: '\u{1F96B}', haba: '\u{1F96B}', arvejas: '\u{1F96B}', arveja: '\u{1F96B}',
+  alverjas: '\u{1F96B}', alverja: '\u{1F96B}', guisantes: '\u{1F96B}', tarwi: '\u{1F96B}', chocho: '\u{1F96B}',
   limon: '\u{1F34B}', naranja: '\u{1F34A}', mandarina: '\u{1F34A}', manzana: '\u{1F34E}',
   pera: '\u{1F350}', platano: '\u{1F34C}', palta: '\u{1F951}', papaya: '\u{1F348}',
   mango: '\u{1F96D}', pina: '\u{1F34D}', uva: '\u{1F347}', uvas: '\u{1F347}',
-  fresa: '\u{1F353}', fresas: '\u{1F353}', arandano: '\u{1FAD0}', arandanos: '\u{1FAD0}',
+  fresa: '\u{1F353}', fresas: '\u{1F353}', arandano: '\u{1F347}', arandanos: '\u{1F347}',
   sandia: '\u{1F349}', melon: '\u{1F348}', durazno: '\u{1F351}', membrillo: '\u{1F350}',
   maracuya: '\u{1F96D}', granadilla: '\u{1F96D}', lucuma: '\u{1F96D}', chirimoya: '\u{1F348}', coco: '\u{1F965}',
   pollo: '\u{1F357}', gallina: '\u{1F357}', pechuga: '\u{1F357}', pavo: '\u{1F357}',
@@ -255,7 +254,7 @@ const ICONO_ING = {
   maca: '\u{1F330}', cacao: '\u{1F36B}', chocolate: '\u{1F36B}', gelatina: '\u{1F36E}', mazamorra: '\u{1F36E}',
 };
 // Frases que hay que mirar ANTES que las palabras sueltas (el termino que manda no es el primero).
-const ICONO_FRASE = [['aceite de oliva', '\u{1FAD2}'], ['clavo de olor', '\u{1F330}']];
+const ICONO_FRASE = [['clavo de olor', '\u{1F330}']];
 
 const _sinTildes = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
 function iconoIngrediente(nombre, categoria) {
@@ -289,7 +288,7 @@ const ICONO_PLATO = [
   ['lomo', '\u{1F969}'], ['carne', '\u{1F969}'], ['bistec', '\u{1F969}'],
   ['cerdo', '\u{1F953}'], ['chicharron', '\u{1F953}'],
   ['anticucho', '\u{1F362}'], ['parrilla', '\u{1F356}'],
-  ['lentejas', '\u{1FAD8}'], ['frejol', '\u{1FAD8}'], ['tacu', '\u{1FAD8}'],
+  ['lentejas', '\u{1F96B}'], ['frejol', '\u{1F96B}'], ['tacu', '\u{1F96B}'],
 ];
 const ICONO_MOMENTO = { desayuno: '\u{1F963}', almuerzo: '\u{1F35B}', cena: '\u{1F37D}️' };
 function iconoPlato(nombre, momento) {

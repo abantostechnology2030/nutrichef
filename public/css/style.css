@@ -439,8 +439,12 @@ tbody tr:hover { background: var(--bg); }
 .mascota-volver:hover { color: var(--ink); }
 .mascota-caja.hidden, .mascota-volver.hidden { display: none; }
 @media (max-width: 760px) {
-  .mascota-caja .mascota { width: 84px; }
-  .mascota-caja, .mascota-volver { bottom: 78px; right: 8px; }
+  /* EN MOVIL LA MASCOTA SE OCULTA. Es fija y decorativa, y en 390px de ancho se comia la
+     esquina inferior derecha: tapaba el boton "Quitar" de cada producto de la despensa y los
+     botones (Ver / ✨ / ○ / ✕) de cada casilla del plan. Al tener pointer-events auto (hace
+     falta para poder arrastrarla) no solo estorbaba: se comia el toque. Medido en Chrome real.
+     En escritorio sigue igual, que es donde sobra sitio. */
+  .mascota-caja, .mascota-volver, .mascota { display: none; }
 }
 
 /* ===== Avatares de los integrantes del hogar =====
@@ -659,4 +663,36 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 @media (prefers-reduced-motion: reduce) {
   .cargando-ic { animation: none; }
   .cargando-barra span { animation: none; width: 100%; opacity: .55; }
+}
+
+/* ===== Movil: areas de toque =====
+   Medido en Chrome con viewport de 390px: los botones de accion de cada casilla del plan
+   quedaban en 23px de alto y el slider de la despensa en 18px. Un dedo necesita ~44px; por
+   debajo de ~32 se falla el toque con facilidad. Solo se agranda EN MOVIL: en escritorio,
+   con raton, los tamanos compactos estan bien y caben mas platos en pantalla. */
+@media (max-width: 760px) {
+  .casilla-acciones { gap: 6px; }
+  .casilla-acciones .btn { min-height: 36px; min-width: 40px; padding: 7px 12px; font-size: 12.5px; }
+  /* El boton de generar/rehacer de cada dia y los del selector de semana. */
+  .dia-cab .btn, .scan-tabs button { min-height: 36px; }
+  .btn.btn-sm { min-height: 36px; }
+  /* El menu hamburguesa media 22x32. */
+  .hamb { min-width: 44px; min-height: 44px; }
+  /* La barra de stock: mas alta para poder arrastrarla con el dedo. */
+  .stock-rango { height: 30px; }
+  .stock-rango::-webkit-slider-thumb { width: 26px; height: 26px; }
+}
+
+/* ===== Movil: dos ajustes de aspecto medidos en Chrome a 390px ===== */
+@media (max-width: 760px) {
+  /* 1. El titulo se partia en dos lineas ("Mi / despensa") porque la pildora de la derecha se
+        llevaba media barra. Se reducen los dos: cabe en una linea y sigue leyendose. */
+  .topbar { padding: 12px 16px; }
+  .topbar h2 { font-size: 19px; }
+  .analisis-pill { font-size: 11.5px; padding: 5px 10px; }
+
+  /* 2. Los cuatro botones del plan ocupaban CUATRO filas enteras, empujando el calendario
+        fuera de la pantalla. De dos en dos se ve el primer dia sin hacer scroll. */
+  .barra-acciones { width: 100%; }
+  .barra-acciones .btn { flex: 1 1 calc(50% - 6px); justify-content: center; }
 }

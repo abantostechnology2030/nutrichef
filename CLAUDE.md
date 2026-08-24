@@ -45,6 +45,7 @@ npm run dev        # node --watch src/server.js  <- usar este al desarrollar
 
 npm run smoke        # smoke test de hogar + despensa (gratis, ~10s, servidor arriba)
 npm run smoke:inicio # dashboard + barra inferior + perfil (gratis, ~10s)
+npm run movil        # revisa el LAYOUT en movil con Chrome real + capturas (gratis, ~30s)
 npm run smoke:platos # smoke test de la biblioteca + el calendario sin IA (gratis, ~15s)
 npm run smoke:plan   # calendario + generar + verificar con IA REAL (4 llamadas, ~60s)
                      #   -> $0.012 con gemini | $0.047 con claude  (segun ai_prioridad!)
@@ -515,6 +516,13 @@ Se abre pulsando el nombre en el sidebar y permite cambiar nombre, email, **foto
 ### Plan de comidas: legibilidad (2026-08-21)
 - **Desayuno / Almuerzo / Cena** pasaron de 11px en mayúsculas y gris a 14px, sin `text-transform` (que penaliza la lectura) y con el emoji aparte a 22px (`.mom-ic`).
 - **Un día sin ningún plato** lleva `.sin-programar`: **fondo sólido más oscuro** (`#dbe7d6`). Antes todos eran blancos y había que leer el contador `0/3` para saber cuáles faltaban. Sobre ese fondo las casillas vacías se aclaran, o se difuminarían en él. Si además es **hoy**, se repite el borde verde: `.sin-programar` va después de `.dia-fila.hoy` y tiene la **misma especificidad**, así que sin esa regla el realce del día actual se perdería.
+
+### Revision de MOVIL (npm run movil) — 2026-08-23
+jsdom **no calcula layout** (los rect dan cero y los media queries no se evaluan contra un ancho real), asi que los smokes no pueden decir si algo *se ve* bien. `pruebas/revisar-movil.js` abre las paginas en **Chrome headless por CDP** con viewport de telefono (390x844, touch) y mide lo que de verdad rompe: desborde horizontal, elementos fuera del ancho, areas de toque menores de 32px, texto por debajo de 11,5px y si el `.main` reserva el alto de la barra inferior. Deja capturas PNG que se pueden mirar.
+- **Hallazgos reales de la primera pasada** (todos corregidos): la **mascota tapaba botones** en movil (el Quitar de cada producto y las acciones de cada casilla), los botones de la casilla median **23px de alto**, el slider de stock **18px**, y **7 de los 81 emojis** del mapa de iconos **no tenian glifo en Windows 10** y salian como cuadro vacio.
+- ⚠️ **Los emojis nuevos (Unicode 13-15) no estan en todos los sistemas.** El de las legumbres (🫘) lo usaban **19 ingredientes**: toda la categoria salia con un rectangulo. Antes de meter un emoji al mapa, pasa el detector: dibuja cada uno en un canvas y lo compara con el tofu de un codepoint sin asignar. Un icono que no existe es **peor** que no poner icono.
+- **La mascota se oculta en móvil** (`display:none` a ≤760px). Es fija y decorativa, y en 390px se comía la esquina inferior derecha; además, al necesitar `pointer-events:auto` para poder arrastrarla, **se comía el toque** de lo que tapaba. En escritorio sigue igual.
+- Las areas de toque se agrandan **solo en movil**: en escritorio, con raton, lo compacto esta bien y caben mas platos en pantalla.
 
 ## Convenciones
 
