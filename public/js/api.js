@@ -625,9 +625,16 @@ function modalCargando({ ic = '👨‍🍳', titulo = 'Cocinando…', texto = ''
 (function refrescarUsuario() {
   if (!Sesion.token || !Sesion.usuario) return;
   if (!document.querySelector('.main')) return; // login/registro
+  // Foto de la sesion EN EL MOMENTO DE PEDIR. Si mientras la peticion viaja el usuario
+  // cambia algo (activar la despensa, editar su perfil), la respuesta que vuelve ya es VIEJA:
+  // aplicarla pisaria el cambio recien hecho y la pantalla volveria atras sola. Pasa en una
+  // ventana estrecha —los primeros cientos de ms de la carga— pero es justo cuando alguien
+  // que entra a 'Mi hogar' a activar la despensa pulsa el interruptor.
+  const alPedir = localStorage.getItem(USER_KEY);
   api('/api/auth/yo')
     .then(({ usuario }) => {
       if (!usuario) return;
+      if (localStorage.getItem(USER_KEY) !== alPedir) return; // cambio mientras tanto: manda lo local
       const antes = JSON.stringify(Sesion.usuario);
       if (JSON.stringify(usuario) === antes) return;
       Sesion.actualizarUsuario(usuario);
