@@ -1090,6 +1090,19 @@ Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `gener
   - Ojo: el **semáforo del escáner** (`sem-*`, verde/ámbar/rojo) tiene su propia paleta semántica y **no se toca** al repaletear.
   - ✅ **Mascota flotante propia (2026-07-16).** Un chef distinto **a la derecha de cada pantalla** vía la clase `.mascota` (fija abajo-derecha, `pointer-events:none`, z-index por debajo de los modales): `mascota-home.png` (saluda) en el escáner/home, `mascota-plan.png` (bolsa) en el plan, `mascota-despensa.png` (checklist) en la despensa, `mascota-platos.png` (olla) en Mis platos. Los **originales de marca** están en `archivos/` (`mascota.png` + `mascota1/2/3.png`) y **sí se versionan**.
     - **El arte venía RGB sin canal alfa (fondo blanco sólido).** Como el chef lleva **gorro y casaca blancos**, un "quitar el blanco" global lo agujereaba. Se recortó con **flood-fill del blanco DESDE LOS BORDES** (solo el fondo conectado al borde se vuelve transparente; el gorro y la casaca, rodeados por el cuerpo, se conservan). El script está en el scratchpad de esa sesión — no en el repo; si necesitas re-recortar arte nuevo, es un decodificador PNG en Node puro (`zlib`) con flood-fill + feather del halo. No había ImageMagick/PIL/sharp en la máquina.
+  - **El favicon va con fondo TRANSPARENTE** (2026-08-25). Traia un cuadrado blanco opaco que
+    se veia como un recuadro en las pestañas oscuras. Se recorta con
+    `node scripts/recortar-fondo.js entrada.png salida.png`, que hace **inundacion del blanco
+    DESDE LOS BORDES**: un "quitar todo lo blanco" agujerearia el gorro y la casaca del chef, que
+    tambien son blancos. El script vive ya **en el repo** (antes era codigo de un scratchpad que
+    habia que reescribir cada vez) y es Node puro con `zlib`: aqui no hay ImageMagick ni sharp.
+    - ⚠️ **`apple-touch-icon` NO apunta al favicon**, sino a `icon-192.png`, que sigue siendo
+      solido: iOS compone los iconos transparentes **sobre negro** y el chef quedaria recortado
+      dentro de un cuadrado negro. Lo mismo con el icono de las notificaciones.
+    - El `?v=` del favicon subio a **3**. Los navegadores cachean el favicon con especial
+      insistencia; sin cambiar la version se sigue viendo el blanco de siempre.
+    - Los iconos de la PWA (`icon-192/512`) y `logo.png` **siguen con fondo blanco** a proposito:
+      los primeros van enmascarados por el sistema y el logo vive sobre la barra lateral blanca.
   - ⚠️ **Falta el chef del semáforo del escáner** (3 versiones: sí / regular / no). Se retiró el de NutriIA porque `si/regular/no.png` llevaban el logo "N" en el pecho. **El sitio está reservado y estilado**: `.sem-personaje` + el campo `img` del objeto `SEM` (el banner ya lo pinta **si existe**). Con el arte listo, es rellenar, no rediseñar. Los originales de NutriIA siguen en `C:\app-nutriia\public\img\` si hicieran falta.
   - `archivos/` **SÍ se versiona** (se sacó del `.gitignore` heredado de NutriIA): ahí viven los únicos originales de marca y estaban solo en un disco.
 - **✅ Contraseña del admin en producción: CAMBIADA** (verificado el 2026-07-29: `admin@nutrichefia.pe` con `admin123` devuelve **401**; el usuario confirmó que la cambió él). Era la deuda de seguridad más urgente, porque `admin123` es la del `.env.example` **que está en el repo** y de ese panel cuelgan los pagos Yape, los planes y la config de IA. Se cambia sin tocar la BD desde el panel admin → Config → "Cambiar mi contraseña" (`PUT /api/admin/password`, exige la actual) o con `node scripts/cambiar-password-admin.js "NuevaClave"`. ⚠️ **En local sigue siendo `admin123`** (es lo que siembra `npm run seed`), así que no confundas los dos entornos al probar.
