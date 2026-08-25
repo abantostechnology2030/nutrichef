@@ -67,6 +67,14 @@
               <button class="btn btn-ghost btn-sm" id="btn-pdf" type="button">⬇ Descargar PDF</button>
             </div>
 
+            <!-- Se dice de donde salen las cantidades: no las inventa nadie, son la suma de lo
+                 que piden los platos que el usuario tiene programados esa semana. -->
+            <div class="cabecera-cols">
+              <span>Producto</span>
+              <span>Cantidad según tu plan</span>
+              <span>Precio (S/)</span>
+              <span></span>
+            </div>
             <div id="lista-productos" class="stack" style="gap:10px"><p class="muted">Cargando…</p></div>
 
             <div class="row" style="justify-content:flex-end;margin-top:16px">
@@ -101,6 +109,9 @@
     let ITEMS = [];      // [{nombre, categoria, cantidad, precio, comprado}]
     let PLATOS = [];     // resumen de los platos de la semana (para el PDF)
     let EDITANDO = null; // id de la compra que se esta corrigiendo, o null si es nueva
+    // Categorias abiertas. Se guarda aparte del HTML porque la lista se repinta entera al
+    // marcar algo, y sin esto el acordeon se cerraria solo en cada clic.
+    const ABIERTAS = new Set();
 
     const hoyPeru = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
     const sumarDias = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -135,6 +146,9 @@
           nombre: i.nombre,
           categoria: i.categoria,
           cantidad: i.medida || '',
+          // PARA QUE se necesita: los platos de la semana que lo usan. Es la pregunta que uno
+          // se hace mirando la lista en el mercado ("¿y esto para que era?").
+          platos: i.platos || [],
           precio: '',
           // Arrancan MARCADOS los que te faltan y desmarcado lo que ya tienes: es lo que de
           // verdad vas a comprar. Con la despensa apagada no hay "falta", así que van todos.
@@ -157,16 +171,30 @@
       }
       const porCat = {};
       ITEMS.forEach((it, i) => { (porCat[it.categoria] ||= []).push({ ...it, i }); });
-      cont.innerHTML = Object.keys(porCat).map((cat) => `
-        <div>
-          <div style="margin-bottom:6px">${chipCategoria(cat)}</div>
-          <div class="stack" style="gap:6px">
-            ${porCat[cat].map((it) => `
+      // ACORDEON por categoria: con 35 productos, una lista plana obliga a un scroll larguisimo
+      // en el telefono. Cada pasillo se abre y se cierra, y la cabecera dice cuantos llevas
+      // marcados de ese pasillo — que es lo que uno comprueba antes de pasar al siguiente.
+      cont.innerHTML = Object.keys(porCat).map((cat) => {
+        const items = porCat[cat];
+        const marcados = items.filter((x) => x.comprado).length;
+        const abierta = ABIERTAS.has(cat);
+        return `
+        <div class="cat-acordeon ${abierta ? 'abierta' : ''}" data-cat="${cat}">
+          <button type="button" class="cat-cab" data-toggle="${cat}">
+            <span class="cat-flecha">▸</span>
+            ${chipCategoria(cat)}
+            <span class="cat-cuenta">${marcados} de ${items.length}</span>
+          </button>
+          <div class="cat-cuerpo">
+            ${items.map((it) => `
               <div class="compra-fila ${it.comprado ? 'marcada' : ''}">
                 <label class="compra-check">
                   <input type="checkbox" data-check="${it.i}" ${it.comprado ? 'checked' : ''} />
                   <span class="compra-ic">${iconoIngrediente(it.nombre, it.categoria)}</span>
-                  <span class="compra-nombre">${esc(it.nombre)}</span>
+                  <span class="compra-nombre">${esc(it.nombre)}
+                    ${it.platos && it.platos.length ? `<button type="button" class="para-que" data-para="${it.i}"
+                      title="Ver para qué platos es">para ${esc(it.platos[0].slice(0, 22))}${it.platos.length > 1 ? ` +${it.platos.length - 1}` : ''}</button>` : ''}
+                  </span>
                 </label>
                 <input class="input compra-cant" data-cant="${it.i}" value="${esc(it.cantidad)}" placeholder="cantidad" />
                 <div class="compra-precio">
@@ -176,7 +204,8 @@
                 <button class="btn btn-danger btn-sm" data-quitar="${it.i}" title="Quitar de la lista">✕</button>
               </div>`).join('')}
           </div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
       totalizar();
     }
 
@@ -211,15 +240,56 @@
       if (t.dataset.check !== undefined) {
         ITEMS[t.dataset.check].comprado = t.checked;
         t.closest('.compra-fila').classList.toggle('marcada', t.checked);
+        // Se actualiza el contador del pasillo a mano en vez de repintar: repintar cerraria el
+        // acordeon y perderia el sitio donde iba el usuario.
+        const caja = t.closest('.cat-acordeon');
+        if (caja) {
+          const n = caja.querySelectorAll('input[data-check]:checked').length;
+          const tot = caja.querySelectorAll('input[data-check]').length;
+          caja.querySelector('.cat-cuenta').textContent = `${n} de ${tot}`;
+        }
         totalizar();
       }
     });
     document.getElementById('lista-productos').addEventListener('click', (e) => {
+      const tog = e.target.closest('[data-toggle]');
+      if (tog) {
+        const cat = tog.dataset.toggle;
+        if (ABIERTAS.has(cat)) ABIERTAS.delete(cat); else ABIERTAS.add(cat);
+        tog.closest('.cat-acordeon').classList.toggle('abierta', ABIERTAS.has(cat));
+        return;
+      }
+      const para = e.target.closest('[data-para]');
+      if (para) { verParaQue(ITEMS[Number(para.dataset.para)]); return; }
       const b = e.target.closest('[data-quitar]');
       if (!b) return;
       ITEMS.splice(Number(b.dataset.quitar), 1);
       pintarLista();
     });
+
+    // Todos los platos que usan ese producto. En la fila solo cabe el primero; el resto se ven
+    // aqui, porque un ingrediente basico puede estar en diez platos y no cabria de ninguna forma.
+    function verParaQue(it) {
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" style="max-width:460px;text-align:left">
+        <h3>${iconoIngrediente(it.nombre, it.categoria)} ${esc(it.nombre)}</h3>
+        <div class="modal-body">
+          ${it.cantidad ? `<p style="font-size:13.5px;margin-bottom:10px">Tu plan necesita <b>${esc(it.cantidad)}</b>.</p>` : ''}
+          <p class="muted" style="font-size:12.5px;margin-bottom:8px">Se usa en ${it.platos.length} plato(s) de esta semana:</p>
+          <ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.7">
+            ${it.platos.map((p) => `<li>${esc(p)}</li>`).join('')}
+          </ul>
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn-sm" type="button" data-cerrar>Entendido</button>
+        </div>
+      </div>`;
+      document.body.appendChild(back);
+      const cerrar = () => back.remove();
+      back.querySelector('[data-cerrar]').onclick = cerrar;
+      back.onclick = (e) => { if (e.target === back) cerrar(); };
+    }
     document.getElementById('c-presupuesto').oninput = totalizar;
 
     document.getElementById('btn-todos').onclick = () => { ITEMS.forEach((i) => { i.comprado = true; }); pintarLista(); };
@@ -358,10 +428,12 @@
       } catch { return null; }
     }
 
-    document.getElementById('btn-pdf').onclick = async () => {
-      limpiarAlerta(alLista);
-      try {
-        await cargarJsPDF();
+    // Construir el PDF va APARTE de descargarlo: asi se puede comprobar que el documento se
+    // genera bien sin depender de que el navegador permita la descarga (que es lo que no se
+    // puede medir en una prueba automatica).
+    async function construirPDF() {
+      await cargarJsPDF();
+      {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ unit: 'pt', format: 'a4' });
         const W = doc.internal.pageSize.getWidth();
@@ -428,10 +500,30 @@
         doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
         doc.text('TOTAL  S/ ______________', W - M - 190, y);
 
-        doc.save(`compras-${document.getElementById('c-inicio').value}.pdf`);
-      } catch (err) {
-        alerta(alLista, 'No pudimos generar el PDF.');
+        return doc;
       }
+    }
+    // Se expone para poder comprobarlo desde una prueba (no lo usa la pagina).
+    window.construirPDF = construirPDF;
+
+    document.getElementById('btn-pdf').onclick = async () => {
+      limpiarAlerta(alLista);
+      const btn = document.getElementById('btn-pdf');
+      btn.disabled = true;
+      try {
+        const doc = await construirPDF();
+        const nombre = `compras-${document.getElementById('c-inicio').value}.pdf`;
+        doc.save(nombre);
+        // doc.save() dispara una descarga, y algunos navegadores (sobre todo en movil) no la
+        // muestran de forma evidente o la bloquean por venir de codigo asincrono. Se deja
+        // ademas un enlace visible: si la descarga no aparecio, el usuario tiene de donde tirar.
+        const url = doc.output('bloburl');
+        alerta(alLista,
+          `PDF generado. Si no se descargó solo, <a href="${url}" download="${nombre}" target="_blank" rel="noopener"><b>ábrelo aquí</b></a>.`,
+          'ok');
+      } catch (err) {
+        alerta(alLista, 'No pudimos generar el PDF: ' + (err && err.message ? err.message : 'error desconocido'));
+      } finally { btn.disabled = false; }
     };
 
     // ===== Carga inicial =====

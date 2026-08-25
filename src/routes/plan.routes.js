@@ -277,7 +277,7 @@ function consolidarPlan(usuarioId, inicio, fin, { soloFaltantes }) {
   // Se traen tambien los INGREDIENTES del plato: son los que llevan cantidad + unidad, y los
   // faltantes son solo nombres. Es de donde sale "cuanto comprar".
   const filas = db.prepare(
-    `SELECT pc.semana, pc.dia, pc.cobertura, p.faltantes AS p_faltantes, p.ingredientes AS p_ingredientes
+    `SELECT pc.semana, pc.dia, pc.cobertura, p.nombre AS p_nombre, p.faltantes AS p_faltantes, p.ingredientes AS p_ingredientes
      FROM plan_comidas pc JOIN platos p ON p.id = pc.plato_id
      WHERE pc.usuario_id = ?`
   ).all(usuarioId);
@@ -291,18 +291,21 @@ function consolidarPlan(usuarioId, inicio, fin, { soloFaltantes }) {
   // Consolidar deduplicando. Se conserva el PRIMER nombre visto (mejor grafia) y se
   // acumulan las fuentes (generado / propuesto) de las que vino el faltante.
   const acc = new Map(); // clave -> { nombre, categoria, fuentes:Set, casillas, porUnidad:Map, falta }
-  const sumar = (nombre, fuente, ing, falta) => {
+  const sumar = (nombre, fuente, ing, falta, plato) => {
     const limpio = String(nombre || '').trim();
     if (!limpio) return;
     const k = claveIng(limpio);
     if (!k) return;
     let e = acc.get(k);
     if (!e) {
-      e = { nombre: limpio, categoria: catMap.get(k) || 'otro', fuentes: new Set(), casillas: 0, porUnidad: new Map(), falta: false };
+      e = { nombre: limpio, categoria: catMap.get(k) || 'otro', fuentes: new Set(), casillas: 0, porUnidad: new Map(), falta: false, platos: new Set() };
       acc.set(k, e);
     }
     if (fuente) e.fuentes.add(fuente);
     if (falta) e.falta = true; // basta que UN plato lo marque faltante para que haya que comprarlo
+    // PARA QUE se necesita este producto. Es la pregunta que uno se hace en el mercado mirando
+    // la lista ("¿y esto para que era?"), y la respuesta ya la tenemos aqui sin pedir nada mas.
+    if (plato) e.platos.add(plato);
     e.casillas++;
     // La cantidad puede faltar (platos manuales, o la IA que la omitio): esa aparicion no
     // suma nada y las demas si. Sumar un 0 fingido daria un total mas bajo que la verdad,
@@ -336,16 +339,16 @@ function consolidarPlan(usuarioId, inicio, fin, { soloFaltantes }) {
     }
 
     if (soloFaltantes) {
-      for (const x of JSON.parse(f.p_faltantes || '[]')) sumar(x, 'generado', conCantidad(x), true);
+      for (const x of JSON.parse(f.p_faltantes || '[]')) sumar(x, 'generado', conCantidad(x), true, f.p_nombre);
       for (const x of (() => { try { return JSON.parse(f.cobertura || '{}').faltantes || []; } catch { return []; } })()) {
-        sumar(x, 'propuesto', conCantidad(x), true);
+        sumar(x, 'propuesto', conCantidad(x), true, f.p_nombre);
       }
     } else {
       // TODO lo que el plato pide, con su marca de faltante. Se recorre la receta (no la lista
       // de faltantes) porque es la unica que tiene cantidad y unidad de cada ingrediente.
       for (const [k, ing] of ings) {
         const falta = faltantes.has(k) || cobFaltantes.has(k);
-        sumar(ing.nombre, falta ? 'generado' : null, ing, falta);
+        sumar(ing.nombre, falta ? 'generado' : null, ing, falta, f.p_nombre);
       }
     }
   }
@@ -357,6 +360,7 @@ function consolidarPlan(usuarioId, inicio, fin, { soloFaltantes }) {
       casillas: e.casillas,
       fuentes: [...e.fuentes],
       falta: e.falta,
+      platos: [...e.platos],
       // medida = ya listo para pintar ("3 unidades", "500 g + 2 tazas"); null si ningun plato
       // traia cantidad. cantidades = el desglose, por si un cliente quiere formatearlo distinto.
       medida: textoMedida(e.porUnidad),

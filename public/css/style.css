@@ -824,3 +824,34 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   .campos-compra .field { margin: 0; min-width: 0; }
   .campos-compra .input { width: 100% !important; }
 }
+
+/* ===== Acordeon por categoria (Mis compras) ===== */
+/* Con 35 productos, una lista plana obliga a un scroll larguisimo en el telefono. Cada pasillo
+   se abre y se cierra, y la cabecera dice cuantos llevas de ese pasillo. */
+.cat-acordeon { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--white); }
+.cat-cab {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: var(--bg); border: none; padding: 10px 12px; cursor: pointer;
+  font-family: inherit; font-size: 13px; text-align: left; min-height: 44px;
+}
+.cat-cab:hover { background: var(--green-soft); }
+.cat-flecha { transition: transform .15s; color: var(--muted); font-size: 12px; }
+.cat-acordeon.abierta .cat-flecha { transform: rotate(90deg); }
+.cat-cuenta { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 700; white-space: nowrap; }
+.cat-cuerpo { display: none; padding: 10px; gap: 6px; flex-direction: column; }
+.cat-acordeon.abierta .cat-cuerpo { display: flex; }
+
+/* "para qué es este producto": el primer plato cabe en la fila, el resto en un modal. */
+.para-que {
+  display: block; background: none; border: none; padding: 2px 0 0; margin: 0;
+  font-family: inherit; font-size: 11.5px; color: var(--primary); cursor: pointer;
+  text-align: left; text-decoration: underline; text-underline-offset: 2px;
+}
+.para-que:hover { color: var(--secondary); }
+
+/* Cabecera de columnas: dice de donde salen las cantidades. */
+.cabecera-cols {
+  display: grid; grid-template-columns: 1fr 110px 120px auto; gap: 8px;
+  padding: 0 10px 6px; font-size: 11.5px; font-weight: 700; color: var(--muted);
+}
+@media (max-width: 760px) { .cabecera-cols { display: none; } }

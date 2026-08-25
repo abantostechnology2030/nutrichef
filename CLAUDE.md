@@ -825,6 +825,14 @@ Pagina propia (compras.html + compras.routes.js). Es OTRA forma de registrar la 
 - **`compras.presupuesto`**: lo que pensaba gastar esa semana. La barra de totales va **pegada arriba** (sticky) porque es el numero que se mira empujando el carrito, y se pinta en verde mientras quede y en rojo al pasarse.
 - **PDF** con el logo, la fecha, el **resumen de platos a preparar** (le da sentido a la lista) y una casilla `[ ]` por producto con su cantidad y un espacio para el precio: se imprime o se mira sin conexion, asi que tiene que servir en papel.
 
+**Detalles de la lista (2026-08-25):**
+- La cabecera dice **"Cantidad segun tu plan"**: las cantidades no las inventa nadie, son la suma de lo que piden los platos programados de esa semana, y decirlo evita que parezcan arbitrarias.
+- Cada producto muestra **para que plato es** ("para Aji de gallina +3"), con un modal si son varios. Sale de , que  ya acumula: es la pregunta que uno se hace en el mercado (*"¿y esto para que era?"*) y la respuesta ya estaba en los datos.
+- **Acordeon por categoria.** Con 35 productos una lista plana obliga a un scroll larguisimo en el telefono. La cabecera de cada pasillo dice cuantos llevas marcados de ese pasillo.
+  - ⚠️ El estado de abierto/cerrado vive en  (un Set), **no en el DOM**: la lista se repinta entera al marcar, y sin eso el acordeon se cerraria en cada clic. Por lo mismo, el contador del pasillo se actualiza **a mano** al marcar en vez de repintar.
+- ** esta separada de la descarga** para poder comprobar que el documento se genera sin depender de que el navegador permita bajarlo (que es justo lo que una prueba automatica NO puede medir: en headless ni siquiera una descarga trivial de control llega a disco). Verificado: 2 paginas, 349 KB, cabecera PDF valida.
+- Tras generar, se ofrece ademas un **enlace visible al PDF**:  dispara una descarga que algunos navegadores (sobre todo en movil) no muestran de forma evidente o bloquean por venir de codigo asincrono.
+
 ### Todo plato generado se guarda en la biblioteca (2026-08-25)
 `crearPlato()` nace con **`guardado = 1`** tambien para las casillas del calendario. Antes nacia suelto y `limpiarPlatoHuerfano()` lo borraba al sacarlo del plan: un plato bueno se perdia salvo que el usuario se acordara de pulsar la estrella.
 
