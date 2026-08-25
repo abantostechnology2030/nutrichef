@@ -60,7 +60,9 @@
                 title="Abre tu despensa con lo que se lleva la semana que estás viendo">🧺 Ver mi despensa</button>
               <button class="btn btn-ghost btn-sm" id="btn-compras"
                 title="Arma la lista de esta semana, marcala en el supermercado y anota precios">🧾 Compras de la semana</button>
-              <button class="btn btn-ghost btn-sm" id="btn-copiar">📋 Copiar otra semana</button>
+              <span class="separador-acciones"></span>
+              <button class="btn btn-sm btn-copiar" id="btn-copiar"
+                title="Trae a esta semana los platos que ya programaste en otra">📋 Copiar datos de otra semana (repetir)</button>
             </div>
           </div>
           <p class="muted" style="font-size:12.5px;margin-top:10px" id="lbl-limites"></p>
@@ -305,8 +307,11 @@
       }).length, 0);
       const btnDet = document.getElementById('btn-detallar');
       btnDet.classList.toggle('hidden', incompletos === 0 || !!bloqueoGen());
-      btnDet.textContent = `🍳 Completar platos (${incompletos})`;
-      btnDet.title = 'Pide a la IA la receta, el aporte nutricional y el gasto de despensa que les falte';
+      // Antes decia solo "Completar platos (3)" y nadie sabia QUE se completaba (el usuario
+      // pregunto que significaba). Ahora lo dice el propio boton.
+      btnDet.textContent = `🍳 Completar recetas (${incompletos})`;
+      btnDet.title = `${incompletos} plato(s) de esta semana no tienen su receta o su información nutricional.`
+        + ' Esto se la pide a la IA de una sola vez (cuesta una generación).';
 
       const hoy = hoyISO();
       document.getElementById('calendario').innerHTML = d.dia_orden.map((dia) => {

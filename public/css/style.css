@@ -855,3 +855,17 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   padding: 0 10px 6px; font-size: 11.5px; font-weight: 700; color: var(--muted);
 }
 @media (max-width: 760px) { .cabecera-cols { display: none; } }
+
+/* "Copiar datos de otra semana" se separa del resto de acciones: las demas actuan sobre ESTA
+   semana y esta TRAE datos de otra. Con el mismo aspecto que las demas parecia una mas. */
+.separador-acciones { flex: 1 1 auto; min-width: 0; }
+.btn-copiar {
+  background: var(--secondary); color: #fff; border-color: var(--secondary);
+}
+.btn-copiar:hover { filter: brightness(.93); }
+@media (max-width: 760px) {
+  /* En movil no hay sitio para empujarlo a la derecha: se le da la fila entera, que ademas lo
+     separa visualmente igual de bien. */
+  .separador-acciones { display: none; }
+  .barra-acciones .btn-copiar { flex: 1 1 100%; }
+}
