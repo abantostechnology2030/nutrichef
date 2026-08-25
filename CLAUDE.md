@@ -759,6 +759,16 @@ offset del día vía `DIA_NUM`). Une las dos fuentes:
 - **El rango de fechas se compara en hora de PERÚ** (`date(creado_en, '-5 hours')`). Sin el desfase, todo lo hecho entre las 19:00 y la medianoche caería en el día siguiente y los totales no cuadrarían con lo que ve el usuario. Una fecha con formato inválido **se ignora** en vez de romper la consulta.
 - ⚠️ **En la columna de llamadas NO va el símbolo ∞.** Las llamadas *hechas* son siempre un número; lo que sí puede ser ilimitado es el **tope del plan**, y eso vive en la columna de *escaneos restantes* (que dice "ilimitados", no ∞).
 
+### Tres bugs de la despensa opcional y del generar semana (2026-08-25)
+Reportados en produccion y corregidos:
+- 🔴 **Generar estaba BLOQUEADO para quien no usa despensa.**  devolvia 409 *"Tu despensa esta vacia"* aunque el modulo estuviera apagado. Quien decidio no llevar inventario no podia generar NADA. Ahora ese 409 solo aplica si .
+- **** en : esa funcion no existia (la forma del limite se armaba en linea dentro del GET). Se extrajo a  y la usan los dos sitios, para que el front reciba siempre el mismo objeto. Sintoma: la generacion desde "Mis platos" se quedaba colgada.
+- **Un dia que fallaba tumbaba la semana entera.** La IA devuelve JSON malformado a ratos (visto: *"Expected ',' or ']' at position 1615"*), y el bucle paraba en el primero, dejando los otros seis dias sin intentar. Ahora **continua** y nombra al final los dias que no se pudieron. Solo se para de verdad **si se acaba el cupo**: los intentos siguientes fallarian igual y solo harian esperar.
+
+> **Por que la semana salio "solo con almuerzos":** los 16 platos guardados del usuario eran TODOS de almuerzo, asi que la biblioteca solo pudo cubrir esa fila; desayuno y cena tocaban a la IA, y la primera llamada fallo. Los dos problemas a la vez. Un plato **sin momento** encaja en cualquiera — vale la pena decirselo al usuario al crear platos.
+
+**Costo medido con el aporte nutricional detallado:** un dia (3 platos) paso de ~/usr/bin/bash.0064 a **/usr/bin/bash.0094** (2.822 in / 3.433 out con Gemini), un **+47%**. Es el precio de los 7 nutrientes con %VD y las recomendaciones por integrante.
+
 ### La biblioteca va SIEMPRE primero (2026-08-25)
 `Proponer`, `Generar día` y `cambiar este plato` hacen lo mismo: **buscan en "Mis platos" y solo llaman a la IA por lo que no encuentren**. Si el usuario ya curó un plato que encaja, usarlo es mejor que inventar otro — es suyo, ya le gustó, y no cuesta una generación.
 - El frontend llama a `POST /api/plan/desde-biblioteca` (sin IA ni cupo) y solo pasa a `/generar` los `faltan` que devuelve.

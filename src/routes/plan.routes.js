@@ -758,7 +758,10 @@ router.post('/generar', requiereHogar, async (req, res) => {
   if (!ctx || !ctx.integrantes.length) {
     return res.status(409).json({ error: 'Configura tu hogar antes de generar platos.', necesita_hogar: true, redirect: '/hogar.html' });
   }
-  if (!ctx.despensa.length) {
+  // Solo se exige despensa llena si el hogar USA el modulo. Con la despensa apagada la IA
+  // propone igual (no la mira), asi que pedir una compra registrada bloquearia por completo a
+  // quien decidio no llevar inventario. Era un 409 en todas sus generaciones.
+  if (ctx.despensaActiva && !ctx.despensa.length) {
     return res.status(409).json({
       error: 'Tu despensa esta vacia. Registra tu compra para que podamos proponerte platos con lo que tienes.',
       necesita_despensa: true, redirect: '/despensa.html',

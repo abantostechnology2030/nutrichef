@@ -897,7 +897,7 @@
         texto: 'Primero con tus platos guardados y luego con la IA, día por día.',
         pasos: ['📋 Revisando tus platos guardados…'],
       });
-      let deBiblioteca = 0; let generados = 0; let corte = null;
+      let deBiblioteca = 0; let generados = 0; let corte = null; const fallidos = [];
       try {
         // 1) Lo que ya tiene. Sin IA y sin cupo: aprovechar su biblioteca antes de pagar.
         const b = await api('/api/plan/desde-biblioteca', { method: 'POST', body: { semana, dias, momentos } });
@@ -924,10 +924,15 @@
             DATA.limites = { ...DATA.limites, ...d.limites };
             generados += moms.length;
           } catch (err) {
-            // Sin cupo o error de IA: se PARA y se cuenta lo que si quedo hecho. Lo generado
-            // hasta aqui ya esta guardado, asi que no se pierde nada.
-            corte = err.error || 'La IA no pudo continuar.';
-            break;
+            // Un dia que falla NO tumba la semana. La IA devuelve JSON malformado a ratos (visto
+            // en produccion: "Expected ',' or ']'"), y parar en el primero dejaba los otros seis
+            // dias sin intentar siquiera. Lo generado ya esta guardado.
+            //
+            // Sin CUPO si se para: los intentos siguientes fallarian todos igual y solo servirian
+            // para hacer esperar al usuario.
+            fallidos.push(DATA.dias[dia]);
+            corte = err.error || 'La IA no pudo con algun dia.';
+            if (err.upgrade || /cupo|generacion|generación/i.test(String(err.error || ''))) break;
           }
         }
       } catch (err) {
@@ -941,6 +946,9 @@
       if (deBiblioteca) partes.push(`${deBiblioteca} de tus platos guardados`);
       if (generados) partes.push(`${generados} generado(s) con IA`);
       const hecho = partes.length ? `Semana armada: ${partes.join(' y ')}.` : 'No se llenó ninguna casilla.';
+      // Se nombran los días que no se pudieron: "quedó a medias" sin decir cuáles obliga a
+      // revisar el calendario entero para encontrar los huecos.
+      if (fallidos.length) corte = `No se pudo con: ${fallidos.join(', ')}. Vuelve a intentarlo con el botón de cada día.`;
       alerta(alPlan, corte ? `${hecho} ${corte}` : hecho, corte ? 'info' : 'ok');
       cargar(semana);
     }

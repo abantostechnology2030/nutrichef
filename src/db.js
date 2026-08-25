@@ -256,6 +256,33 @@ db.exec(`
   );
 `);
 
+// Migracion: la compra se puede llenar EN EL SUPERMERCADO, marcando producto por producto.
+// Por eso cada item guarda ahora:
+//   cantidad     -> texto libre ("2 kg", "1 atado"): lo que de verdad se compro, tal cual lo
+//                   diria la persona. NO se normaliza a una unidad: ver "Por que esto y no
+//                   kilos en la despensa" en CLAUDE.md.
+//   precio       -> soles, OPCIONAL. El usuario decide si lleva la cuenta o no; sin precio la
+//                   compra se guarda igual y simplemente no suma al total.
+//   comprado     -> si se llego a comprar. Por defecto 1 porque el formulario nace de una
+//                   lista de lo que se piensa comprar.
+//   fecha_compra -> cuando se compro ESE producto. Puede diferir de la fecha de la compra si
+//                   se completa en dos viajes al mercado.
+for (const [col, tipo] of [
+  ['cantidad', 'TEXT'],
+  ['precio', 'REAL'],
+  ['comprado', 'INTEGER NOT NULL DEFAULT 1'],
+  ['fecha_compra', 'TEXT'],
+]) {
+  if (!db.prepare('PRAGMA table_info(compra_items)').all().some((c) => c.name === col)) {
+    db.exec(`ALTER TABLE compra_items ADD COLUMN ${col} ${tipo}`);
+  }
+}
+// fecha = el dia de la compra (YYYY-MM-DD). Distinta de creado_en, que es cuando se registro:
+// alguien puede anotar el domingo la compra que hizo el sabado.
+if (!db.prepare('PRAGMA table_info(compras)').all().some((c) => c.name === 'fecha')) {
+  db.exec('ALTER TABLE compras ADD COLUMN fecha TEXT');
+}
+
 // ===== DESPENSA (inventario por PORCENTAJE de lo que queda) =====
 // porcentaje = 0..100 de lo que le queda de ese producto. Es la FUENTE DE VERDAD y la
 // edita el usuario a mano; "nivel" (poco|normal|bastante) quedo como campo DERIVADO

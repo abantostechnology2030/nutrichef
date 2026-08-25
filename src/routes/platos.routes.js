@@ -27,6 +27,14 @@ const normDificultad = (v) => (DIFICULTADES.includes(String(v || '').toLowerCase
 const guardadosDe = (usuarioId) =>
   db.prepare('SELECT COUNT(*) c FROM platos WHERE usuario_id = ? AND guardado = 1').get(usuarioId).c;
 
+// Estado del tope de la biblioteca, en la forma que espera el front. Se calcula AQUI y no en
+// cada ruta: el GET y la ruta de generar deben devolver exactamente el mismo objeto.
+function limiteDe(usuario) {
+  const max = usuario.platos_max;
+  const usados = guardadosDe(usuario.id);
+  return { max, usados, ilimitado: max == null, restantes: max == null ? null : Math.max(0, max - usados) };
+}
+
 // Verifica el tope ANTES de guardar. Devuelve el error listo para responder, o null.
 // `platos_max` NULL = ilimitado (y el admin siempre lo tiene en NULL).
 function topeAlcanzado(usuario) {
@@ -106,11 +114,9 @@ router.get('/', (req, res) => {
   }
   sql += ' ORDER BY p.creado_en DESC';
 
-  const max = req.usuario.platos_max;
-  const usados = guardadosDe(req.usuario.id);
   res.json({
     platos: db.prepare(sql).all(...args).map(platoPublico),
-    limite: { max, usados, ilimitado: max == null, restantes: max == null ? null : Math.max(0, max - usados) },
+    limite: limiteDe(req.usuario),
     momentos: MOMENTOS,
     dificultades: DIFICULTADES,
   });
@@ -149,7 +155,7 @@ router.post('/generar', async (req, res) => {
   // seria cobrarle una generacion por nada.
   const lim = limiteDe(usuario);
   const pediria = nombres.length || cuantos;
-  if (lim.max !== null && lim.usados + pediria > lim.max) {
+  if (!lim.ilimitado && lim.usados + pediria > lim.max) {
     return res.status(403).json({
       error: `Tu plan permite ${lim.max} plato(s) guardados y ya tienes ${lim.usados}. Borra alguno o pasa a un plan superior.`,
       upgrade: true, redirect: '/mi-plan.html',
