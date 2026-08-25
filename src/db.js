@@ -427,10 +427,16 @@ db.exec(`
 // esa semana. Por eso quitar un producto con la X no bastaba: al recargar volvia a salir, porque
 // el plan lo sigue pidiendo.
 //
-// Aqui se anota lo que el usuario decidio no comprar ("eso ya lo tengo", "esta semana no"). Es
-// por USUARIO y no por semana: quien quita el aji panca de su lista no lo quiere ver la semana
-// que viene tampoco. Y se puede deshacer: "Agregar producto" muestra los archivados para volver
-// a ponerlos, que es lo que evita que esto sea una via de un solo sentido.
+// Aqui se anota lo que el usuario decidio no comprar ("eso ya lo tengo", "esta semana no").
+//
+// 🔴 NO ES UN "NO ME LO MUESTRES NUNCA MAS": se guardan tambien los PLATOS que pedian ese
+// producto al archivarlo, y el producto solo se esconde mientras lo pidan ESOS MISMOS platos.
+// Si programas un plato nuevo que necesita aceite, el aceite vuelve a la lista solo. Sin esa
+// regla, archivar un producto significaba salir al mercado sin el la proxima vez que un plato
+// nuevo lo pidiera — un olvido silencioso, que es mucho peor que un clic de mas.
+//
+// Ademas se puede deshacer a mano: "Agregar producto" muestra los archivados para volver a
+// ponerlos, que es lo que evita que esto sea una via de un solo sentido.
 //
 // La clave es la MISMA normalizacion que deduplica la lista de compras (claveIng): si el archivo
 // normalizara distinto, "Tomates" quedaria archivado y "tomate" seguiria apareciendo.
@@ -440,11 +446,18 @@ db.exec(`
     usuario_id INTEGER NOT NULL,
     nombre     TEXT    NOT NULL,
     clave      TEXT    NOT NULL,
+    -- Los platos que pedian ese producto CUANDO se archivo. Es lo que hace que archivar no
+    -- sea ciego: ver la nota de "platos" mas abajo.
+    platos     TEXT    NOT NULL DEFAULT '[]',
     creado_en  TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE (usuario_id, clave),
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
   );
 `);
+
+if (!db.prepare('PRAGMA table_info(compras_archivados)').all().some((c) => c.name === 'platos')) {
+  db.exec("ALTER TABLE compras_archivados ADD COLUMN platos TEXT NOT NULL DEFAULT '[]'");
+}
 
 // ===== SOPORTE (mensajes de contacto del usuario al admin) =====
 db.exec(`

@@ -186,9 +186,25 @@
         // en pantalla antes de desaparecer.
         try { ARCHIVADOS = (await api('/api/compras/archivados')).archivados || []; }
         catch { ARCHIVADOS = []; }
-        const archivadas = new Set(ARCHIVADOS.map((a) => a.clave));
+        const porClave = new Map(ARCHIVADOS.map((a) => [a.clave, a]));
         const d = await api(`/api/plan/necesidad?inicio=${inicio}&fin=${fin}`);
-        ITEMS = (d.items || []).filter((i) => !archivadas.has(clave(i.nombre))).map((i) => ({
+
+        // 🔴 Un producto archivado se esconde SOLO mientras lo pidan los mismos platos de
+        // entonces. Si programas un plato nuevo que necesita aceite, el aceite vuelve: archivarlo
+        // no puede significar salir al mercado sin el, que es un olvido silencioso.
+        const vuelven = [];
+        const escondido = (i) => {
+          const a = porClave.get(clave(i.nombre));
+          if (!a) return false;
+          const antes = new Set(a.platos || []);
+          const ahora = i.platos || [];
+          const nuevo = ahora.filter((p) => !antes.has(p));
+          if (!nuevo.length) return true;
+          vuelven.push({ archivo: a, porque: nuevo });
+          return false;
+        };
+
+        ITEMS = (d.items || []).filter((i) => !escondido(i)).map((i) => ({
           nombre: i.nombre,
           categoria: i.categoria,
           cantidad: i.medida || '',
@@ -206,6 +222,20 @@
         }));
         PLATOS = d.platos_semana || [];
         pintarLista();
+
+        // Lo que vuelve deja de estar archivado: si la fila se quedara, el modal de "Agregar"
+        // ofreceria devolver algo que ya esta en la lista. Y se DICE por que volvio, o pareceria
+        // que la X no funciono.
+        if (vuelven.length) {
+          for (const v of vuelven) {
+            try { ARCHIVADOS = (await api(`/api/compras/archivados/${v.archivo.id}`, { method: 'DELETE' })).archivados; }
+            catch { /* si falla, se vera igual en la lista: no vale la pena molestar */ }
+          }
+          const uno = vuelven[0];
+          alerta(alLista, vuelven.length === 1
+            ? `"${uno.archivo.nombre}" vuelve a tu lista: lo pide ${uno.porque[0]}.`
+            : `${vuelven.length} productos que habias quitado vuelven a la lista: los piden platos nuevos.`, 'ok');
+        }
       } catch (err) {
         cont.innerHTML = '';
         alerta(alLista, err.error || 'No pudimos armar la lista de esta semana.');
@@ -374,9 +404,11 @@
       ITEMS.splice(i, 1);
       pintarLista();
       try {
-        const r = await api('/api/compras/archivados', { method: 'POST', body: { nombre: it.nombre } });
+        // Se manda para QUE platos era: es la foto contra la que se decidira si tiene que
+        // volver cuando cambie el plan.
+        const r = await api('/api/compras/archivados', { method: 'POST', body: { nombre: it.nombre, platos: it.platos || [] } });
         ARCHIVADOS = r.archivados || ARCHIVADOS;
-        alerta(alLista, `"${it.nombre}" ya no saldra en tu lista. Puedes devolverlo desde "+ Agregar".`, 'ok');
+        alerta(alLista, `"${it.nombre}" sale de tu lista. Volverá si programas un plato nuevo que lo necesite, o puedes devolverlo desde "+ Agregar".`, 'ok');
       } catch (err) {
         // Si el servidor no pudo archivarlo, se dice: si no, el usuario creeria que quedo
         // quitado para siempre y a la semana siguiente lo veria volver sin explicacion.
@@ -455,7 +487,8 @@
             <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
               <b style="font-size:13px">🗂️ Productos que quitaste</b>
               <p class="muted" style="font-size:12px;margin:2px 0 10px">
-                No vuelven a salir en tu lista aunque tu plan los pida. Devuélvelos cuando los necesites.
+                No salen en tu lista mientras los pidan los mismos platos de cuando los quitaste.
+                Si programas un plato nuevo que los necesite, vuelven solos. También puedes devolverlos aquí.
               </p>
               <div id="pt-archivados" class="stack" style="gap:6px">${lista()}</div>
             </div>

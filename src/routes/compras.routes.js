@@ -82,8 +82,13 @@ router.get('/', (req, res) => {
 // OJO: estas rutas van ANTES de /:id. Declaradas despues, Express leeria "archivados" como el
 // id de una compra y devolveria 404.
 const archivadosDe = (usuarioId) =>
-  db.prepare('SELECT id, nombre, clave, creado_en FROM compras_archivados WHERE usuario_id = ? ORDER BY nombre')
-    .all(usuarioId);
+  db.prepare('SELECT id, nombre, clave, platos, creado_en FROM compras_archivados WHERE usuario_id = ? ORDER BY nombre')
+    .all(usuarioId)
+    .map((a) => {
+      let platos = [];
+      try { platos = JSON.parse(a.platos || '[]'); } catch { platos = []; }
+      return { ...a, platos: Array.isArray(platos) ? platos : [] };
+    });
 
 // GET /api/compras/archivados -> lo que el usuario quito de su lista
 router.get('/archivados', (req, res) => {
@@ -96,10 +101,18 @@ router.post('/archivados', (req, res) => {
   if (!nombre) return res.status(400).json({ error: 'Falta el nombre del producto.' });
   const clave = claveIng(nombre);
   if (!clave) return res.status(400).json({ error: 'Ese nombre no es valido.' });
+  // Los platos que lo pedian AHORA. Es la foto contra la que se compara despues: si mañana lo
+  // pide un plato que no esta en esta lista, el producto vuelve a salir solo.
+  const platos = (Array.isArray(req.body?.platos) ? req.body.platos : [])
+    .map((p) => String(p || '').trim().slice(0, 120)).filter(Boolean).slice(0, 30);
+
   // Archivar dos veces el mismo producto no es un error: el usuario no tiene por que saber si ya
-  // estaba, y fallar aqui dejaria la X sin efecto visible.
-  db.prepare('INSERT OR IGNORE INTO compras_archivados (usuario_id, nombre, clave) VALUES (?, ?, ?)')
-    .run(req.usuario.id, nombre, clave);
+  // estaba. Y se ACTUALIZA la foto de platos, que es justo lo que pasa cuando alguien vuelve a
+  // quitarlo despues de que reaparecio por un plato nuevo.
+  db.prepare(
+    `INSERT INTO compras_archivados (usuario_id, nombre, clave, platos) VALUES (?, ?, ?, ?)
+     ON CONFLICT (usuario_id, clave) DO UPDATE SET nombre = excluded.nombre, platos = excluded.platos`
+  ).run(req.usuario.id, nombre, clave, JSON.stringify(platos));
   res.json({ mensaje: `"${nombre}" no volvera a salir en tu lista.`, archivados: archivadosDe(req.usuario.id) });
 });
 

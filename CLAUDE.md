@@ -976,8 +976,20 @@ pasar: **la lista se arma de nuevo cada vez que entras**, con los platos program
 semana, asi que quitarlo solo de la pantalla no dura nada — el plan lo sigue pidiendo.
 
 Ahora la X lo **archiva** (`compras_archivados`) y la lista lo descarta al armarse.
+- 🔴 **PERO NO ES UN "no me lo muestres nunca mas".** El archivo guarda tambien **que platos
+  pedian ese producto** al quitarlo, y solo se esconde mientras lo pidan **esos mismos**. Si
+  programas un plato nuevo que lleva aceite, el aceite **vuelve solo** — y la pantalla dice por
+  que (*"vuelve a tu lista: lo pide Torta de avena"*), o pareceria que la X no funciono.
+  - Lo pregunto el usuario en cuanto vio la primera version: *"si lo quito y luego agrego un
+    plato que necesita aceite, lo logico seria que volviera"*. Tenia razon: con el archivo ciego,
+    quitar un producto significaba **salir del mercado sin el** la proxima vez que un plato nuevo
+    lo pidiera. Un olvido silencioso es mucho peor que un clic de mas.
+  - Al volver, **se desarchiva**: si la fila se quedara, "Agregar producto" ofreceria devolver
+    algo que ya esta en la lista. Y si el usuario vuelve a quitarlo, el POST **actualiza** la
+    foto de platos (`ON CONFLICT DO UPDATE`), que es justo el caso de "lo quito otra vez".
 - **Es por USUARIO, no por semana**: quien quita el aji panca de su lista no lo quiere ver la
-  semana que viene tampoco.
+  semana que viene tampoco… salvo que se lo pida un plato que entonces no estaba, por la regla
+  de arriba.
 - **Se deshace desde "+ Agregar producto"**, que ahora abre un modal con dos cosas: el campo para
   uno nuevo y la lista de **"Productos que quitaste"** con su boton *Volver a agregar*. Van en el
   MISMO sitio porque es ahi donde uno se pregunta *"¿y el aceite?"*: en otra pantalla serian
@@ -991,8 +1003,9 @@ Ahora la X lo **archiva** (`compras_archivados`) y la lista lo descarta al armar
 - El aviso al quitar dice que se puede deshacer: sin eso, la X parece definitiva.
 - Si el servidor no pudo archivarlo **se dice**, en vez de dejarlo quitado solo en pantalla: el
   usuario lo veria volver a la semana siguiente sin explicacion.
-- Lo cubre `smoke:compras`, y el aserto que importa es *"al recargar la lista sigue sin salir"*:
-  es exactamente lo que fallaba.
+- Lo cubre `smoke:compras` con los dos asertos que importan: *"al recargar la lista sigue sin
+  salir"* (lo que fallaba) y *"con un plato NUEVO que la necesita, vuelve sola"* (lo que no puede
+  romperse nunca).
 
 ### Presupuesto POR PRODUCTO en "Mis compras" (2026-08-26)
 Columna opcional: un interruptor la enciende y cada producto gana un campo para anotar cuanto

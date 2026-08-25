@@ -252,6 +252,47 @@ async function abrir(pagina, token, usuario) {
 
     pg2.win.close();
 
+    // ===== Un plato NUEVO devuelve el producto archivado =====
+    //
+    // Es la pregunta que lo justifica: "si quito el aceite y luego programo un plato que lleva
+    // aceite, lo logico es que vuelva". Archivar no puede significar salir al mercado sin el.
+    console.log('\n=== lo archivado vuelve si lo pide un plato nuevo ===');
+
+    // Se archiva la Avena otra vez (esta vez con la foto de los platos que la pedian).
+    const necA = await apiSrv(`/api/plan/necesidad?inicio=${SEMANA}&fin=${FIN}`);
+    const avena = necA.cuerpo.items.find((i) => i.nombre === 'Avena');
+    await apiSrv('/api/compras/archivados', { method: 'POST', body: JSON.stringify({ nombre: 'Avena', platos: avena.platos }) });
+    const guardado = (await apiSrv('/api/compras/archivados')).cuerpo.archivados[0];
+    check(guardado.platos.length === 1 && guardado.platos[0] === 'Avena de prueba',
+      `el archivo recuerda por que estaba: ${JSON.stringify(guardado.platos)}`);
+
+    const conArchivo = await abrir(`compras.html?inicio=${SEMANA}&fin=${FIN}`, token, usuario);
+    check(!conArchivo.doc.getElementById('lista-productos').textContent.includes('Avena'),
+      'mientras la pida el MISMO plato, sigue fuera de la lista');
+    conArchivo.win.close();
+
+    // Ahora se programa OTRO plato que tambien lleva avena.
+    const plato3 = await apiSrv('/api/platos', {
+      method: 'POST',
+      body: JSON.stringify({
+        nombre: 'Torta de avena', momento: 'cena', porciones: 2,
+        ingredientes: [{ nombre: 'Avena', cantidad: '2', unidad: 'tazas' }],
+      }),
+    });
+    await apiSrv('/api/plan', { method: 'POST', body: JSON.stringify({ semana: SEMANA, dia: 3, momento: 'cena', plato_id: plato3.cuerpo.plato.id }) });
+
+    const conPlatoNuevo = await abrir(`compras.html?inicio=${SEMANA}&fin=${FIN}`, token, usuario);
+    await esperar(700);
+    const txtLista = conPlatoNuevo.doc.getElementById('lista-productos').textContent;
+    check(txtLista.includes('Avena'), 'con un plato NUEVO que la necesita, la avena vuelve sola a la lista');
+    check(/vuelve a tu lista/i.test(conPlatoNuevo.doc.getElementById('alerta-lista').textContent),
+      `y se explica por que: "${conPlatoNuevo.doc.getElementById('alerta-lista').textContent.trim()}"`);
+
+    const trasVolver = (await apiSrv('/api/compras/archivados')).cuerpo.archivados;
+    check(trasVolver.length === 0,
+      'al volver deja de estar archivada (si no, "Agregar" ofreceria devolver algo que ya esta)');
+    conPlatoNuevo.win.close();
+
     win.close();
   } finally {
     limpiar();
