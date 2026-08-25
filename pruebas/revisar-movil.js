@@ -97,7 +97,54 @@ const REVISION = `(() => {
     }
   }
 
-  // 3) Texto diminuto.
+  // 3) Filas de campos descuadradas. Un formulario "se distorsiona" cuando dos campos que
+  //    comparten fila no acaban a la misma altura (una etiqueta que se parte en dos lineas, un
+  //    input de fecha que mide distinto que uno numerico). No lo detecta ninguna de las otras
+  //    comprobaciones: no hay desborde ni nada minusculo, simplemente se ve torcido.
+  out.camposTorcidos = [];
+  for (const caja of document.querySelectorAll('.campos-compra, .campos-analisis, .campos-periodo, .campos-fila')) {
+    if (!visible(caja)) continue;
+    const campos = [...caja.querySelectorAll('.field')].filter(visible).map((f) => {
+      const inp = f.querySelector('input, select, textarea');
+      // OJO: la fila se agrupa por el arriba del CAMPO (la celda), no por el del input. Si se
+      // agrupa por el input, el bug que se quiere cazar —una etiqueta de dos lineas que empuja
+      // su input hacia abajo— separa los dos campos en "filas" distintas y la comprobacion
+      // pasa siempre. Ya me paso: detectaba cero descuadres incluso sabotenado el CSS a mano.
+      return inp ? { id: inp.id || desc(inp), r: inp.getBoundingClientRect(), celda: f.getBoundingClientRect() } : null;
+    }).filter(Boolean);
+    // Dos campos estan en la misma fila si sus celdas SE SOLAPAN en vertical. Agrupar por la
+    // coordenada de arriba (o la de abajo) no vale: los dos descuadres que se quieren cazar
+    // mueven justamente una de las dos, y los campos acababan en "filas" distintas de una sola
+    // celda, que la comprobacion se salta. Asi paso la primera version sin detectar nada.
+    const filas = [];
+    for (const c of campos) {
+      const fila = filas.find((f2) => f2.some((x) => {
+        const solape = Math.min(x.celda.bottom, c.celda.bottom) - Math.max(x.celda.top, c.celda.top);
+        return solape > Math.min(x.celda.height, c.celda.height) / 2;
+      }));
+      if (fila) fila.push(c); else filas.push([c]);
+    }
+    for (const fila of filas) {
+      if (fila.length < 2) continue;
+      // Dos cosas descuadran una fila y hay que mirar las DOS: que los campos no acaben a la
+      // misma altura (una etiqueta de dos lineas empuja su input hacia abajo) y que no midan lo
+      // mismo (un input de fecha y uno numerico no miden igual por su cuenta). Comprobando solo
+      // el final, un campo mas alto pero alineado por abajo pasaba desapercibido.
+      const abajo = fila.map((c) => c.r.bottom);
+      const altos = fila.map((c) => c.r.height);
+      const difAbajo = Math.round(Math.max(...abajo) - Math.min(...abajo));
+      const difAlto = Math.round(Math.max(...altos) - Math.min(...altos));
+      if (difAbajo > 2 || difAlto > 2) {
+        out.camposTorcidos.push({
+          caja: desc(caja),
+          dif: difAbajo > 2 ? difAbajo + 'px de desnivel' : difAlto + 'px de diferencia de alto',
+          ids: fila.map((c) => c.id).join(' / '),
+        });
+      }
+    }
+  }
+
+  // 4) Texto diminuto.
   out.textoChico = [];
   for (const el of document.querySelectorAll('body *')) {
     if (!visible(el) || !el.childNodes.length) continue;
@@ -107,7 +154,7 @@ const REVISION = `(() => {
     if (px && px < 11.5) out.textoChico.push({ el: desc(el), px: Math.round(px * 10) / 10 });
   }
 
-  // 4) Lo que tape la barra inferior fija.
+  // 5) Lo que tape la barra inferior fija.
   const bn = document.querySelector('.bottomnav');
   out.barra = null;
   if (bn && visible(bn)) {
@@ -169,6 +216,10 @@ const REVISION = `(() => {
         console.log('    toque pequeno < 32px (' + d.toquePequeno.length + '):');
         for (const s of d.toquePequeno.slice(0, 8)) console.log('       ' + s.w + 'x' + s.h + '  ' + s.el);
       } else console.log('    toque pequeno: ninguno');
+      if (d.camposTorcidos.length) {
+        console.log('    filas de campos torcidas (' + d.camposTorcidos.length + '):');
+        for (const c of d.camposTorcidos) console.log('       ' + c.ids + ' -> ' + c.dif + '  [' + c.caja + ']');
+      } else console.log('    filas de campos: cuadradas');
       if (d.textoChico.length) {
         console.log('    texto < 11.5px (' + d.textoChico.length + '): ' +
           d.textoChico.slice(0, 4).map((t) => t.px + 'px ' + t.el.slice(0, 30)).join(' | '));

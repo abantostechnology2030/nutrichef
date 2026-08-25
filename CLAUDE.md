@@ -1050,6 +1050,34 @@ seccion.
   - ⚠️ La concordancia de `limite()` miraba la **ultima letra de la frase**, asi que "recetas
     guardadas" daba *"ilimitados"*. Ahora mira el **sustantivo** (la primera palabra).
 
+### El formulario de la compra en movil (2026-08-25)
+Reportado: *"el formulario de compras semanales se distorsiona en movil"*. Medido en Chrome real
+a 390px, eran tres cosas a la vez:
+1. **"Presupuesto semanal (S/)" se partia en dos lineas** y empujaba su input mas abajo que el de
+   al lado: la fila se veia torcida. Las etiquetas pasan a caber en una linea ("Comprado el",
+   "Presupuesto (S/)") y la rejilla alinea por **abajo** (`align-items: end`), que aguanta el
+   descuadre aunque una etiqueta vuelva a partirse.
+2. **Un input de fecha y uno numerico no miden lo mismo** por su cuenta (47 vs 45 px). Dos campos
+   pegados con 2 px de diferencia se leen como una fila mal hecha: se les fija la altura, y en las
+   **dos** pantallas (en escritorio van los cuatro en una fila y tambien se notaba).
+3. **Los cuatro botones se repartian 2 + 1 + 1** con anchos distintos segun lo que midiera cada
+   texto. En movil van en dos columnas iguales, y "producto" se esconde (`.solo-pc`) para que
+   "+ Agregar" no se parta en dos lineas y estire su fila.
+
+La regla es **compartida** (`.campos-compra, .campos-analisis, .campos-periodo`): las tres
+pantallas con una fila de campos tenian el mismo problema, y en tres reglas separadas la proxima
+se arreglaria solo en dos. Un numero **impar** de campos deja el ultimo a lo ancho en vez de a
+media pantalla con un hueco al lado.
+
+⚠️ **`npm run movil` ahora lo comprueba solo** ("filas de campos: cuadradas"): mira que los
+campos de una misma fila acaben a la misma altura **y** midan lo mismo.
+- **Las filas se agrupan por SOLAPE vertical**, no por su coordenada de arriba. Los dos descuadres
+  que se quieren cazar mueven justamente esa coordenada, asi que agrupando por ella los dos campos
+  caian en "filas" distintas de una sola celda — que la comprobacion se salta. **La primera version
+  no detectaba nada** y parecia funcionar.
+- Se verifico rompiendo un campo **en caliente** (24 px mas alto, y la etiqueta partida en dos):
+  la comprobacion los caza los dos. Una comprobacion que no puede fallar no comprueba nada.
+
 ### Fase 6 — admin
 Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `generaciones`). Falta pulir la UI: mostrar el desglose de generaciones por tipo (menu/dia/plato/detalle/verificar) y el aviso de crédito.
 
