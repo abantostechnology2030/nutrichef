@@ -901,6 +901,19 @@ router.post('/detallar', requiereHogar, async (req, res) => {
   // da por hecho, y lo que la IA no puntuo se queda con la heuristica por categoria — que es
   // exactamente donde estaba antes, asi que no se pierde nada.
   const sinConsume = (ings) => ings.length > 0 && ings.every((i) => !Number.isFinite(Number(i?.consume)));
+
+  // "Le falta la info" NO es solo "info IS NULL". Un plato generado antes del aporte
+  // nutricional detallado (2026-08-25) tiene info con las calorias y las etiquetas
+  // alto/medio/bajo, pero SIN "nutrientes": se daba por completo y nunca conseguia el hierro,
+  // la fibra ni el sodio. Reportado con "arroz con pollo, solo le agrego calorias".
+  const sinNutrientes = (info) => {
+    if (!info) return true;
+    try {
+      const i = JSON.parse(info);
+      return !i || !i.nutrientes || !Object.keys(i.nutrientes).length;
+    } catch { return true; }
+  };
+
   const pendientes = db.prepare(
     `SELECT DISTINCT p.id, p.nombre, p.porciones, p.ingredientes, p.faltantes, p.pasos, p.info
        FROM plan_comidas pc
@@ -908,8 +921,8 @@ router.post('/detallar', requiereHogar, async (req, res) => {
       WHERE pc.usuario_id = ? AND pc.semana = ?`
   ).all(usuario.id, semana)
     .map((p) => ({ ...p, ings: JSON.parse(p.ingredientes || '[]') }))
-    .map((p) => ({ ...p, sinConsume: sinConsume(p.ings) }))
-    .filter((p) => !p.info || !p.pasos || p.sinConsume);
+    .map((p) => ({ ...p, sinConsume: sinConsume(p.ings), sinInfo: sinNutrientes(p.info) }))
+    .filter((p) => p.sinInfo || !p.pasos || p.sinConsume);
 
   if (!pendientes.length) {
     return res.json({ mensaje: 'Todos los platos de esta semana ya estan completos.', detallados: 0, semana });
@@ -934,7 +947,7 @@ router.post('/detallar', requiereHogar, async (req, res) => {
     porciones: p.porciones,
     ingredientes: p.ings,
     faltantes: JSON.parse(p.faltantes || '[]'),
-    necesita: [!p.info ? 'info' : null, !p.pasos ? 'pasos' : null, p.sinConsume ? 'consume' : null].filter(Boolean),
+    necesita: [p.sinInfo ? 'info' : null, !p.pasos ? 'pasos' : null, p.sinConsume ? 'consume' : null].filter(Boolean),
   }));
 
   let resultado, usage;
@@ -965,8 +978,13 @@ router.post('/detallar', requiereHogar, async (req, res) => {
 
       const campos = [];
       const valores = [];
-      if (!pendiente.info) {
-        const info = normInfo(item?.info);
+      if (pendiente.sinInfo) {
+        // Se FUSIONA con lo que ya tenia en vez de pisarlo: si la IA devuelve la info nueva
+        // pero se deja algun campo (el resumen, el semaforo), el plato lo perderia. Lo nuevo
+        // manda; lo viejo rellena los huecos.
+        let previa = {};
+        try { previa = pendiente.info ? JSON.parse(pendiente.info) : {}; } catch { previa = {}; }
+        const info = normInfo({ ...previa, ...(item?.info || {}) });
         if (info) { campos.push('info = ?'); valores.push(info); }
       }
       if (!pendiente.pasos) {

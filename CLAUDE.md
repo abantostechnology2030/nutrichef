@@ -812,6 +812,8 @@ Botón **"✨ Generar la semana"** que pregunta **días** (L–D) y **comidas** 
 - **`calorias_vd` se calcula en el backend** (kcal/2000), no se le pide a la IA: es aritmética, y pedirla invita a que devuelva un número incoherente con las calorías que ella misma dio.
 - **`info.recomendaciones`** son avisos POR INTEGRANTE (con su nombre) y van **arriba y en su propia caja**: en un hogar con diabetes o hipertensión es lo más importante de esa pantalla, y entre los números no se leen.
 - **Sodio y sal se pintan en ámbar sobre el 20% del VD y en rojo sobre el 40%.** El resto no cambia de color: destacar todo es no destacar nada.
+- 🔴 **"Le falta la info" NO es solo `info IS NULL`.** Un plato generado antes de este formato tiene `info` con las calorias y las etiquetas alto/medio/bajo pero **sin `nutrientes`**: se daba por completo y nunca conseguia el hierro, la fibra ni el sodio. Reportado como *"solo le agrego calorias"*. Ahora `sinNutrientes()` lo cuenta como incompleto, en el backend **y en el criterio duplicado de `plan.html`** (si no coinciden, el boton no aparece o se queda cobrando por clic).
+- Al completarla, la info **se FUSIONA** con la que ya tenia en vez de pisarla: si la IA devuelve los numeros pero se deja el resumen o el semaforo, el plato los perderia. Lo nuevo manda, lo viejo rellena los huecos.
 - **Los platos viejos siguen funcionando:** `nutrientes` es opcional y, si no está, se muestran las etiquetas `alto/medio/bajo` de antes. El techo de tokens por casilla subió de **1600 a 2000** por estos campos.
 
 ### Mis compras: gasto, precios y presupuesto (2026-08-25)

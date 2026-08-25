@@ -869,3 +869,13 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   .separador-acciones { display: none; }
   .barra-acciones .btn-copiar { flex: 1 1 100%; }
 }
+
+/* Los tres pasos del plan de comidas. La pantalla tiene muchos botones y sin esto no se sabe
+   por donde empezar; van numerados porque el orden importa. */
+.pasos-plan {
+  margin: 12px 0 0; padding: 10px 12px 10px 30px; list-style: decimal;
+  background: var(--white); border: 1px solid var(--line); border-radius: 12px;
+  font-size: 12.5px; line-height: 1.6; color: var(--muted);
+}
+.pasos-plan li { margin-bottom: 2px; }
+.pasos-plan b { color: var(--ink); }

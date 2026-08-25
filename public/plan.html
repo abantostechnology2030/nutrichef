@@ -65,6 +65,13 @@
                 title="Trae a esta semana los platos que ya programaste en otra">📋 Copiar datos de otra semana (repetir)</button>
             </div>
           </div>
+          <!-- Los tres pasos, en el orden en que se hacen. La pantalla tiene muchos botones y
+               sin esto no se sabe por donde empezar. -->
+          <ol class="pasos-plan">
+            <li><b>Elige la semana</b> que vas a programar con las flechas de arriba.</li>
+            <li><b>Genera la semana</b> (o cada día por separado con su botón).</li>
+            <li>Ya generados, en cada plato puedes <b>ver el detalle</b>, <b>cambiarlo</b> por uno de tus platos o <b>pedirle otro a la IA</b>.</li>
+          </ol>
           <p class="muted" style="font-size:12.5px;margin-top:10px" id="lbl-limites"></p>
           <div id="badge-periodo" style="font-size:12.5px;margin-top:8px"></div>
         </div>
@@ -269,13 +276,16 @@
       const btnCocinado = U.despensa_activa
         ? `<button class="btn btn-ghost btn-sm" data-cocinado="${it.id}" title="${it.cocinado ? 'Marcar como no cocinado' : 'Marcar como cocinado'}">${it.cocinado ? '✓' : '○'}</button>`
         : '';
+      // Orden de las acciones: primero VER lo que hay, luego cambiarlo TU (de tu biblioteca)
+      // y por ultimo pedirle otro a la IA. De lo mas barato y reversible a lo que gasta cupo.
       return `<div class="casilla ${it.cocinado ? 'cocinado' : ''}">
         <span class="casilla-momento"><span class="mom-ic">${mi.ic}</span>${mi.txt}</span>
         <span class="casilla-plato">${p.nombre}</span>
         <div class="casilla-meta">${tagNutri(p.info)}${tiempo}${falta}</div>
         <div class="casilla-acciones">
-          <button class="btn btn-ghost btn-sm" data-ver="${it.id}">Ver</button>
-          <button class="btn btn-ghost btn-sm" data-gen="${dia}:${momento}" title="${bloqueo || 'Cambiarlo por otro: primero de tus platos, si no con IA'}"${bloqueo ? ' disabled' : ''}>✨</button>
+          <button class="btn btn-ghost btn-sm" data-ver="${it.id}" title="Ver la receta y el aporte nutricional">Ver</button>
+          <button class="btn btn-ghost btn-sm" data-lib="${dia}:${momento}" title="Cambiarlo por uno de tus platos guardados">📋 Plato</button>
+          <button class="btn btn-ghost btn-sm" data-gen="${dia}:${momento}" title="${bloqueo || 'Que la IA proponga otro'}"${bloqueo ? ' disabled' : ''}>✨ Otro</button>
           ${btnCocinado}
           <button class="btn btn-danger btn-sm" data-del="${it.id}" title="Quitar">✕</button>
         </div>
@@ -301,9 +311,16 @@
         const ings = p.ingredientes || [];
         return ings.length > 0 && ings.every((i) => !Number.isFinite(Number(i?.consume)));
       };
+      // OJO: este criterio DEBE coincidir con el del backend (/detallar). Si aqui falta un
+      // caso, el boton no aparece para platos que si estan incompletos; y si sobra, se queda
+      // encendido cobrando una generacion por clic sin arreglar nada.
+      //
+      // Un plato con info del formato VIEJO (calorias + alto/medio/bajo, sin "nutrientes")
+      // cuenta como incompleto: le faltan hierro, fibra, sodio y el resto del detalle.
+      const sinNutrientes = (p) => !p.info || !p.info.nutrientes || !Object.keys(p.info.nutrientes).length;
       const incompletos = d.dia_orden.reduce((n, dia) => n + d.momentos.filter((m) => {
         const it = d.plan[dia][m];
-        return it && (!it.plato.info || !it.plato.pasos || sinConsume(it.plato));
+        return it && (sinNutrientes(it.plato) || !it.plato.pasos || sinConsume(it.plato));
       }).length, 0);
       const btnDet = document.getElementById('btn-detallar');
       btnDet.classList.toggle('hidden', incompletos === 0 || !!bloqueoGen());
@@ -734,7 +751,8 @@
       back.className = 'modal-back show';
       back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:520px;text-align:left">
         <h3>Poner un plato en ${DATA.dias[dia]}</h3>
-        <p class="muted" style="font-size:13px;margin-bottom:12px">${mi.ic} ${mi.txt} · elige uno de tus platos guardados.</p>
+        <p class="muted" style="font-size:13px;margin-bottom:12px">${mi.ic} ${mi.txt} · elige uno de tus platos guardados.${
+          momento === 'desayuno' ? ' Solo se muestran desayunos.' : ' Se muestran almuerzos y cenas.'}</p>
         <div class="modal-body">
           <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap">
             <input class="input" id="lib-q" placeholder="Buscar en mis platos…" style="flex:1;min-width:160px" />
@@ -755,10 +773,20 @@
       const inputQ = back.querySelector('#lib-q');
       const chkTodos = back.querySelector('#lib-todos');
 
+      // Que platos encajan en esta casilla:
+      //   desayuno -> solo desayunos (un seco de res no es un desayuno)
+      //   almuerzo o cena -> los DOS, porque en una casa peruana se comen indistintamente
+      // Un plato SIN momento sirve para cualquiera.
+      const encaja = (m) => {
+        if (!m) return true;
+        if (momento === 'desayuno') return m === 'desayuno';
+        return m === 'almuerzo' || m === 'cena';
+      };
+
       function pintarLista() {
         const q = inputQ.value.trim().toLowerCase();
         const platos = datos.platos
-          .filter((p) => chkTodos.checked || !p.momento || p.momento === momento)
+          .filter((p) => chkTodos.checked || encaja(p.momento))
           .filter((p) => !q || p.nombre.toLowerCase().includes(q));
 
         if (!datos.platos.length) {
