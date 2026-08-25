@@ -301,6 +301,38 @@ router.delete('/compras/:id', (req, res) => {
   });
 });
 
+// POST /api/despensa/reiniciar -> vacia la despensa y borra el historial de compras.
+//
+// Es "empezar de nuevo", no "apagar": apagar el modulo (hogar.despensa_activa = 0) conserva
+// todo. Esto SI borra, y por eso el cliente lo confirma con un modal que enumera que se va.
+//
+// Lo que NO se toca: el plan de comidas, los platos de la biblioteca ni el hogar. Borrar el
+// inventario no deberia costarte el calendario que armaste.
+//
+// Todo en UNA transaccion: media limpieza (productos borrados pero compras vivas, o al reves)
+// dejaria un historial que no corresponde a nada.
+router.post('/reiniciar', (req, res) => {
+  const id = req.usuario.id;
+  const productos = db.prepare('SELECT COUNT(*) c FROM despensa WHERE usuario_id = ?').get(id).c;
+  const compras = db.prepare('SELECT COUNT(*) c FROM compras WHERE usuario_id = ?').get(id).c;
+
+  db.transaction(() => {
+    // compra_items se va con sus compras por el ON DELETE CASCADE del esquema.
+    db.prepare('DELETE FROM compras WHERE usuario_id = ?').run(id);
+    db.prepare('DELETE FROM despensa WHERE usuario_id = ?').run(id);
+    // El consumo ya aplicado apuntaba a productos que ya no existen: dejarlo haria que
+    // desmarcar un plato como cocinado intentara devolver stock a filas borradas.
+    db.prepare("UPDATE plan_comidas SET consumo_aplicado = NULL WHERE usuario_id = ?").run(id);
+  })();
+
+  const { inicio, fin } = ventanaDe(req.query || {});
+  res.json({
+    mensaje: `Se vació tu despensa: ${productos} producto(s) y ${compras} compra(s) borrados.`,
+    productos, compras,
+    despensa: despensaConProyeccion(id, inicio, fin),
+  });
+});
+
 // GET /api/despensa/compras -> historial de compras (snapshots) del usuario, con su detalle.
 router.get('/compras', (req, res) => {
   const compras = db.prepare(

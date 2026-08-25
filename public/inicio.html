@@ -147,8 +147,15 @@
       document.getElementById('stats').innerHTML = [
         tarjeta({ ic: '📅', valor: t.semanas_programadas, txt: 'Semanas programadas', sub: `${t.casillas_llenas} platos en el calendario`, tono: 'verde', href: '/plan.html' }),
         tarjeta({ ic: '🍲', valor: t.platos_guardados, txt: 'Platos en tu biblioteca', sub: `${t.platos_creados} creados en total`, tono: 'naranja', href: '/platos.html' }),
-        tarjeta({ ic: '🧺', valor: t.despensa_productos, txt: 'Productos en despensa', sub: t.despensa_agotados ? `${t.despensa_agotados} casi agotado(s)` : 'ninguno por acabarse', tono: 'ambar', href: '/despensa.html' }),
-        tarjeta({ ic: '📉', valor: `${t.consumo_despensa}%`, txt: 'Consumido de tu compra', sub: 'promedio de todos tus productos', tono: 'rojo', href: '/despensa.html' }),
+        // La despensa es opcional: si el hogar no la usa, sus dos tarjetas mostrarian ceros
+        // que parecen un problema ("0 productos") cuando en realidad no aplica. Se cambian por
+        // una sola que explica que existe y se puede activar.
+        ...(d.usuario?.despensa_activa ? [
+          tarjeta({ ic: '🧺', valor: t.despensa_productos, txt: 'Productos en despensa', sub: t.despensa_agotados ? `${t.despensa_agotados} casi agotado(s)` : 'ninguno por acabarse', tono: 'ambar', href: '/despensa.html' }),
+          tarjeta({ ic: '📉', valor: `${t.consumo_despensa}%`, txt: 'Consumido de tu compra', sub: 'promedio de todos tus productos', tono: 'rojo', href: '/despensa.html' }),
+        ] : [
+          tarjeta({ ic: '🧺', valor: '—', txt: 'Despensa desactivada', sub: 'actívala para cocinar con lo que tienes', tono: 'ambar', href: '/hogar.html' }),
+        ]),
         tarjeta({ ic: '👨‍👩‍👧', valor: t.integrantes, txt: 'Integrantes del hogar', sub: d.hogar && d.hogar.ciudad ? d.hogar.ciudad : 'configura tu hogar', tono: 'morado', href: '/hogar.html' }),
         tarjeta({ ic: '✨', valor: t.generaciones_total, txt: 'Generaciones de IA', sub: `${t.generaciones_semana} esta semana`, tono: 'azul' }),
         tarjeta({ ic: '🔍', valor: t.analisis_total, txt: 'Productos escaneados', sub: d.usuario?.ilimitado ? 'escaneos ilimitados' : `te quedan ${d.usuario?.analisis_restantes ?? 0}`, tono: 'celeste', href: '/app.html' }),
@@ -191,7 +198,12 @@
           </div>
           <a class="btn btn-sm btn-block" href="/despensa.html" style="margin-top:12px">Ver mi despensa</a>`;
       }
-      document.getElementById('card-periodo').innerHTML = `<h3 style="margin-bottom:10px">🛒 Tu compra</h3>${cuerpoPeriodo}`;
+      document.getElementById('card-periodo').innerHTML = d.usuario?.despensa_activa
+        ? `<h3 style="margin-bottom:10px">🛒 Tu compra</h3>${cuerpoPeriodo}`
+        : `<h3 style="margin-bottom:10px">🧺 Tu despensa</h3>
+           <p class="muted" style="font-size:13.5px">Ahora mismo la IA te propone platos <b>sin mirar tu despensa</b>.
+           Si quieres que cocine con lo que ya tienes en casa, actívala en Mi hogar.</p>
+           <a class="btn btn-sm btn-block" href="/hogar.html" style="margin-top:10px">Activar mi despensa</a>`;
     }
 
     cargar();

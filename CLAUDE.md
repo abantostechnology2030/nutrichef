@@ -105,7 +105,7 @@ src/
     auth.routes.js       # /registro, /login, /yo, /perfil (PATCH), /password (POST)
     inicio.routes.js     # dashboard: comidas de hoy + estadisticas de uso (sin IA)
     analisis.routes.js   # escaner: /texto (cache-first), /imagen (2 fotos), /historial, DELETE
-    hogar.routes.js      # hogar + CRUD de integrantes (condiciones y alergias)
+    hogar.routes.js      # hogar + CRUD de integrantes + interruptor de la despensa
     despensa.routes.js   # inventario (alta inmediata) + /compra (snapshot por periodo) + /compras (historial, con borrado)
     plan.routes.js       # calendario 7x3 + /generar (POR DIA) + /verificar + /detallar + /copiar + /faltantes y /necesidad
     platos.routes.js     # biblioteca: CRUD de platos manuales + guardar/quitar (tope platos_max)
@@ -219,6 +219,24 @@ La BD **nació vacía**, así que el esquema está completo y limpio desde el d�
   - **N semanas enteras** (`semanas`, 1..12): `periodoSemanas(inicio, n)` en `db.js` ancla el inicio al **lunes** y `fin = inicio + N*7 − 1`. N queda sticky en `hogar.semanas`. Como el periodo es en semanas enteras, **calza con la unidad de edición del plan** (que sigue siendo la semana): un periodo de N semanas **cubre N semanas de planificación**.
   - **Fechas a medida** (`periodo_inicio` + `periodo_fin`): el usuario fija el rango exacto; no toca la preferencia sticky.
   - **Concepto de "agotado":** pasado el periodo se entiende que se agotó y hay que volver a registrar (no hay borrado automático). El **banner** de la despensa y el **badge** del plan avisan a qué periodo pertenece (y si venció). El badge del plan muestra *"semana X de N"* del periodo activo (= la última compra registrada).
+
+### 🔴 LA DESPENSA ES UN MÓDULO OPCIONAL Y NACE APAGADA (2026-08-24)
+
+`hogar.despensa_activa` (0 por defecto) decide si el módulo existe para ese hogar. **No es "ocultar la pantalla": es un interruptor de verdad.** Con la despensa apagada:
+- **La IA ni la ve.** `contextoDe()` **no la consulta siquiera** cuando está apagada. Se corta en la fuente a propósito: si se consultara y se filtrara más adelante, cualquier flujo nuevo que olvidara el filtro la colaría.
+- **Se le DICE que no hay inventario**, no basta con omitir el bloque: las reglas del prompt hablan de la despensa, y sin ese aviso la IA se inventa que el hogar "tiene" cosas o marca faltantes que no significan nada. El texto le pide explícitamente `"faltantes": []` y `"consume": 0`.
+- **No hay consumo.** `indiceDespensa()` devuelve `[]`, y con eso se apagan de golpe los dos caminos (la proyección y el descuento al marcar cocinado) sin que ninguno tenga que acordarse del interruptor.
+- **Desaparece de los menús** (lateral e inferior), del plan (botón de despensa, lista de compras y badge de periodo) y del dashboard. Un enlace a una sección que no hace nada es peor que no tenerlo.
+
+**APAGAR NO BORRA NADA.** Los productos y las compras se quedan intactos: volver a encender devuelve el inventario tal cual. Lo cubre un aserto del smoke, porque es justo lo que haría dudar a alguien antes de probar el interruptor.
+
+**Reiniciar a cero (`POST /api/despensa/reiniciar`)** es lo otro: sí borra, y borra **productos + historial de compras + el `consumo_aplicado`** de las casillas (apuntaba a filas que ya no existen; sin limpiarlo, desmarcar un plato intentaría devolver stock a productos borrados). **No toca** el plan de comidas, los platos ni el hogar: borrar el inventario no debería costarte el calendario. Todo en una transacción.
+
+⚠️ **`usuarioPublico` vuelve a ser la trampa.** Su `SELECT` del hogar es explícito (`SELECT configurado, despensa_activa`): al añadir una columna del hogar que el front deba ver hay que tocarlo ahí también, o la ruta guarda bien y devuelve el valor viejo. **Ya pasó dos veces** (con `usuarios.foto` y con esta).
+
+**El usuario se refresca en segundo plano** (`refrescarUsuario()` en `api.js`). `exigirSesion()` lee localStorage, que es una foto del login: sin refresco, activabas la despensa en el teléfono y en la laptop seguía sin salir hasta volver a entrar. Solo repinta la navegación **si algo cambió**, para no provocar un parpadeo en cada carga. De paso arregla que el plan se actualice cuando el admin aprueba un pago.
+
+> **Decisiones del 2026-08-24, tomadas por el usuario tras plantearle las alternativas:** sin despensa **no se ofrece lista de compras** (se evaluó convertirla en "todos los ingredientes del plan" y se descartó); el valor por defecto es **apagada para todos, incluidos los que ya la usaban** (se advirtió que a 3 usuarios de producción se les apagaría, y se aceptó — mitigado porque apagar no borra); y reiniciar **borra también el historial de compras**.
 
 ### Consumo de la despensa (`services/consumo.js`) — ✅ hecho (2026-07-27)
 La barra de cada producto **baja sola** con lo que la familia cocina. Vive en su propio

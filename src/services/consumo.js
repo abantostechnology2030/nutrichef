@@ -81,7 +81,16 @@ const palabrasDe = (clave) => clave.split(' ').filter((w) => w && !VACIAS.has(w)
 const subconjunto = (a, b) => a.length > 0 && a.every((w) => b.includes(w));
 
 // Indice de la despensa del usuario, listo para emparejar muchas veces sin volver a la BD.
+// Con el modulo apagado no hay nada que proyectar ni que descontar. Se corta AQUI, en la
+// fuente que usan los dos caminos (la proyeccion y el descuento real), para que ninguno pueda
+// olvidarse del interruptor por su cuenta.
+function despensaActiva(usuarioId) {
+  const h = db.prepare('SELECT despensa_activa FROM hogar WHERE usuario_id = ?').get(usuarioId);
+  return !!(h && h.despensa_activa);
+}
+
 function indiceDespensa(usuarioId) {
+  if (!despensaActiva(usuarioId)) return [];
   const filas = db.prepare('SELECT id, nombre, categoria, porcentaje FROM despensa WHERE usuario_id = ?').all(usuarioId);
   return filas.map((f) => {
     const clave = claveIng(f.nombre);

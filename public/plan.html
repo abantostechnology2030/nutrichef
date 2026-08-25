@@ -49,6 +49,8 @@
                  en la cabecera de cada dia del calendario. -->
             <div class="row barra-acciones" style="gap:8px;flex-wrap:wrap">
               <button class="btn btn-ghost btn-sm hidden" id="btn-detallar">🍳 Completar platos</button>
+              <!-- Lista de compras y despensa: solo con el modulo de despensa activo. Sin
+                   inventario no hay con que comparar, asi que "lo que falta" no significa nada. -->
               <button class="btn btn-ghost btn-sm hidden" id="btn-faltantes">🛒 Lista de compras</button>
               <!-- Abre la despensa con la proyeccion de LA SEMANA VISIBLE (le pasa inicio/fin).
                    Sin eso, la despensa siempre proyectaba la semana ACTUAL: mirabas el plan del
@@ -282,7 +284,9 @@
         (n, dia) => n + d.momentos.filter((m) => d.plan[dia][m]).length, 0
       );
       const btn = document.getElementById('btn-faltantes');
-      btn.classList.toggle('hidden', programadas === 0);
+      // Sin el módulo de despensa no hay con qué comparar: "lo que falta" no significa nada,
+      // así que la lista de compras no se ofrece.
+      btn.classList.toggle('hidden', programadas === 0 || !U.despensa_activa);
       btn.title = `Ingredientes que te faltan para los ${programadas} plato(s) de esta semana`;
     }
 
@@ -340,14 +344,19 @@
           'Necesitamos saber quiénes son y qué pueden comer para proponerte platos.', '/hogar.html', 'Ir a Mi hogar');
         return;
       }
-      try {
-        const { despensa } = await api('/api/despensa');
-        if (!despensa.length) {
-          mostrarSetup('🛒 Tu despensa está vacía',
-            'Registra tu compra de la semana para que la IA proponga platos con lo que ya tienes.', '/despensa.html', 'Ir a Mi despensa');
-          return;
-        }
-      } catch { /* el aviso es orientativo: si falla, el backend igual valida */ }
+      // La despensa es un módulo OPCIONAL: si el hogar no la activó, no se le exige llenarla
+      // (y ni siquiera se consulta). Sin esto, quien decide no usarla vería para siempre un
+      // aviso pidiéndole que registre una compra que no piensa registrar.
+      if (U.despensa_activa) {
+        try {
+          const { despensa } = await api('/api/despensa');
+          if (!despensa.length) {
+            mostrarSetup('🛒 Tu despensa está vacía',
+              'Registra tu compra de la semana para que la IA proponga platos con lo que ya tienes.', '/despensa.html', 'Ir a Mi despensa');
+            return;
+          }
+        } catch { /* el aviso es orientativo: si falla, el backend igual valida */ }
+      }
       box.classList.add('hidden');
       if (setupPendiente) { setupPendiente = false; pintar(); }
     }
@@ -755,6 +764,11 @@
     // Se le pasa la ventana de la semana visible. Sin eso, la despensa proyectaba SIEMPRE la
     // semana actual: mirabas el plan del 13/07, entrabas a la despensa y las barras te
     // hablaban del 27/07 — el numero no correspondia a la semana que tenias delante.
+    // Con la despensa apagada se retiran su boton y el badge del periodo.
+    if (!U.despensa_activa) {
+      document.getElementById('btn-despensa').classList.add('hidden');
+      document.getElementById('badge-periodo').classList.add('hidden');
+    }
     document.getElementById('btn-despensa').onclick = () => {
       location.href = `/despensa.html?inicio=${semana}&fin=${sumar(semana, 6)}`;
     };

@@ -44,6 +44,14 @@ async function abrir(pagina, token, usuario) {
     body: JSON.stringify({ email: EMAIL, password: PASS }),
   })).json();
   const H = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const despensa = (activa) => fetch(`${BASE}/api/hogar`, {
+    method: 'PUT', headers: H, body: JSON.stringify({ despensa_activa: activa }),
+  }).then((r) => r.json());
+
+  // La despensa es OPCIONAL y nace apagada; el dashboard y la barra inferior cambian con ella
+  // (una tarjeta menos, una sección menos). Se fija encendida para el grueso de la prueba y se
+  // comprueba el otro estado al final, en vez de heredar el que quedara de otra corrida.
+  await despensa(true);
 
   let fallos = 0;
   const check = (cond, msg) => { console.log((cond ? '  OK   ' : '  FALLA ') + msg); if (!cond) fallos++; };
@@ -141,6 +149,27 @@ async function abrir(pagina, token, usuario) {
   // Limpieza: la cuenta queda sin foto, como estaba.
   const fin = await patch({ foto: null });
   check(fin.status === 200 && fin.d.usuario.foto === null, '(limpieza) la foto se puede quitar');
+
+  // ================= CON LA DESPENSA APAGADA =================
+  // Es el estado POR DEFECTO de un hogar nuevo, así que es el que verá la mayoría: conviene
+  // que esté cubierto igual que el otro.
+  console.log('\n=== con la despensa desactivada (el estado por defecto) ===');
+  {
+    await despensa(false);
+    const off = await abrir('inicio.html', token, { ...usuario, despensa_activa: false });
+    check(off.errores.length === 0, `sin errores de runtime ${off.errores.length ? '-> ' + off.errores.join(' | ') : ''}`);
+    const t = off.doc.querySelectorAll('#stats .stat-card');
+    check(t.length === 7, `una tarjeta menos: 7 en vez de 8 (= ${t.length})`);
+    // Con la despensa apagada, "0 productos" se leería como un problema cuando no aplica.
+    check(/Despensa desactivada/.test(off.doc.querySelector('#stats').textContent),
+      'y en su lugar invita a activarla');
+    check(/Activar mi despensa/.test(off.doc.querySelector('#card-periodo').textContent),
+      'la tarjeta de la compra explica que la IA no la está mirando');
+    const bnOff = [...off.doc.querySelectorAll('.bottomnav a')];
+    check(bnOff.length === 4, `la barra inferior pierde Despensa: 4 opciones (= ${bnOff.length})`);
+    check(!bnOff.some((a) => /Despensa/.test(a.textContent)), 'y ya no la lista');
+    // Se deja apagada: es el valor por defecto del producto.
+  }
 
   console.log(fallos ? `\n=== ${fallos} FALLA(S) ===` : '\n=== TODO OK ===');
   process.exit(fallos ? 1 : 0);

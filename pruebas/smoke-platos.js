@@ -57,6 +57,20 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
   })).json();
   const { token, usuario } = reg;
 
+  // La despensa es un módulo OPCIONAL que nace APAGADO, y esta prueba comprueba cosas que
+  // dependen de ella (el botón de la despensa en el plan, la lista de compras, el descuento al
+  // cocinar). Se enciende aquí, después de crear el usuario: fijar el estado, no heredarlo.
+  const hogarPut = await (await fetch(`${BASE}/api/hogar`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ despensa_activa: true }),
+  })).json();
+  // El usuario que se guarda en localStorage para jsdom es el del REGISTRO, de antes de
+  // encender la despensa. Se toma el que devuelve el PUT o la pagina se pintaria con la
+  // bandera vieja (la app real lo resuelve refrescando en segundo plano, pero el test no
+  // debe depender de esa carrera).
+  Object.assign(usuario, hogarPut.usuario || {});
+
   const apiSrv = async (ruta, opts = {}) => {
     const r = await fetch(BASE + ruta, {
       ...opts,

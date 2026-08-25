@@ -55,6 +55,30 @@
               placeholder="Ej: no nos gusta el pescado, cocinamos rápido entre semana, los domingos comemos fuera, preferimos platos de olla..."></textarea>
           </div>
           <button class="btn" id="btn-guardar-hogar">Guardar datos del hogar</button>
+
+        <!-- ===== Modulo opcional: despensa ===== -->
+        <div class="card">
+          <h3 style="margin-bottom:6px">🧺 Mi despensa <span class="muted" style="font-weight:400;font-size:13px">(opcional)</span></h3>
+          <p class="muted" style="font-size:13px;margin-bottom:12px">
+            Llevar el inventario de lo que tienes en casa para que la IA <b>cocine con eso</b>.
+            Si no lo activas, la app te propone platos igual, solo que sin mirar tu despensa.
+          </p>
+
+          <label class="switch-fila">
+            <input type="checkbox" id="h-despensa-activa" />
+            <span><b>Usar mi despensa</b>
+              <span class="muted" id="lbl-despensa-estado" style="display:block;font-size:12.5px"></span>
+            </span>
+          </label>
+
+          <div id="bloque-despensa" class="hidden" style="margin-top:14px">
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <a class="btn btn-sm" href="/despensa.html">Ir a mi despensa</a>
+              <button class="btn btn-ghost btn-sm" type="button" id="btn-ver-instrucciones">📖 Cómo se usa</button>
+              <button class="btn btn-danger btn-sm" type="button" id="btn-reiniciar-despensa">🗑️ Reiniciar a cero</button>
+            </div>
+          </div>
+        </div>
         </div>
 
         <!-- Integrantes -->
@@ -170,6 +194,7 @@
       document.getElementById('h-dieta').value = h.dieta;
       document.getElementById('h-presupuesto').value = h.presupuesto;
       document.getElementById('h-notas').value = h.notas || '';
+      pintarDespensaModulo(!!h.despensa_activa);
       document.getElementById('h-comensales').value = `${d.integrantes.length} persona${d.integrantes.length === 1 ? '' : 's'}`;
 
       document.getElementById('aviso-config').classList.toggle('hidden', !!h.configurado);
@@ -229,10 +254,124 @@
           dieta: document.getElementById('h-dieta').value,
           presupuesto: document.getElementById('h-presupuesto').value,
           notas: document.getElementById('h-notas').value,
+          despensa_activa: document.getElementById('h-despensa-activa').checked,
         } });
         sincronizarUsuario(d);
         alerta(alHogar, 'Datos del hogar guardados.', 'ok');
       } catch (err) { alerta(alHogar, err.error || 'No pudimos guardar.'); }
+    };
+
+    // ===== Modulo de despensa (opcional) =====
+    //
+    // El interruptor se guarda AL MOMENTO, no con el boton "Guardar datos del hogar": enciende
+    // o apaga una seccion entera de la app (menus, plan, IA), y dejarlo a medias hasta que el
+    // usuario pulse guardar haria que la pantalla mienta sobre lo que esta activo.
+    function pintarDespensaModulo(activa) {
+      document.getElementById('h-despensa-activa').checked = activa;
+      document.getElementById('bloque-despensa').classList.toggle('hidden', !activa);
+      document.getElementById('lbl-despensa-estado').textContent = activa
+        ? 'Activada: la IA usa lo que tienes en casa al proponer tus platos.'
+        : 'Desactivada: la IA propone sin mirar tu despensa.';
+    }
+
+    document.getElementById('h-despensa-activa').onchange = async (e) => {
+      const activa = e.target.checked;
+      limpiarAlerta(alHogar);
+      try {
+        const d = await api('/api/hogar', { method: 'PUT', body: { despensa_activa: activa } });
+        sincronizarUsuario(d);
+        pintarDespensaModulo(activa);
+        // Los menus (lateral e inferior) muestran "Mi despensa" solo si esta activa.
+        const sb = document.getElementById('sidebar');
+        if (sb) { sb.innerHTML = pintarSidebar('hogar'); activarMenuMovil(); }
+        document.querySelector('.bottomnav')?.remove();
+        if (typeof pintarBottomNav === 'function') pintarBottomNav();
+
+        if (activa) instruccionesDespensa();
+        else alerta(alHogar, 'Despensa desactivada. Tus productos NO se borraron: si la vuelves a activar, siguen ahí.', 'ok');
+      } catch (err) {
+        e.target.checked = !activa; // deshacer el interruptor: no se guardo
+        alerta(alHogar, err.error || 'No pudimos cambiar la despensa.');
+      }
+    };
+
+    document.getElementById('btn-ver-instrucciones').onclick = () => instruccionesDespensa();
+
+    // Instrucciones al activar. Se explica el CICLO completo, porque la despensa no es una
+    // lista: es un ciclo (comprar -> registrar -> cocinar -> se vacia -> vuelve a la lista) y
+    // sin entenderlo el usuario registra una vez y no vuelve.
+    function instruccionesDespensa() {
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:560px;text-align:left">
+        <h3>🧺 Cómo funciona tu despensa</h3>
+        <div class="modal-body">
+          <p style="font-size:13.5px;margin-bottom:14px">
+            La despensa es <b>lo que tienes en casa hoy</b>. Sirve para que la IA te proponga
+            platos <b>con lo que ya compraste</b>, en vez de recetas que te obliguen a ir al mercado.
+          </p>
+
+          <div class="paso-guia"><span class="paso-num">1</span><div>
+            <b>Registra tu compra</b>
+            <p class="muted">En <b>Mi despensa → 🛒 Registrar compra</b> eliges para cuántas semanas es
+            y marcas lo que trajiste del mercado. Lo que no encontraste, lo desmarcas.</p>
+          </div></div>
+
+          <div class="paso-guia"><span class="paso-num">2</span><div>
+            <b>Genera tus platos</b>
+            <p class="muted">En <b>Plan de comidas</b>, la IA arma cada día priorizando lo que tienes.
+            Lo que le falte te lo marca como <b>faltante</b>, y aparece en tu lista de compras.</p>
+          </div></div>
+
+          <div class="paso-guia"><span class="paso-num">3</span><div>
+            <b>Marca lo que cocinaste</b>
+            <p class="muted">Cada plato tiene un <b>○</b> para marcarlo como cocinado. Ahí es cuando
+            <b>baja el stock</b> de los ingredientes que usó. Mientras no lo marques, solo verás
+            una <i>proyección</i> (el tramo rayado): nada se descuenta.</p>
+          </div></div>
+
+          <div class="paso-guia"><span class="paso-num">4</span><div>
+            <b>Vuelve a comprar</b>
+            <p class="muted">Cuando las barras bajen, esos productos vuelven a tu lista de compras.
+            Registras la nueva compra y el ciclo empieza otra vez.</p>
+          </div></div>
+
+          <div class="reco-foto" style="margin-top:14px">
+            <b>Lo que hay que entender del %:</b> <b>100% no es "el envase lleno"</b>, es
+            <b>"tengo todo lo que mi plan necesita para este periodo"</b>. Por eso al 50% significa
+            que te alcanza para la mitad del periodo, no que te queda media bolsa.
+          </div>
+
+          <p class="muted" style="font-size:12.5px;margin-top:12px">
+            ¿No quieres llevar inventario? Desactívala cuando quieras: la app sigue proponiéndote
+            platos, solo que sin mirar tu despensa. <b>Desactivar no borra nada.</b>
+          </p>
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn-sm" type="button" data-cerrar>Entendido</button>
+        </div>
+      </div>`;
+      document.body.appendChild(back);
+      const cerrar = () => back.remove();
+      back.querySelector('[data-cerrar]').onclick = cerrar;
+      back.onclick = (e) => { if (e.target === back) cerrar(); };
+    }
+
+    // Reiniciar a cero. Es DESTRUCTIVO y distinto de apagar el modulo, asi que el modal
+    // enumera exactamente que se borra y que no.
+    document.getElementById('btn-reiniciar-despensa').onclick = async () => {
+      const ok = await confirmar(
+        '<p>Se van a borrar <b>todos los productos</b> de tu despensa y <b>todo el historial de compras</b>.</p>'
+        + '<p><b>No se tocan</b> tu plan de comidas, tus platos guardados ni tu hogar.</p>'
+        + '<p class="muted" style="font-size:12.5px">Si solo quieres dejar de usar la despensa, apaga el interruptor: eso NO borra nada.</p>',
+        { titulo: '¿Reiniciar tu despensa a cero?', ok: 'Sí, borrar todo', peligro: true }
+      );
+      if (!ok) return;
+      limpiarAlerta(alHogar);
+      try {
+        const d = await api('/api/despensa/reiniciar', { method: 'POST' });
+        alerta(alHogar, d.mensaje + ' Puedes empezar de nuevo cuando quieras.', 'ok');
+      } catch (err) { alerta(alHogar, err.error || 'No pudimos reiniciar la despensa.'); }
     };
 
     // ===== Integrantes =====

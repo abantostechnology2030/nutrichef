@@ -73,7 +73,8 @@ function pintarSidebar(seccionActiva) {
   ];
   if (u?.incluye_planificador) {
     items.push({ id: 'plan', href: '/plan.html', ic: '📅', txt: 'Plan de comidas' });
-    items.push({ id: 'despensa', href: '/despensa.html', ic: '🛒', txt: 'Mi despensa' });
+    // La despensa es un modulo OPCIONAL: si el hogar no la activo, no se ofrece.
+    if (u.despensa_activa) items.push({ id: 'despensa', href: '/despensa.html', ic: '🛒', txt: 'Mi despensa' });
     items.push({ id: 'platos', href: '/platos.html', ic: '🍲', txt: 'Mis platos' });
     items.push({ id: 'hogar', href: '/hogar.html', ic: '👨‍👩‍👧', txt: 'Mi hogar' });
   }
@@ -398,7 +399,7 @@ function _guardarPrefsMascota(p) {
 //
 // NO se pinta para el admin: su navegacion es otra (panel, pagos, config) y no cabe en cinco
 // iconos. Tampoco en login/registro, que no tienen .main.
-(function pintarBottomNav() {
+function pintarBottomNav() {
   const u = Sesion.usuario;
   if (!Sesion.token || !u || u.rol === 'admin') return;
   if (!document.querySelector('.main')) return;
@@ -413,7 +414,7 @@ function _guardarPrefsMascota(p) {
   // que no tenerlos.
   if (u.incluye_planificador) {
     items.push({ href: '/plan.html', ic: '📅', txt: 'Plan' });
-    items.push({ href: '/despensa.html', ic: '🧺', txt: 'Despensa' });
+    if (u.despensa_activa) items.push({ href: '/despensa.html', ic: '🧺', txt: 'Despensa' });
     items.push({ href: '/platos.html', ic: '🍲', txt: 'Platos' });
   }
 
@@ -423,7 +424,8 @@ function _guardarPrefsMascota(p) {
     .map((i) => `<a href="${i.href}" class="${ruta.endsWith(i.href) ? 'active' : ''}"><span class="bn-ic">${i.ic}</span>${i.txt}</a>`)
     .join('');
   document.body.appendChild(nav);
-})();
+}
+pintarBottomNav();
 
 // ===== Perfil del usuario (modal) =====
 //
@@ -607,3 +609,36 @@ function modalCargando({ ic = '👨‍🍳', titulo = 'Cocinando…', texto = ''
     },
   };
 }
+
+// ===== Refresco del usuario en segundo plano =====
+//
+// exigirSesion() lee localStorage, que es una FOTO del momento del login. Eso basto mientras
+// solo guardaba nombre y plan, pero ahora hay banderas que cambian lo que se PINTA
+// (despensa_activa decide si "Mi despensa" aparece en los menus) y que pueden cambiar desde
+// otro dispositivo o desde el panel admin.
+//
+// Sin esto: activas la despensa en el telefono y en la laptop sigue sin salir hasta cerrar y
+// volver a entrar. Lo mismo con el plan cuando el admin aprueba un pago por Yape.
+//
+// Es una lectura ligera y va en segundo plano: la pagina ya se pinto con lo que habia, y solo
+// se repinta la navegacion SI algo cambio (para no provocar un parpadeo en cada carga).
+(function refrescarUsuario() {
+  if (!Sesion.token || !Sesion.usuario) return;
+  if (!document.querySelector('.main')) return; // login/registro
+  api('/api/auth/yo')
+    .then(({ usuario }) => {
+      if (!usuario) return;
+      const antes = JSON.stringify(Sesion.usuario);
+      if (JSON.stringify(usuario) === antes) return;
+      Sesion.actualizarUsuario(usuario);
+      const sb = document.getElementById('sidebar');
+      if (sb && sb.innerHTML.trim()) {
+        const act = sb.querySelector('.nav a.active');
+        sb.innerHTML = pintarSidebar(act ? act.getAttribute('href').replace(/^\/|\.html$/g, '') : '');
+        if (typeof activarMenuMovil === 'function') activarMenuMovil();
+      }
+      document.querySelector('.bottomnav')?.remove();
+      if (typeof pintarBottomNav === 'function') pintarBottomNav();
+    })
+    .catch(() => { /* si falla, se queda con lo que ya tenia: no es critico */ });
+})();

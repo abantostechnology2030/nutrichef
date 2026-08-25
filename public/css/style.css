@@ -696,3 +696,21 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   .barra-acciones { width: 100%; }
   .barra-acciones .btn { flex: 1 1 calc(50% - 6px); justify-content: center; }
 }
+
+/* ===== Modulo opcional de despensa (Mi hogar) ===== */
+.switch-fila {
+  display: flex; align-items: flex-start; gap: 12px; cursor: pointer;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
+}
+.switch-fila input[type="checkbox"] { width: 22px; height: 22px; flex-shrink: 0; margin-top: 1px; accent-color: var(--primary); cursor: pointer; }
+.switch-fila:hover { border-color: var(--primary); }
+
+/* Pasos numerados de las instrucciones de uso. */
+.paso-guia { display: flex; gap: 12px; margin-bottom: 14px; align-items: flex-start; }
+.paso-num {
+  flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--primary); color: #fff; font-weight: 800; font-size: 14px;
+  display: grid; place-items: center;
+}
+.paso-guia b { font-size: 14px; }
+.paso-guia p { font-size: 12.5px; margin: 2px 0 0; line-height: 1.45; }

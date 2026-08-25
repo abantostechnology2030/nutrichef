@@ -151,6 +151,18 @@ db.exec(`
 if (!db.prepare('PRAGMA table_info(hogar)').all().some((c) => c.name === 'cadencia')) {
   db.exec("ALTER TABLE hogar ADD COLUMN cadencia TEXT NOT NULL DEFAULT 'semanal'");
 }
+// despensa_activa: el modulo de despensa es OPCIONAL y nace APAGADO (0).
+//
+// Con la despensa apagada la IA no la ve: no se le manda al prompt, no marca faltantes y no
+// se descuenta nada al cocinar. Es un interruptor de verdad, no un "ocultar la pantalla".
+//
+// APAGAR NO BORRA NADA: los productos y las compras se quedan en su tabla intactos, asi que
+// volver a encenderla devuelve el inventario tal cual estaba. Para vaciarlo de verdad hay que
+// pedirlo aparte (POST /api/despensa/reiniciar).
+if (!db.prepare('PRAGMA table_info(hogar)').all().some((c) => c.name === 'despensa_activa')) {
+  db.exec('ALTER TABLE hogar ADD COLUMN despensa_activa INTEGER NOT NULL DEFAULT 0');
+}
+
 // semanas = cuantas semanas cubre una compra (el "periodo"). 1..12. Preferencia sticky.
 if (!db.prepare('PRAGMA table_info(hogar)').all().some((c) => c.name === 'semanas')) {
   db.exec('ALTER TABLE hogar ADD COLUMN semanas INTEGER NOT NULL DEFAULT 1');
@@ -569,7 +581,10 @@ function usuarioPublico(id) {
   if (!u) return null;
 
   const esAdmin = u.rol === 'admin';
-  const hogar = db.prepare('SELECT configurado FROM hogar WHERE usuario_id = ?').get(id);
+  // OJO: SELECT explicito. Al agregar una columna del hogar que el front deba ver, hay que
+  // anadirla AQUI tambien o la ruta guarda bien y devuelve el valor viejo. Ya paso con la foto
+  // del usuario y volvio a pasar con despensa_activa.
+  const hogar = db.prepare('SELECT configurado, despensa_activa FROM hogar WHERE usuario_id = ?').get(id);
 
   return {
     id: u.id,
@@ -594,6 +609,8 @@ function usuarioPublico(id) {
     dias_restantes: esAdmin ? null : diasHasta(u.plan_expira),
     // Gate del onboarding: sin hogar configurado el planificador no puede proponer nada.
     hogar_configurado: !!(hogar && hogar.configurado),
+    // El front lo usa para pintar (o no) la despensa en los menus y en el plan.
+    despensa_activa: !!(hogar && hogar.despensa_activa),
   };
 }
 

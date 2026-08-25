@@ -88,6 +88,11 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
     { nombre: 'Ana', edad: 34, condiciones: ['intolerancia a la lactosa'], alergias: [] },
   ]) await apiSrv('/api/hogar/integrantes', { method: 'POST', body: JSON.stringify(it) });
 
+  // La despensa es un modulo OPCIONAL que nace APAGADO. Esta prueba va sobre ella, asi que se
+  // enciende explicitamente: heredar el estado de la corrida anterior daria fallos que no
+  // tienen nada que ver con lo que se esta probando.
+  await apiSrv('/api/hogar', { method: 'PUT', body: JSON.stringify({ despensa_activa: true }) });
+
   // Producto unico por corrida, para que "agregar" siempre sea un alta real
   // (el dedup de la despensa es correcto, pero haria que el conteo no cambie).
   const INGREDIENTE = 'Hierba de prueba ' + Date.now(); // se agrega en "Registrar compra"
@@ -528,6 +533,36 @@ async function api(ruta, token, { method = 'GET', body } = {}) {
   console.log(`\n(limpieza: producto de prueba ${sobra ? 'eliminado' : 'no encontrado'}${compraId ? ', compra de prueba borrada' : ''}`
     + `${creados ? `, ${creados} productos dados de alta por la prueba eliminados` : ''}`
     + `${porcentajesPrevios.length ? `, ${porcentajesPrevios.length} niveles restaurados` : ''})`);
+
+  // ================= LA DESPENSA COMO MODULO OPCIONAL =================
+  // Lo que hay que fijar: APAGADA, la IA no la ve. El contexto es lo unico que recibe, asi que
+  // se comprueba sobre el texto del contexto, no sobre la pantalla.
+  console.log('\n=== la despensa es opcional (apagarla la saca de la IA) ===');
+  {
+    const { contextoDe, textoContexto } = require('../src/services/contexto');
+    const { indiceDespensa } = require('../src/services/consumo');
+    const id = usuario.id;
+
+    await apiSrv('/api/hogar', { method: 'PUT', body: JSON.stringify({ despensa_activa: true }) });
+    const conDespensa = textoContexto(contextoDe(id));
+    check(/DESPENSA \(lo que YA tiene/.test(conDespensa), 'activada: la despensa va en el prompt');
+    check(indiceDespensa(id).length > 0, `activada: hay stock del que descontar (${indiceDespensa(id).length} productos)`);
+
+    const off = await apiSrv('/api/hogar', { method: 'PUT', body: JSON.stringify({ despensa_activa: false }) });
+    check(off.usuario && off.usuario.despensa_activa === false, 'el interruptor se guarda y usuarioPublico lo expone');
+    const sinDespensa = textoContexto(contextoDe(id));
+    check(!/DESPENSA \(lo que YA tiene/.test(sinDespensa), 'apagada: la despensa YA NO va en el prompt');
+    check(!/PERIODO DE LA COMPRA/.test(sinDespensa), 'ni el periodo (solo significa algo con despensa)');
+    check(/NO lleva inventario/.test(sinDespensa), 'y se le DICE que esta familia no lleva inventario');
+    check(indiceDespensa(id).length === 0, 'apagada: no hay nada que descontar al cocinar');
+    // Apagar NO puede borrar: si lo hiciera, encender/apagar por probar costaria el inventario.
+    const sigue = (await apiSrv('/api/despensa')).despensa || [];
+    check(sigue.length > 0, `apagar NO borra nada: siguen ${sigue.length} productos guardados`);
+
+    await apiSrv('/api/hogar', { method: 'PUT', body: JSON.stringify({ despensa_activa: true }) });
+    const vuelve = (await apiSrv('/api/despensa')).despensa || [];
+    check(vuelve.length === sigue.length, 'y al volver a encenderla esta igual que antes');
+  }
 
   console.log(fallos ? `\n=== ${fallos} FALLA(S) ===` : '\n=== TODO OK ===');
   process.exit(fallos ? 1 : 0);

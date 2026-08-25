@@ -23,8 +23,13 @@ function contextoDe(usuarioId) {
       notas: i.notas || undefined,
     }));
 
-  const despensa = db.prepare('SELECT nombre, categoria, nivel, porcentaje FROM despensa WHERE usuario_id = ? ORDER BY categoria, nombre')
-    .all(usuarioId);
+  // Con el modulo apagado NI SIQUIERA SE CONSULTA: el contexto es lo unico que la IA ve, asi
+  // que una despensa vacia aqui es la forma correcta de "apagarla del todo". Si se consultara
+  // y se filtrara mas adelante, cualquier flujo nuevo que olvidara el filtro la colaria.
+  const despensaActiva = !!hogar.despensa_activa;
+  const despensa = despensaActiva
+    ? db.prepare('SELECT nombre, categoria, nivel, porcentaje FROM despensa WHERE usuario_id = ? ORDER BY categoria, nombre').all(usuarioId)
+    : [];
 
   const unicos = (arr) => [...new Map(arr.map((x) => [x.toLowerCase(), x])).values()];
   const alergias = unicos(integrantes.flatMap((i) => i.alergias));
@@ -47,6 +52,7 @@ function contextoDe(usuarioId) {
     alergias,     // union: exclusion absoluta
     condiciones,  // union: adaptaciones del plato
     despensa,
+    despensaActiva,
   };
 }
 
@@ -56,9 +62,12 @@ function textoContexto(ctx) {
   const sem = ctx.hogar.semanas;
   const partes = [
     `HOGAR: ${ctx.hogar.comensales} comensal(es). Region: ${ctx.hogar.region}${ctx.hogar.ciudad ? ` (${ctx.hogar.ciudad})` : ''}. Dieta: ${ctx.hogar.dieta}. Presupuesto: ${ctx.hogar.presupuesto}.`,
-    `PERIODO DE LA COMPRA: ${sem} semana(s). La despensa de abajo esta comprada para cubrir ese periodo.`,
     `INTEGRANTES: ${JSON.stringify(ctx.integrantes)}`,
   ];
+  // El periodo solo significa algo si hay despensa: es la referencia del "queda %".
+  if (ctx.despensaActiva) {
+    partes.splice(1, 0, `PERIODO DE LA COMPRA: ${sem} semana(s). La despensa de abajo esta comprada para cubrir ese periodo.`);
+  }
   // Las alergias se repiten aparte (aunque ya vayan en integrantes) para que la
   // restriccion dura quede imposible de pasar por alto.
   partes.push(
@@ -79,11 +88,18 @@ function textoContexto(ctx) {
   // El 100% es LA NECESIDAD DEL PERIODO, no el envase lleno (ver FORMATO_CONSUME). Se dice
   // explicitamente y con el periodo delante para que la IA lea "queda 25%" como "le alcanza
   // para un cuarto de su periodo", que es lo que significa.
-  partes.push(
-    ctx.despensa.length
-      ? `DESPENSA (lo que YA tiene en casa; "queda" es el % que le sobra de ese producto MEDIDO SOBRE LO QUE NECESITA PARA EL PERIODO COMPLETO de ${sem} semana(s): 100 = tiene todo lo que necesita para el periodo, 50 = le alcanza para la mitad, 0 = se le acabo): ${JSON.stringify(ctx.despensa.map((d) => ({ nombre: d.nombre, queda: `${d.porcentaje}%` })))}`
-      : 'DESPENSA: vacia (no tiene ingredientes registrados).'
-  );
+  // Con el modulo apagado se le DICE que no hay despensa y que no debe razonar sobre ella.
+  // No basta con omitir el bloque: las reglas del prompt hablan de la despensa, y sin este
+  // aviso la IA se inventa que el hogar "tiene" cosas o marca faltantes que no significan nada.
+  if (!ctx.despensaActiva) {
+    partes.push('DESPENSA: esta familia NO lleva inventario de despensa. NO supongas que tiene ni que le falta ningun ingrediente, NO menciones su despensa y devuelve SIEMPRE "faltantes": [] y "consume": 0. Propon los platos libremente segun su region, dieta, presupuesto y condiciones medicas.');
+  } else {
+    partes.push(
+      ctx.despensa.length
+        ? `DESPENSA (lo que YA tiene en casa; "queda" es el % que le sobra de ese producto MEDIDO SOBRE LO QUE NECESITA PARA EL PERIODO COMPLETO de ${sem} semana(s): 100 = tiene todo lo que necesita para el periodo, 50 = le alcanza para la mitad, 0 = se le acabo): ${JSON.stringify(ctx.despensa.map((d) => ({ nombre: d.nombre, queda: `${d.porcentaje}%` })))}`
+        : 'DESPENSA: vacia (no tiene ingredientes registrados).'
+    );
+  }
   if (ctx.hogar.notas) partes.push(`NOTAS DE LA FAMILIA: ${ctx.hogar.notas}`);
 
   // Instrucciones generales del admin (config.ia_instrucciones): valen para TODOS los
