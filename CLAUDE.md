@@ -1026,6 +1026,30 @@ de rotulo es cambiar el motor por pintar la puerta.
   **"☆ Guardar en Mis Recetas"**, con un `title` que explica que guardarlo permite reutilizarlo
   **sin gastar otra generacion**, y el aviso al pulsarlo dice la consecuencia.
 
+### Una sola cabecera para todas las secciones (2026-08-25)
+Cada pagina abria distinto: unas con una tarjeta verde, otras con el titulo suelto, otras con el
+formulario a pelo. **Ahora las diez abren con `.hero-seccion`**: el mismo degradado de marca del
+saludo de inicio, el icono en su pastilla, el titulo y una linea que dice para que sirve esa
+seccion.
+- **Los colores son los MISMOS del dashboard** (`.tono-*`), y no es decoracion: el color agrupa
+  por tema (Recetas naranja, Hogar morado, IA azul) **en las dos pantallas**. Si cada pagina
+  eligiera el suyo, el color dejaria de significar algo.
+- **`tarjetaDato()` vive en `api.js`** y la usan inicio, Mis Recetas y Mi hogar. Antes `inicio`
+  tenia su propia `tarjeta()`: dos copias del mismo componente acaban divergiendo y el mismo
+  dato sale naranja en un sitio y verde en otro.
+- En **Mis Recetas** las cuatro tarjetas ademas **filtran** (tuyas / de la IA / sin usar): son los
+  cortes que uno quiere hacer sobre un recetario grande, y tenerlos como numero y como filtro en
+  el mismo sitio ahorra bajar hasta los selectores.
+- En **Mi hogar** resumen lo que la IA mira: integrantes, condiciones, **alergias en rojo** (es la
+  unica restriccion absoluta: verlas en 0 cuando la familia si tiene alguna es la forma mas rapida
+  de notar que falta registrarla) y de donde es su cocina.
+- **La tarjeta de plan** (Mi suscripcion) dejo de ser un parrafo con `<br>`: en el telefono se
+  leia como una frase corrida (*"Analisis ilimitados productos guardados ilimitados…"*). Cada
+  prestacion es una linea con ✓, y lo que el plan **no** trae va tachado y en gris para que no se
+  lea como una ventaja mas.
+  - ⚠️ La concordancia de `limite()` miraba la **ultima letra de la frase**, asi que "recetas
+    guardadas" daba *"ilimitados"*. Ahora mira el **sustantivo** (la primera palabra).
+
 ### Fase 6 — admin
 Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `generaciones`). Falta pulir la UI: mostrar el desglose de generaciones por tipo (menu/dia/plato/detalle/verificar) y el aviso de crédito.
 

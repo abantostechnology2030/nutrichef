@@ -29,6 +29,17 @@
         </div>
 
         <!-- Datos del hogar -->
+        <!-- Cabecera de seccion: mismo degradado y mismo lenguaje que el dashboard de inicio. -->
+        <div class="card hero-seccion">
+          <div class="hero-ic">👨‍👩‍👧</div>
+          <div class="hero-txt">
+            <h2>Mi hogar</h2>
+            <p>Quiénes son, qué no pueden comer y de dónde es su cocina. Es lo que la IA mira antes de proponer cualquier plato, así que cuanto más completo, mejor le queda el menú.</p>
+          </div>
+        </div>
+
+        <div id="mini-hogar" class="mini-stats"></div>
+
         <div class="card card-tint">
           <h3 style="margin-bottom:4px">Datos del hogar</h3>
           <p class="muted" style="font-size:13px;margin-bottom:14px">La región define el estilo de cocina que te propondremos; la dieta y el presupuesto acotan los platos.</p>
@@ -199,6 +210,7 @@
 
       document.getElementById('aviso-config').classList.toggle('hidden', !!h.configurado);
       document.getElementById('cont-integrantes').textContent = d.integrantes.length ? `· ${d.integrantes.length}` : '';
+      pintarMiniHogar(d);
 
       const cont = document.getElementById('lista-integrantes');
       if (!d.integrantes.length) {
@@ -233,6 +245,23 @@
     function sincronizarUsuario(d) {
       if (d.usuario) Sesion.actualizarUsuario(d.usuario);
       pintarHogar(d);
+    }
+
+    // Lo que la IA mira de este hogar, en cuatro numeros. Las alergias van en rojo a proposito:
+    // son la unica restriccion ABSOLUTA del planificador, y verlas en cero cuando la familia si
+    // tiene alguna es la forma mas rapida de darse cuenta de que falta registrarla.
+    function pintarMiniHogar(d) {
+      const unicos = (campo) => new Set(d.integrantes.flatMap((i) => i[campo] || []).map((x) => String(x).toLowerCase())).size;
+      const cond = unicos('condiciones');
+      const ale = unicos('alergias');
+      const h = d.hogar;
+      const REG = { costa: 'Costa', sierra: 'Sierra', selva: 'Selva' };
+      document.getElementById('mini-hogar').innerHTML = [
+        tarjetaDato({ ic: '👥', valor: d.integrantes.length, txt: 'Integrantes', sub: d.integrantes.length ? 'comensales del menú' : 'agrega al menos uno', tono: 'morado' }),
+        tarjetaDato({ ic: '🩺', valor: cond, txt: 'Condiciones médicas', sub: cond ? 'la IA adapta los platos' : 'ninguna registrada', tono: 'celeste' }),
+        tarjetaDato({ ic: '🚫', valor: ale, txt: 'Alergias', sub: ale ? 'se excluyen siempre' : 'ninguna registrada', tono: 'rojo' }),
+        tarjetaDato({ ic: '📍', valor: h.ciudad || REG[h.region] || '—', txt: 'Cocina de', sub: h.ciudad ? `región ${REG[h.region] || h.region}` : 'agrega tu ciudad para afinar', tono: 'verde' }),
+      ].join('');
     }
 
     async function cargar() {

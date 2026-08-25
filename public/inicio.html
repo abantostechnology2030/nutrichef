@@ -87,16 +87,11 @@
 
     // Tarjeta de estadistica. El color NO es decorativo: agrupa por tema (plan en verde,
     // despensa en naranja, hogar en morado, IA en azul), para que la fila se lea de un vistazo.
-    function tarjeta({ ic, valor, txt, sub, tono, href }) {
-      const cuerpo = `
-        <span class="stat-ic">${ic}</span>
-        <b class="stat-valor">${valor}</b>
-        <span class="stat-txt">${txt}</span>
-        ${sub ? `<span class="stat-sub">${sub}</span>` : ''}`;
-      return href
-        ? `<a class="stat-card tono-${tono}" href="${href}">${cuerpo}</a>`
-        : `<div class="stat-card tono-${tono}">${cuerpo}</div>`;
-    }
+    //
+    // La pinta tarjetaDato() de api.js, que es la MISMA que usan las demas secciones: si cada
+    // pantalla tuviera la suya, "Recetas" acabaria siendo naranja aqui y verde alla, y el color
+    // dejaria de significar algo.
+    const tarjeta = tarjetaDato;
 
     const MOM_IC = { desayuno: '🥣', almuerzo: '🍛', cena: '🍽️' };
     const MOM_TXT = { desayuno: 'Desayuno', almuerzo: 'Almuerzo', cena: 'Cena' };

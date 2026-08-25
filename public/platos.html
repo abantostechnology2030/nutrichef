@@ -24,19 +24,19 @@
       </header>
 
       <div class="content stack">
-        <div class="card card-tint">
-          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
-            <div>
-              <h3 style="margin-bottom:4px">Tu recetario</h3>
-              <p class="muted" style="font-size:13px;max-width:60ch">
-                Aquí guardas las recetas que quieres reutilizar: las tuyas de siempre y las que
-                te gustaron del menú. Desde el calendario puedes ponerlas en cualquier casilla.
-              </p>
-            </div>
-            <button class="btn" id="btn-nuevo" type="button">+ Nueva receta</button>
+        <!-- Cabecera de seccion: mismo degradado y mismo lenguaje que el dashboard de inicio. -->
+        <div class="card hero-seccion">
+          <div class="hero-ic">🍲</div>
+          <div class="hero-txt">
+            <h2>Mis Recetas</h2>
+            <p>Tu recetario: lo que cocinas siempre y lo que te gustó del menú. Ponlas en cualquier casilla del calendario sin gastar una generación de IA.</p>
           </div>
-          <div id="alerta" class="alert" style="margin-top:12px"></div>
+          <div class="hero-acciones"><button class="btn" id="btn-nuevo" type="button">+ Nueva receta</button></div>
         </div>
+
+        <div id="alerta" class="alert"></div>
+
+        <div id="mini-platos" class="mini-stats"></div>
 
         <div class="card">
           <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
@@ -188,6 +188,7 @@
         ? (META.total > PLATOS.length ? `· ${desde}-${hasta} de ${META.total}` : `· ${META.total}`)
         : '';
       document.getElementById('btn-limpiar').hidden = !filtrosPuestos();
+      pintarMini();
       pintarPill();
       pintarPaginacion();
 
@@ -205,6 +206,29 @@
       }
       cont.innerHTML = PLATOS.map(tarjeta).join('');
     }
+
+    // Las tarjetas de arriba son las mismas del dashboard y ADEMAS filtran: son los tres cortes
+    // que uno quiere hacer sobre un recetario grande, y tenerlos como numero y como filtro en el
+    // mismo sitio ahorra bajar hasta los selectores.
+    function pintarMini() {
+      const r = META.resumen || {};
+      document.getElementById('mini-platos').innerHTML = [
+        tarjetaDato({ ic: '🍲', valor: r.total || 0, txt: 'Recetas guardadas', sub: 'en total', tono: 'naranja', accion: 'todas' }),
+        tarjetaDato({ ic: '✍️', valor: r.mios || 0, txt: 'Escritas por ti', sub: 'las tuyas de siempre', tono: 'verde', accion: 'mio' }),
+        tarjetaDato({ ic: '✨', valor: r.ia || 0, txt: 'Propuestas por la IA', sub: 'las que te gustaron', tono: 'azul', accion: 'ia' }),
+        tarjetaDato({ ic: '💤', valor: r.sin_usar || 0, txt: 'Sin usar todavía', sub: 'nunca las programaste', tono: 'ambar', accion: 'sin_usar' }),
+      ].join('');
+    }
+
+    document.getElementById('mini-platos').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-dato]');
+      if (!b) return;
+      const cual = b.dataset.dato;
+      limpiarFiltros();
+      if (cual === 'mio' || cual === 'ia') document.getElementById('filtro-origen').value = cual;
+      if (cual === 'sin_usar') document.getElementById('filtro-uso').value = 'sin_usar';
+      desdeElPrincipio();
+    });
 
     function pintarPaginacion() {
       const caja = document.getElementById('paginacion');

@@ -106,6 +106,20 @@ function pintarSidebar(seccionActiva) {
     </div>`;
 }
 
+// Una tarjeta de dato como las del dashboard. Vive aqui porque la usan varias secciones y
+// porque el color de cada una tiene que ser EL MISMO que en inicio: "Recetas" es naranja en las
+// dos pantallas o el color deja de significar nada.
+//   accion: si se pasa, la tarjeta es pulsable (un boton, no un enlace: suele filtrar en sitio).
+function tarjetaDato({ ic, valor, txt, sub, tono = 'verde', href, accion }) {
+  const cuerpo = `<span class="stat-ic">${ic}</span>
+    <b class="stat-valor">${valor}</b>
+    <span class="stat-txt">${txt}</span>
+    ${sub ? `<span class="stat-sub">${sub}</span>` : ''}`;
+  if (href) return `<a class="stat-card tono-${tono}" href="${href}">${cuerpo}</a>`;
+  if (accion) return `<button type="button" class="stat-card tono-${tono}" data-dato="${accion}" style="text-align:left;cursor:pointer">${cuerpo}</button>`;
+  return `<div class="stat-card tono-${tono}">${cuerpo}</div>`;
+}
+
 // Conecta el boton hamburguesa con el sidebar (movil).
 function activarMenuMovil() {
   const sb = document.querySelector('.sidebar');

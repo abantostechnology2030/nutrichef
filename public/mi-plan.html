@@ -22,6 +22,15 @@
       </header>
 
       <div class="content stack">
+        <!-- Cabecera de seccion: mismo degradado y mismo lenguaje que el dashboard de inicio. -->
+        <div class="card hero-seccion">
+          <div class="hero-ic">💳</div>
+          <div class="hero-txt">
+            <h2>Mi suscripción</h2>
+            <p>Tu plan, lo que incluye y hasta cuándo. Los pagos se hacen por Yape y se activan cuando el equipo verifica el comprobante.</p>
+          </div>
+        </div>
+
         <!-- Aviso paywall -->
         <div class="card hidden" id="aviso-paywall" style="border-color:#ffd2d2;background:var(--primary-soft)">
           <h3 style="color:var(--primary-dark)" id="aviso-titulo">🔒 Agotaste tus analisis gratuitos</h3>
@@ -119,15 +128,20 @@
     let seleccionado = null;
 
     // Un limite en NULL = ilimitado ; 0 = no incluido ; N = el tope.
-    const limite = (v, uno, muchos) =>
-      v === null ? `${muchos} ilimitad${muchos.endsWith('s') ? 'os' : 'o'}`
-        : (Number(v) === 0 ? `— Sin ${muchos}` : `${v} ${Number(v) === 1 ? uno : muchos}`);
+    const limite = (v, uno, muchos) => {
+      // El genero lo manda el SUSTANTIVO, que es la primera palabra: "recetas guardadas" es
+      // femenino aunque la frase acabe en "s". Mirando la ultima letra de la frase entera salia
+      // "recetas guardadas ilimitados".
+      const femenino = /as$/.test(muchos.split(' ')[0]);
+      if (v === null) return `${muchos} ${femenino ? 'ilimitadas' : 'ilimitados'}`;
+      return Number(v) === 0 ? `— Sin ${muchos}` : `${v} ${Number(v) === 1 ? uno : muchos}`;
+    };
 
     function tarjetaPlan(p) {
       const filas = [
-        p.analisis === null ? 'Analisis ilimitados' : `${p.analisis} analisis de producto`,
+        p.analisis === null ? 'Análisis de productos ilimitados' : `${p.analisis} análisis de producto`,
         limite(p.historial_max, 'producto guardado', 'productos guardados'),
-        p.incluye_planificador ? '✅ Plan de comidas familiar' : '— Sin plan de comidas',
+        p.incluye_planificador ? 'Plan de comidas familiar' : '— Sin plan de comidas',
         limite(p.semanas_max, 'semana programable', 'semanas programables'),
         // La unidad de generacion es el DIA (3 platos), no el menu semanal: el Free trae 7
         // (una por dia). Decir "7 menus IA por semana" prometeria 7x lo que da.
@@ -135,21 +149,28 @@
         // No usa limite() porque este concuerda el "ilimitado" mirando la ULTIMA letra de
         // la frase, y esta termina en "semana": daba "menus IA por semana ilimitado".
         p.generaciones_max === null
-          ? 'Dias con IA ilimitados'
+          ? 'Días con IA ilimitados'
           : Number(p.generaciones_max) === 0
-            ? '— Sin generacion con IA'
-            : `${p.generaciones_max} ${Number(p.generaciones_max) === 1 ? 'dia generado' : 'dias generados'} con IA por semana`,
-        limite(p.platos_max, 'plato guardado', 'platos guardados'),
+            ? '— Sin generación con IA'
+            : `${p.generaciones_max} ${Number(p.generaciones_max) === 1 ? 'día generado' : 'días generados'} con IA por semana`,
+        limite(p.platos_max, 'receta guardada', 'recetas guardadas'),
       ];
+      // Una fila que empieza por "—" es lo que ese plan NO incluye: se marca con una cruz y en
+      // gris, para que no se lea como una ventaja mas de la lista.
+      const fila = (t) => {
+        const no = t.trim().startsWith('—');
+        return `<li class="${no ? 'no' : ''}">${no ? '✕' : '✓'} <span>${esc(t.replace(/^—\s*/, ''))}</span></li>`;
+      };
       return `
         <label class="card plan-opcion" data-id="${p.id}" style="cursor:pointer;display:block">
-          <div class="row" style="justify-content:space-between">
-            <div>
-              <div class="row" style="gap:8px"><input type="radio" name="plan" value="${p.id}"> <b style="font-size:17px">${p.nombre}</b></div>
-              <p class="muted" style="margin:6px 0 0">${filas.join('<br>')}</p>
+          <div class="plan-cab">
+            <div class="row" style="gap:8px;align-items:center;min-width:0">
+              <input type="radio" name="plan" value="${p.id}">
+              <b style="font-size:17px">${p.nombre}</b>
             </div>
-            <div class="precio" style="font-size:26px">S/ ${fmt(p.precio)}</div>
+            <div class="precio">S/ ${fmt(p.precio)}<span>/ ${p.dias_vigencia || 30} días</span></div>
           </div>
+          <ul class="plan-lista">${filas.map(fila).join('')}</ul>
         </label>`;
     }
 
@@ -178,7 +199,7 @@
 
       document.getElementById('estado-texto').textContent = info.ilimitado
         ? `Plan ${info.plan_actual} · acceso ilimitado.`
-        : `Plan ${info.plan_actual} · ${info.analisis_restantes} analisis restantes`;
+        : `Plan ${info.plan_actual} · ${info.analisis_restantes} análisis restantes`;
       document.getElementById('estado-badge').innerHTML = info.ilimitado
         ? `<span class="badge badge-premium">⭐ ${info.plan_actual}</span>`
         : `<span class="badge badge-free">🎁 ${info.plan_actual}</span>`;
