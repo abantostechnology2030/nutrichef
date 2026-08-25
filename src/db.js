@@ -498,6 +498,27 @@ if (getConfig('consume_escala') !== 'necesidad-semanal') {
   if (tocados) console.log(`[migracion] consume en escala vieja borrado de ${tocados} plato(s): se recompletan con "Completar platos".`);
 }
 
+// ===== Migracion: los platos del calendario entran en la biblioteca (2026-08-25) =====
+//
+// Desde esa fecha TODO plato generado nace con guardado=1 para poder reutilizarlo. Los que ya
+// existian quedaron con guardado=0: aparecian en el calendario pero no en "Mis platos", y
+// completarles la receta no los hacia aparecer (se actualizaba la misma fila, pero esa fila
+// nunca se listaba).
+//
+// Se suben SOLO los que estan en un plan: un plato con guardado=0 que ya no esta en ningun
+// calendario es basura que limpiarPlatoHuerfano no alcanzo a borrar, y revivirlo en la
+// biblioteca seria peor que dejarlo.
+//
+// Idempotente por la clave de config: corre una sola vez por BD.
+if (getConfig('platos_a_biblioteca') !== 'hecho') {
+  const r = db.prepare(
+    `UPDATE platos SET guardado = 1
+     WHERE guardado = 0 AND id IN (SELECT plato_id FROM plan_comidas)`
+  ).run();
+  setConfig('platos_a_biblioteca', 'hecho');
+  if (r.changes) console.log(`[migracion] ${r.changes} plato(s) del calendario ahora estan en "Mis platos".`);
+}
+
 // ===== Semilla del catalogo de ingredientes (solo si esta vacio) =====
 if (db.prepare('SELECT COUNT(*) c FROM ingredientes_catalogo').get().c === 0) {
   const ins = db.prepare('INSERT INTO ingredientes_catalogo (nombre, categoria) VALUES (?, ?)');

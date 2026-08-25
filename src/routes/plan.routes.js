@@ -871,6 +871,17 @@ router.post('/generar', requiereHogar, async (req, res) => {
 // El "consume" esta aqui porque sin el la barra de la despensa cae a la heuristica por
 // categoria, que no distingue una cucharadita de aji de medio kilo de pollo (ver
 // services/consumo.js). Es el unico campo del backfill que MUEVE datos del usuario.
+// Al completar la receta, el plato queda ademas GUARDADO en la biblioteca. Sin esto, un plato
+// suelto se completaba pero seguia sin aparecer en "Mis platos", que es donde el usuario espera
+// encontrarlo despues de haberle pedido la receta a la IA.
+function asegurarEnBiblioteca(usuarioId, ids) {
+  if (!ids.length) return 0;
+  const marca = db.prepare('UPDATE platos SET guardado = 1 WHERE id = ? AND usuario_id = ? AND guardado = 0');
+  let n = 0;
+  for (const id of ids) n += marca.run(id, usuarioId).changes;
+  return n;
+}
+
 router.post('/detallar', requiereHogar, async (req, res) => {
   const semana = lunesDe(req.body?.semana);
   const usuario = req.usuario;
@@ -944,6 +955,8 @@ router.post('/detallar', requiereHogar, async (req, res) => {
   // receta para un plato que ya la tenia), se ignora en vez de pisar lo que ya estaba.
   const porId = new Map(pendientes.map((p) => [p.id, p]));
   let detallados = 0;
+  let enBiblioteca = 0;
+  const completados = [];
   const tx = db.transaction(() => {
     for (const item of lista) {
       const id = parseInt(item?.id, 10);
@@ -967,13 +980,19 @@ router.post('/detallar', requiereHogar, async (req, res) => {
       if (!campos.length) continue;
 
       db.prepare(`UPDATE platos SET ${campos.join(', ')} WHERE id = ? AND usuario_id = ?`).run(...valores, id, usuario.id);
+      completados.push(id);
       detallados++;
     }
+    // Y quedan en la biblioteca: es donde el usuario espera encontrarlos despues de haberle
+    // pedido la receta a la IA. Va DENTRO de la transaccion, con la escritura de la receta.
+    enBiblioteca = asegurarEnBiblioteca(usuario.id, completados);
   });
   tx();
 
   res.json({
-    mensaje: detallados ? `${detallados} plato(s) completados.` : 'La IA no pudo completar estos platos.',
+    mensaje: detallados
+      ? `${detallados} plato(s) completados.` + (enBiblioteca ? ` ${enBiblioteca} se agregaron a Mis platos.` : '')
+      : 'La IA no pudo completar estos platos.',
     detallados,
     semana,
     plan: planSemana(usuario.id, semana),
