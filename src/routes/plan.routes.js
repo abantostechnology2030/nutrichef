@@ -428,17 +428,65 @@ function normPasos(pasos) {
 
 // Devuelve el JSON listo para guardar en platos.info, o null si la IA no mando nada
 // aprovechable. NULL significa "sin analizar todavia" y es lo que dispara el backfill.
+// Nutrientes que se piden con numero + % del valor diario. La UNIDAD vive aqui, no en la
+// respuesta de la IA: si cada plato trajera su unidad, dos platos podrian decir "sodio" en g y
+// en mg y la barra los pintaria igual.
+const NUTRIENTES = [
+  { clave: 'carbohidratos', txt: 'Carbohidratos', uni: 'g' },
+  { clave: 'proteinas', txt: 'Proteína', uni: 'g' },
+  { clave: 'grasas', txt: 'Grasas', uni: 'g' },
+  { clave: 'fibra', txt: 'Fibra', uni: 'g' },
+  { clave: 'hierro', txt: 'Hierro', uni: 'mg' },
+  { clave: 'sodio', txt: 'Sodio', uni: 'mg' },
+  { clave: 'sal', txt: 'Eq. de sal', uni: 'g' },
+];
+
+// Un nutriente vale solo si trae un numero utilizable. La IA a veces manda "20g" o "aprox 30":
+// se extrae el numero y lo que no se pueda leer se descarta, en vez de pintar NaN.
+function normNutriente(x) {
+  if (x === null || x === undefined) return null;
+  const num = (v) => {
+    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.').replace(/[^0-9.\-]/g, ''));
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const v = num(typeof x === 'object' ? x.v : x);
+  if (v === null) return null;
+  const vd = typeof x === 'object' ? num(x.vd) : null;
+  return { v: Math.round(v * 100) / 100, vd: vd === null ? null : Math.max(0, Math.min(999, Math.round(vd))) };
+}
+
 function normInfo(info) {
   if (!info || typeof info !== 'object') return null;
 
   const cal = Number(info.calorias);
+  // Los nutrientes son OPCIONALES: los platos generados antes de este formato no los traen y
+  // deben seguir funcionando con sus etiquetas alto/medio/bajo. Por eso se guarda lo que venga
+  // y la UI pinta las barras solo si hay numeros.
+  const nutrientes = {};
+  const fuente = info.nutrientes && typeof info.nutrientes === 'object' ? info.nutrientes : {};
+  for (const n of NUTRIENTES) {
+    const v = normNutriente(fuente[n.clave]);
+    if (v) nutrientes[n.clave] = v;
+  }
+
   const limpio = {
     calorias: Number.isFinite(cal) && cal > 0 ? Math.round(cal) : null,
+    // % del valor diario de la energia: 2000 kcal de referencia. Se calcula AQUI y no se le
+    // pide a la IA, porque es aritmetica y pedirla invita a que devuelva un numero incoherente
+    // con las calorias que ella misma dio.
+    calorias_vd: Number.isFinite(cal) && cal > 0 ? Math.round((cal / 2000) * 100) : null,
+    nutrientes: Object.keys(nutrientes).length ? nutrientes : null,
     carbohidratos: normNivelNutri(info.carbohidratos),
     proteinas: normNivelNutri(info.proteinas),
     grasas: normNivelNutri(info.grasas),
     destacados: (Array.isArray(info.destacados) ? info.destacados : [])
       .map((d) => String(d).trim().slice(0, 30))
+      .filter(Boolean)
+      .slice(0, 3),
+    // Avisos por integrante (por su condicion medica o su edad). Es lo mas importante de esta
+    // pantalla para un hogar con diabetes o hipertension, asi que se guarda aparte del resumen.
+    recomendaciones: (Array.isArray(info.recomendaciones) ? info.recomendaciones : [])
+      .map((d) => String(d).trim().slice(0, 240))
       .filter(Boolean)
       .slice(0, 3),
     semaforo: normSemaforo(info.semaforo),
@@ -447,7 +495,8 @@ function normInfo(info) {
 
   // Si no quedo ni un dato util, es como si no hubiera venido.
   const vacio = !limpio.calorias && !limpio.carbohidratos && !limpio.proteinas
-    && !limpio.grasas && !limpio.destacados.length && !limpio.semaforo && !limpio.resumen;
+    && !limpio.grasas && !limpio.destacados.length && !limpio.semaforo && !limpio.resumen
+    && !limpio.nutrientes && !limpio.recomendaciones.length;
   return vacio ? null : JSON.stringify(limpio);
 }
 
@@ -501,7 +550,10 @@ function fusionarConsume(ings, respuesta) {
   return cambio ? JSON.stringify(fusionados) : null;
 }
 
-function crearPlato(usuarioId, p, momento, comensales, region, origen = 'ia') {
+// guardado=0 por defecto: un plato generado para una casilla NO entra en la biblioteca (si
+// contara, llenar una semana gastaria los 21 y el plan Free permite 5 — ver la nota de
+// "guardado" en db.js). La biblioteca lo pide en 1 explicitamente.
+function crearPlato(usuarioId, p, momento, comensales, region, origen = 'ia', guardado = 0) {
   const lista = (v) => (Array.isArray(v) ? v : []);
   const nombre = String(p?.nombre || '').trim().slice(0, 120);
   if (!nombre) return null;
@@ -509,7 +561,7 @@ function crearPlato(usuarioId, p, momento, comensales, region, origen = 'ia') {
   const dificultad = ['facil', 'media', 'dificil'].includes(p?.dificultad) ? p.dificultad : null;
   const fila = db.prepare(
     `INSERT INTO platos (usuario_id, nombre, momento, porciones, ingredientes, faltantes, nota, pasos, info, tiempo_min, dificultad, region, origen, guardado)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     usuarioId, nombre, momento, comensales,
     JSON.stringify(normIngredientes(p?.ingredientes)),
@@ -518,7 +570,7 @@ function crearPlato(usuarioId, p, momento, comensales, region, origen = 'ia') {
     normPasos(p?.pasos),
     normInfo(p?.info),
     Number.isFinite(p?.tiempo_min) ? Math.max(0, Math.round(p.tiempo_min)) : null,
-    dificultad, region, origen
+    dificultad, region, origen, guardado ? 1 : 0
   );
   return fila.lastInsertRowid;
 }
@@ -591,6 +643,78 @@ function ingredientesComprometidos(items, excluir = []) {
 // La ruta reemplaza las casillas que se le pidan, esten vacias u ocupadas: decidir cuales
 // mandar es del cliente (la UI llena las vacias y pide confirmacion antes de pisar las
 // ocupadas). Aqui se cobra 1 generacion por llamada, sea 1 plato o 3.
+// POST /api/plan/desde-biblioteca { semana, dias:[0-6], momentos:[...] }
+//
+// Llena con platos de "Mis platos" las casillas VACIAS de las combinaciones pedidas. Es el
+// primer paso de "generar la semana": se aprovecha lo que el usuario ya curó antes de gastar
+// una sola llamada a la IA.
+//
+// 🔴 SOLO LLENA LO VACIO. Nunca reemplaza una casilla ocupada, y esa es la condicion que hizo
+// que se eliminara la vieja ruta de "generar la semana entera" (2026-07-15): aquella borraba
+// la semana antes de escribir y destruia los platos que el usuario habia elegido a mano. El
+// usuario arma su semana poco a poco, mezclando lo suyo con lo generado.
+//
+// NO usa IA ni consume cupo: solo mueve platos que ya existen.
+router.post('/desde-biblioteca', (req, res) => {
+  const usuario = req.usuario;
+  const semana = lunesDe(req.body?.semana);
+  const dias = (Array.isArray(req.body?.dias) ? req.body.dias : [])
+    .map((d) => parseInt(d, 10)).filter((d) => d >= 0 && d <= 6);
+  const momentos = (Array.isArray(req.body?.momentos) ? req.body.momentos : [])
+    .map((m) => String(m)).filter((m) => MOMENTOS.includes(m));
+  if (!dias.length || !momentos.length) {
+    return res.status(400).json({ error: 'Elige al menos un dia y un momento.' });
+  }
+
+  if (semanaBloqueada(usuario.id, semana, usuario.semanas_max)) {
+    return res.status(403).json({
+      error: `Tu plan permite programar ${usuario.semanas_max} semana(s). Pasa a un plan superior para programar mas.`,
+      upgrade: true, redirect: '/mi-plan.html',
+    });
+  }
+
+  const hogar = db.prepare('SELECT comensales FROM hogar WHERE usuario_id = ?').get(usuario.id) || {};
+  const ocupadas = new Set(
+    db.prepare('SELECT dia, momento, plato_id FROM plan_comidas WHERE usuario_id = ? AND semana = ?')
+      .all(usuario.id, semana).map((r) => r.dia + '|' + r.momento)
+  );
+  // Los platos que YA estan en esta semana no se vuelven a colocar: repetir el mismo almuerzo
+  // tres veces seguidas no es planificar.
+  const yaUsados = new Set(
+    db.prepare('SELECT plato_id FROM plan_comidas WHERE usuario_id = ? AND semana = ?')
+      .all(usuario.id, semana).map((r) => r.plato_id)
+  );
+
+  // Biblioteca disponible. Un plato SIN momento sirve para cualquiera (misma regla que el
+  // selector "Mis platos" de una casilla suelta).
+  const biblioteca = db.prepare('SELECT id, momento FROM platos WHERE usuario_id = ? AND guardado = 1 ORDER BY RANDOM()')
+    .all(usuario.id);
+
+  let puestos = 0;
+  const faltan = [];
+  for (const dia of dias) {
+    for (const momento of momentos) {
+      if (ocupadas.has(dia + '|' + momento)) continue;
+      const cand = biblioteca.find((p) => !yaUsados.has(p.id) && (!p.momento || p.momento === momento));
+      if (!cand) { faltan.push({ dia, momento }); continue; }
+      ponerEnCasilla(usuario.id, semana, dia, momento, cand.id, hogar.comensales || null);
+      yaUsados.add(cand.id);
+      ocupadas.add(dia + '|' + momento);
+      puestos++;
+    }
+  }
+
+  res.json({
+    puestos,
+    faltan,                       // lo que la biblioteca no alcanzo a cubrir: lo hara la IA
+    disponibles: biblioteca.length,
+    plan: planSemana(usuario.id, semana),
+    mensaje: puestos
+      ? `Se pusieron ${puestos} plato(s) de tu biblioteca.`
+      : 'No habia platos guardados que encajaran en esas casillas.',
+  });
+});
+
 router.post('/generar', requiereHogar, async (req, res) => {
   const semana = lunesDe(req.body?.semana);
   const usuario = req.usuario;
@@ -1077,4 +1201,13 @@ router.post('/copiar', (req, res) => {
   res.json({ copiados, semana: hacia, plan: planSemana(req.usuario.id, hacia) });
 });
 
+// Se cuelgan del router los helpers que necesita platos.routes.js para su ruta de generar.
+// Un router de Express es una funcion, asi que admite propiedades; es un seam pequeño y sin
+// riesgo, y evita la alternativa mala: duplicar crearPlato() y sus normalizadores en dos
+// archivos que tarde o temprano se desincronizan (ya paso con el formato del plato al anadir
+// "consume" y de nuevo con los nutrientes).
+// No hay ciclo: plan.routes no requiere platos.routes.
 module.exports = router;
+module.exports.crearPlato = crearPlato;
+module.exports.registrarGeneracion = registrarGeneracion;
+module.exports.cupoAgotado = cupoAgotado;

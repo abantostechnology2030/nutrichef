@@ -361,7 +361,144 @@
       };
     }
 
-    document.getElementById('btn-nuevo').onclick = () => abrirForm();
+    // ===== Tres vias para sumar un plato a la biblioteca =====
+    //
+    // Son las mismas tres del calendario, y a proposito: el usuario ya las conoce de ahi.
+    // La diferencia es que aqui el plato NO ocupa una casilla, nace guardado para reutilizarlo.
+    //
+    // El tope del plan (platos_max) se comprueba primero: abrir un formulario o gastar una
+    // generacion de IA para luego rechazar el guardado seria peor que avisar antes.
+    document.getElementById('btn-nuevo').onclick = () => {
+      // Mismo criterio que abrirForm(): el tope se avisa ANTES de elegir via, para no
+      // gastar una generacion de IA en un plato que despues no se podria guardar.
+      if (LIMITE && !LIMITE.ilimitado && LIMITE.restantes <= 0) {
+        confirmar(
+          `Tu plan permite guardar <b>${LIMITE.max} plato(s)</b> y ya los usaste.<br><br>Puedes borrar uno para hacer espacio, o pasar a un plan superior.`,
+          { titulo: 'Biblioteca llena', ok: 'Ver planes' }
+        ).then((si) => { if (si) location.href = '/mi-plan.html'; });
+        return;
+      }
+      elegirComoCrear();
+    };
+
+    function elegirComoCrear() {
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:520px;text-align:left">
+        <h3>+ Nuevo plato</h3>
+        <div class="modal-body">
+          <p class="muted" style="font-size:13px;margin-bottom:14px">
+            Se guardará en tu biblioteca para que puedas ponerlo en el calendario cuantas veces quieras.
+          </p>
+          <button class="btn btn-ghost via-crear" type="button" data-via="manual">
+            <span class="via-ic">✍️</span>
+            <span><b>Agregarlo yo mismo</b>
+              <span class="muted">Escribes el nombre, los ingredientes y los pasos. Sin IA.</span></span>
+          </button>
+          <button class="btn btn-ghost via-crear" type="button" data-via="nombre">
+            <span class="via-ic">🪄</span>
+            <span><b>Escribo el nombre y lo genera la IA</b>
+              <span class="muted">Tú dices qué plato quieres y la IA arma la receta adaptada a tu hogar.</span></span>
+          </button>
+          <button class="btn btn-ghost via-crear" type="button" data-via="proponer">
+            <span class="via-ic">✨</span>
+            <span><b>Que la IA me proponga uno</b>
+              <span class="muted">Elige un plato que aún no tengas, según tu región y tu familia.</span></span>
+          </button>
+          <p class="muted" style="font-size:11.5px;margin-top:12px">
+            Las dos opciones con IA gastan una generación de tu plan.
+          </p>
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn-ghost btn-sm" type="button" data-cerrar>Cancelar</button>
+        </div>
+      </div>`;
+      document.body.appendChild(back);
+      const cerrar = () => back.remove();
+      back.querySelector('[data-cerrar]').onclick = cerrar;
+      back.onclick = (e) => { if (e.target === back) cerrar(); };
+      back.querySelectorAll('[data-via]').forEach((b) => {
+        b.onclick = () => {
+          cerrar();
+          if (b.dataset.via === 'manual') abrirForm();
+          else if (b.dataset.via === 'nombre') pedirNombreYGenerar();
+          else generarConIA({ cuantos: 1 });
+        };
+      });
+    }
+
+    // Vía 2: el usuario escribe QUÉ quiere y la IA lo desarrolla.
+    function pedirNombreYGenerar() {
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:460px;text-align:left">
+        <h3>🪄 ¿Qué plato quieres?</h3>
+        <div class="modal-body">
+          <div class="field">
+            <label>Nombre del plato</label>
+            <input id="g-nombre" placeholder="Ej: Ají de gallina, Tallarín saltado…" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label>¿Para qué momento? (opcional)</label>
+            <select id="g-momento" class="input">
+              <option value="">Cualquiera</option>
+              <option value="desayuno">🌅 Desayuno</option>
+              <option value="almuerzo" selected>☀️ Almuerzo</option>
+              <option value="cena">🌙 Cena</option>
+            </select>
+          </div>
+          <p class="muted" style="font-size:12.5px">
+            La IA escribirá la receta con las cantidades para tu hogar, respetando alergias y condiciones médicas.
+          </p>
+        </div>
+        <div class="row" style="justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" type="button" data-cerrar>Cancelar</button>
+          <button class="btn btn-sm" type="button" data-ok>Generar plato</button>
+        </div>
+      </div>`;
+      document.body.appendChild(back);
+      const cerrar = () => back.remove();
+      back.querySelector('[data-cerrar]').onclick = cerrar;
+      back.onclick = (e) => { if (e.target === back) cerrar(); };
+      const input = back.querySelector('#g-nombre');
+      setTimeout(() => input.focus(), 50);
+      const lanzar = () => {
+        const nombre = input.value.trim();
+        if (!nombre) { input.focus(); return; }
+        const momento = back.querySelector('#g-momento').value;
+        cerrar();
+        generarConIA({ nombres: [nombre], momento });
+      };
+      back.querySelector('[data-ok]').onclick = lanzar;
+      input.onkeydown = (e) => { if (e.key === 'Enter') lanzar(); };
+    }
+
+    // Llamada comun a las dos vías con IA.
+    async function generarConIA(body) {
+      limpiarAlerta(al);
+      const proponiendo = !body.nombres;
+      const esperando = modalCargando({
+        ic: proponiendo ? '✨' : '🪄',
+        titulo: proponiendo ? 'Buscando un plato para ti…' : 'Escribiendo la receta…',
+        texto: proponiendo
+          ? 'La IA está eligiendo un plato que aún no tengas en tu biblioteca.'
+          : 'La IA está armando la receta con las cantidades de tu hogar.',
+        pasos: [
+          '👨‍👩‍👧 Mirando las condiciones y alergias de tu hogar…',
+          '🍲 Buscando platos de tu región…',
+          '⚖️ Ajustando las porciones a tus comensales…',
+          '📝 Escribiendo la receta y el aporte nutricional…',
+        ],
+      });
+      try {
+        const d = await api('/api/platos/generar', { method: 'POST', body });
+        await cargar();
+        alerta(al, d.mensaje, 'ok');
+      } catch (err) {
+        if (err.upgrade) { alerta(al, err.error); return; }
+        alerta(al, err.error || 'No pudimos generar el plato.');
+      } finally { esperando.cerrar(); }
+    }
 
     cargar();
     cargarSugerenciasIng();

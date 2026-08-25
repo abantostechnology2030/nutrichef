@@ -48,6 +48,7 @@
             <!-- No hay boton de "generar la semana": la unidad es el DIA y su boton vive
                  en la cabecera de cada dia del calendario. -->
             <div class="row barra-acciones" style="gap:8px;flex-wrap:wrap">
+              <button class="btn btn-sm" id="btn-semana">✨ Generar la semana</button>
               <button class="btn btn-ghost btn-sm hidden" id="btn-detallar">🍳 Completar platos</button>
               <!-- Lista de compras y despensa: solo con el modulo de despensa activo. Sin
                    inventario no hay con que comparar, asi que "lo que falta" no significa nada. -->
@@ -162,16 +163,73 @@
            </div>`
         : (info.calorias ? `<p style="font-size:13px;margin-bottom:10px"><b>~${info.calorias} kcal</b> por porción</p>` : '');
 
-      return `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
-        <b style="font-size:13px">Aporte nutricional aproximado</b>
-        <div style="margin-top:8px">${banner}</div>
-        ${macros ? `<div class="row" style="gap:5px;flex-wrap:wrap;margin-bottom:8px">${macros}</div>` : ''}
+      // Barras horizontales con el % del valor diario. La barra mide el %VD (no el valor
+      // absoluto): son unidades distintas —gramos, miligramos— y pintarlas en la misma escala
+      // haria que 581 mg de sodio se viera 20 veces mas "grande" que 29 g de proteina.
+      // Se topa en 100 para que un nutriente pasado de rosca no rompa la fila, pero el numero
+      // real se sigue mostrando al lado.
+      const NUTRI_TXT = {
+        carbohidratos: ['Carbohidratos', 'g'], proteinas: ['Proteína', 'g'], grasas: ['Grasas', 'g'],
+        fibra: ['Fibra', 'g'], hierro: ['Hierro', 'mg'], sodio: ['Sodio', 'mg'], sal: ['Eq. de sal', 'g'],
+      };
+      // Sodio y sal en exceso importan mas que el resto en un hogar con hipertension: por
+      // encima del 20% del valor diario se pintan en ambar y por encima del 40% en rojo.
+      const tonoNutri = (clave, vd) => {
+        if (vd == null) return '';
+        if ((clave === 'sodio' || clave === 'sal') && vd >= 40) return ' barra-alta';
+        if ((clave === 'sodio' || clave === 'sal') && vd >= 20) return ' barra-media';
+        return '';
+      };
+      const fmtNum = (n) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+
+      const filas = [];
+      if (info.calorias) {
+        filas.push({ txt: 'Energía', uni: 'kcal', v: info.calorias, vd: info.calorias_vd, clave: 'energia' });
+      }
+      for (const [clave, [txt, uni]] of Object.entries(NUTRI_TXT)) {
+        const n = info.nutrientes && info.nutrientes[clave];
+        if (n) filas.push({ txt, uni, v: n.v, vd: n.vd, clave });
+      }
+      const tabla = filas.length
+        ? `<div class="nutri-tabla">${filas.map((f) => `
+            <div class="nutri-fila">
+              <span class="nutri-txt">${f.txt} <span class="muted">(${f.uni})</span></span>
+              <span class="nutri-val">${fmtNum(f.v)}</span>
+              <span class="nutri-barra"><i style="width:${Math.max(2, Math.min(100, f.vd ?? 0))}%" class="${tonoNutri(f.clave, f.vd)}"></i></span>
+              <span class="nutri-vd">${f.vd == null ? '' : f.vd + '%'}</span>
+            </div>`).join('')}</div>`
+        : '';
+
+      // Los platos generados antes de este formato no traen numeros: se sigue mostrando lo que
+      // si tienen (las etiquetas alto/medio/bajo) en vez de dejar el bloque vacio.
+      const sinNumeros = !filas.length && macros;
+
+      // Las recomendaciones por integrante van PRIMERO y en su propia caja: en un hogar con
+      // diabetes o hipertension es lo mas importante de esta pantalla, y perdidas entre los
+      // numeros no se leen.
+      const recos = (info.recomendaciones || []).length
+        ? `<div class="nutri-recos">
+             <b>👨‍👩‍👧 Para tu familia</b>
+             <ul>${info.recomendaciones.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+           </div>`
+        : '';
+
+      return `<div class="nutri-caja">
+        <div class="nutri-cab">
+          <b>🥗 Aporte nutricional</b>
+          <span class="muted">por porción</span>
+        </div>
+        ${banner}
+        ${recos}
+        ${tabla}
+        ${sinNumeros ? `<div class="row" style="gap:5px;flex-wrap:wrap;margin:8px 0">${macros}</div>` : ''}
         ${info.destacados?.length
-          ? `<p style="font-size:12.5px;margin-bottom:6px">✨ <b>Aporta:</b> ${info.destacados.map(esc).join(', ')}</p>`
+          ? `<p style="font-size:12.5px;margin:10px 0 0">✨ <b>Aporta:</b> ${info.destacados.map(esc).join(', ')}</p>`
           : ''}
-        ${info.resumen ? `<p class="muted" style="font-size:12.5px">${esc(info.resumen)}</p>` : ''}
-        <p class="muted" style="font-size:11.5px;margin-top:8px">
-          🥗 Estimación orientativa por porción. No reemplaza la consulta con un nutricionista.
+        ${info.resumen ? `<p class="muted" style="font-size:12.5px;margin-top:6px">${esc(info.resumen)}</p>` : ''}
+        <p class="muted" style="font-size:11.5px;margin-top:10px">
+          🥗 Estimación orientativa por porción; el % es sobre un valor diario de referencia de
+          2000 kcal. No reemplaza la consulta con un nutricionista.
         </p>
       </div>`;
     }
@@ -758,6 +816,156 @@
           alerta(alPlan, 'Plato puesto en tu calendario.', 'ok');
         } catch (err) { manejar(err); }
       });
+    }
+
+    // ===== Generar la semana completa =====
+    //
+    // 🔴 SOLO LLENA LAS CASILLAS VACIAS. Nunca pisa lo que ya hay, y esa es la condicion que
+    // permitio traer de vuelta este boton: la vieja ruta de "generar la semana" se elimino el
+    // 2026-07-15 porque BORRABA la semana antes de escribir, y destruia los platos que el
+    // usuario habia puesto a mano. Si algun dia se cambia esto, se vuelve a romper eso.
+    //
+    // Va DIA POR DIA desde el navegador, no en una sola llamada al servidor: con Claude de
+    // prioridad, 7 dias serian ~210 s y nginx corta a los 180. Ademas asi se ve el progreso y
+    // cada dia que se completa queda guardado aunque el siguiente falle.
+    document.getElementById('btn-semana').onclick = () => {
+      const bloqueo = bloqueoGen();
+      if (bloqueo && setupPendiente) { alerta(alPlan, bloqueo); return; }
+      preguntarSemana();
+    };
+
+    function preguntarSemana() {
+      const dias = DATA.dia_orden.map((d) => ({ d, txt: DATA.dias[d], fecha: fechaDe(d) }));
+      const back = document.createElement('div');
+      back.className = 'modal-back show';
+      back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:520px;text-align:left">
+        <h3>✨ Generar la semana</h3>
+        <div class="modal-body">
+          <p class="muted" style="font-size:13px;margin-bottom:14px">
+            Se llenarán <b>solo las casillas vacías</b>: lo que ya pusiste no se toca.
+            Primero se usan tus <b>platos guardados</b> y, si no alcanzan, los propone la IA.
+          </p>
+
+          <div class="field">
+            <label>¿Qué días?</label>
+            <div class="row" style="gap:6px;flex-wrap:wrap" id="sem-dias">
+              ${dias.map((x) => `<label class="chip-check"><input type="checkbox" value="${x.d}" checked /> ${x.txt}</label>`).join('')}
+            </div>
+            <div class="row" style="gap:6px;margin-top:6px">
+              <button class="btn btn-ghost btn-sm" type="button" data-dias="todos">Todos</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-dias="ninguno">Ninguno</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>¿Qué comidas?</label>
+            <div class="row" style="gap:6px;flex-wrap:wrap" id="sem-momentos">
+              ${DATA.momentos.map((m) => `<label class="chip-check"><input type="checkbox" value="${m}" checked /> ${MOMENTO_INFO[m].ic} ${MOMENTO_INFO[m].txt}</label>`).join('')}
+            </div>
+          </div>
+
+          <div class="reco-foto" id="sem-resumen" style="font-size:12.5px"></div>
+        </div>
+        <div class="row" style="justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" type="button" data-cerrar>Cancelar</button>
+          <button class="btn btn-sm" type="button" data-ok>Generar</button>
+        </div>
+      </div>`;
+      document.body.appendChild(back);
+      const cerrar = () => back.remove();
+      back.querySelector('[data-cerrar]').onclick = cerrar;
+      back.onclick = (e) => { if (e.target === back) cerrar(); };
+
+      const marcados = (sel) => [...back.querySelectorAll(sel + ' input:checked')].map((i) => i.value);
+      // El resumen dice CUANTAS casillas se van a llenar y cuantas generaciones puede costar,
+      // antes de gastarlas: una semana entera puede consumir el cupo del plan Free de un golpe.
+      function repintarResumen() {
+        const ds = marcados('#sem-dias').map(Number);
+        const ms = marcados('#sem-momentos');
+        let vacias = 0;
+        for (const d of ds) for (const m of ms) if (!DATA.plan[d][m]) vacias++;
+        const diasConHueco = ds.filter((d) => ms.some((m) => !DATA.plan[d][m])).length;
+        const cupo = DATA.limites.generaciones_max == null
+          ? 'ilimitadas'
+          : `te quedan ${Math.max(0, DATA.limites.generaciones_max - DATA.limites.generaciones_usadas)}`;
+        back.querySelector('#sem-resumen').innerHTML = vacias
+          ? `Se llenarán <b>${vacias} casilla(s) vacía(s)</b>. Si tu biblioteca no alcanza,
+             costará hasta <b>${diasConHueco} generación(es)</b> de IA (${cupo}).`
+          : 'Esas casillas ya están todas llenas: no hay nada que generar.';
+        back.querySelector('[data-ok]').disabled = !vacias;
+      }
+      back.querySelectorAll('#sem-dias input, #sem-momentos input').forEach((i) => { i.onchange = repintarResumen; });
+      back.querySelector('[data-dias="todos"]').onclick = () => {
+        back.querySelectorAll('#sem-dias input').forEach((i) => { i.checked = true; }); repintarResumen();
+      };
+      back.querySelector('[data-dias="ninguno"]').onclick = () => {
+        back.querySelectorAll('#sem-dias input').forEach((i) => { i.checked = false; }); repintarResumen();
+      };
+      repintarResumen();
+
+      back.querySelector('[data-ok]').onclick = () => {
+        const ds = marcados('#sem-dias').map(Number);
+        const ms = marcados('#sem-momentos');
+        if (!ds.length || !ms.length) return;
+        cerrar();
+        generarSemana(ds, ms);
+      };
+    }
+
+    async function generarSemana(dias, momentos) {
+      limpiarAlerta(alPlan);
+      const esperando = modalCargando({
+        ic: '📅',
+        titulo: 'Armando tu semana…',
+        texto: 'Primero con tus platos guardados y luego con la IA, día por día.',
+        pasos: ['📋 Revisando tus platos guardados…'],
+      });
+      let deBiblioteca = 0; let generados = 0; let corte = null;
+      try {
+        // 1) Lo que ya tiene. Sin IA y sin cupo: aprovechar su biblioteca antes de pagar.
+        const b = await api('/api/plan/desde-biblioteca', { method: 'POST', body: { semana, dias, momentos } });
+        deBiblioteca = b.puestos;
+        DATA.plan = b.plan;
+
+        // 2) Lo que falte, con IA y UN DIA POR LLAMADA (es la unidad de generacion).
+        const porDia = new Map();
+        for (const f of b.faltan) {
+          if (!porDia.has(f.dia)) porDia.set(f.dia, []);
+          porDia.get(f.dia).push(f.momento);
+        }
+        const total = porDia.size;
+        let i = 0;
+        for (const [dia, moms] of porDia) {
+          i++;
+          esperando.paso(`✨ Generando ${DATA.dias[dia]} (${i} de ${total})…`);
+          try {
+            const d = await api('/api/plan/generar', {
+              method: 'POST',
+              body: { semana, casillas: moms.map((m) => ({ dia, momento: m })) },
+            });
+            DATA.plan = d.plan;
+            DATA.limites = { ...DATA.limites, ...d.limites };
+            generados += moms.length;
+          } catch (err) {
+            // Sin cupo o error de IA: se PARA y se cuenta lo que si quedo hecho. Lo generado
+            // hasta aqui ya esta guardado, asi que no se pierde nada.
+            corte = err.error || 'La IA no pudo continuar.';
+            break;
+          }
+        }
+      } catch (err) {
+        corte = err.error || 'No pudimos armar la semana.';
+      } finally {
+        esperando.cerrar();
+      }
+
+      pintar();
+      const partes = [];
+      if (deBiblioteca) partes.push(`${deBiblioteca} de tus platos guardados`);
+      if (generados) partes.push(`${generados} generado(s) con IA`);
+      const hecho = partes.length ? `Semana armada: ${partes.join(' y ')}.` : 'No se llenó ninguna casilla.';
+      alerta(alPlan, corte ? `${hecho} ${corte}` : hecho, corte ? 'info' : 'ok');
+      cargar(semana);
     }
 
     // ===== Ver mi despensa (con la proyeccion de ESTA semana) =====

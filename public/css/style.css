@@ -714,3 +714,65 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 }
 .paso-guia b { font-size: 14px; }
 .paso-guia p { font-size: 12.5px; margin: 2px 0 0; line-height: 1.45; }
+
+/* ===== Aporte nutricional del plato (modal "Ver") =====
+   Va en su propia caja de color: es la seccion que el usuario busca cuando abre un plato, y
+   perdida entre el resto del modal no se distinguia del texto de alrededor. */
+.nutri-caja {
+  margin-top: 14px; padding: 14px; border-radius: 14px;
+  background: var(--green-soft); border: 1px solid #cbe5d2;
+}
+.nutri-cab { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; font-size: 13.5px; }
+.nutri-cab .muted { font-size: 12px; }
+
+/* Recomendaciones por integrante. En un hogar con diabetes o hipertension es lo mas importante
+   de esta pantalla, asi que van ARRIBA y con su propio color: entre los numeros no se leen. */
+.nutri-recos {
+  background: var(--white); border-left: 4px solid var(--secondary);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 12.5px;
+}
+.nutri-recos b { font-size: 13px; display: block; margin-bottom: 4px; color: var(--secondary); }
+.nutri-recos ul { margin: 0; padding-left: 18px; }
+.nutri-recos li { margin-bottom: 3px; line-height: 1.45; }
+
+/* Tabla de nutrientes: nombre | valor | barra | %VD. La barra mide el PORCENTAJE del valor
+   diario, no el valor absoluto: son unidades distintas (g y mg) y en la misma escala el sodio
+   aplastaria a todo lo demas. */
+.nutri-tabla { background: var(--white); border-radius: 10px; padding: 10px 12px; }
+.nutri-fila {
+  display: grid; grid-template-columns: minmax(96px, 1.4fr) auto minmax(60px, 2fr) 38px;
+  gap: 8px; align-items: center; font-size: 12.5px; padding: 4px 0;
+}
+.nutri-fila + .nutri-fila { border-top: 1px solid var(--bg); }
+.nutri-txt { min-width: 0; }
+.nutri-val { font-weight: 700; text-align: right; white-space: nowrap; }
+.nutri-barra { height: 8px; border-radius: 999px; background: var(--bg); overflow: hidden; }
+.nutri-barra i { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
+.nutri-barra i.barra-media { background: var(--amber); }
+.nutri-barra i.barra-alta { background: var(--danger); }
+.nutri-vd { text-align: right; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+
+@media (max-width: 480px) {
+  .nutri-fila { grid-template-columns: minmax(78px, 1.2fr) auto minmax(40px, 1fr) 34px; gap: 6px; font-size: 12px; }
+}
+
+/* ===== Elegir cómo crear un plato (Mis platos) ===== */
+.via-crear {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%;
+  text-align: left; padding: 13px 14px; margin-bottom: 8px; height: auto;
+  white-space: normal; line-height: 1.4;
+}
+.via-crear .via-ic { font-size: 26px; line-height: 1; flex-shrink: 0; }
+.via-crear b { display: block; font-size: 14px; }
+.via-crear .muted { display: block; font-size: 12.5px; font-weight: 400; margin-top: 2px; }
+.via-crear:hover { border-color: var(--primary); background: var(--green-soft); }
+
+/* Casillas de selección (días / momentos al generar la semana). */
+.chip-check {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px;
+  font-size: 12.5px; font-weight: 600; background: var(--white); user-select: none;
+}
+.chip-check input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+.chip-check:hover { border-color: var(--primary); }
+.chip-check:has(input:checked) { background: var(--green-soft); border-color: var(--primary); }

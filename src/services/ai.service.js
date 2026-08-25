@@ -51,13 +51,30 @@ REGLAS INNEGOCIABLES:
 // generar el menu, regenerar una casilla y detallar platos viejos. Si cada uno tuviera su
 // propia definicion, el mismo plato daria numeros distintos segun por donde se pidio.
 const FORMATO_INFO = `- "info": el aporte nutricional APROXIMADO de UNA porcion, como objeto:
-  { "calorias": <numero entero, kcal por porcion>,
+  { "calorias": <numero, kcal por porcion>,
+    "nutrientes": {
+      "carbohidratos": { "v": <gramos>, "vd": <% del valor diario> },
+      "proteinas":     { "v": <gramos>, "vd": <%> },
+      "grasas":        { "v": <gramos>, "vd": <%> },
+      "fibra":         { "v": <gramos>, "vd": <%> },
+      "hierro":        { "v": <miligramos>, "vd": <%> },
+      "sodio":         { "v": <miligramos>, "vd": <%> },
+      "sal":           { "v": <gramos de equivalente en sal>, "vd": <%> }
+    },
     "carbohidratos": "alto" | "medio" | "bajo",
     "proteinas": "alto" | "medio" | "bajo",
     "grasas": "alto" | "medio" | "bajo",
     "destacados": [<hasta 3 vitaminas o minerales que este plato aporte de verdad, ej. "hierro", "vitamina A", "fibra">],
+    "recomendaciones": [<hasta 3 frases, UNA POR INTEGRANTE que lo necesite, diciendo su NOMBRE y que debe tener en cuenta con ESTE plato por su condicion medica o su edad. Si a nadie le aplica, deja []>],
     "semaforo": "verde" | "ambar" | "rojo",
     "resumen": "<una frase corta: que aporta el plato y a quien le conviene>" }
+
+  Sobre "nutrientes":
+  - "v" es la cantidad POR PORCION en la unidad indicada (gramos, o miligramos para hierro y sodio).
+  - "vd" es el porcentaje del valor diario de referencia de un adulto (2000 kcal), redondeado.
+  - El "eq. de sal" es el sodio convertido a sal: sal(g) = sodio(mg) x 2.5 / 1000.
+  - Manten la coherencia con "calorias": 4 kcal por gramo de carbohidrato y de proteina, 9 por gramo de grasa.
+  - Las etiquetas alto/medio/bajo se conservan y deben concordar con los numeros.
 
   El "semaforo" mide que tan saludable es ESTE plato PARA ESTE HOGAR, y debes ser honesto aunque tu mismo lo hayas propuesto:
   - "verde": liviano y equilibrado, lo pueden comer sin cuidado.
@@ -461,10 +478,12 @@ async function generarPlatos(ctxTexto, casillas, yaEnLaSemana, comprometidos, ev
     // era solo la receta base, ~550 al sumarle el aporte nutricional (info) y ~900 al
     // sumarle los pasos de preparacion. Con los 700 de antes, pedir un dia (3 platos) se
     // habria truncado y NO se pierde un plato: se pierde el JSON entero de la llamada.
-    // El ultimo salto (1400 -> 1600) es el "consume" por ingrediente: ~10 tokens x ~10
-    // ingredientes por plato. Subir el techo no cuesta nada (solo se paga lo generado).
+    // El salto 1400 -> 1600 fue el "consume" por ingrediente (~10 tokens x ~10 ingredientes).
+    // El salto 1600 -> 2000 es el aporte nutricional DETALLADO: 7 nutrientes con valor y % del
+    // valor diario (~105 tokens) mas las recomendaciones por integrante (~90). Subir el techo no
+    // cuesta nada (solo se paga lo generado); truncarse cuesta la llamada entera.
     // Si le agregas campos al plato, MIDE otra vez (SELECT output_tokens FROM generaciones).
-    Math.min(MAX_TOKENS_PLANIFICADOR, 1200 + casillas.length * 1600)
+    Math.min(MAX_TOKENS_PLANIFICADOR, 1200 + casillas.length * 2000)
   );
   return { resultado: data, usage };
 }
@@ -489,7 +508,42 @@ async function verificarPlatos(ctxTexto, pedidos) {
 
 console.log(`[IA] Proveedor por defecto: ${PROVIDER} (configurable en admin: ai_modo/ai_prioridad)`);
 
+// Propone platos NUEVOS para la biblioteca del usuario (no para una casilla del calendario).
+//
+// Se le pasan los que YA tiene para que no los repita: es la unica forma de que "proponme algo"
+// no devuelva por tercera vez el mismo aji de gallina. Y NO se le manda la despensa aunque el
+// hogar la use: un plato de la biblioteca es una receta que se guarda para reutilizar mas
+// adelante, no una propuesta para cocinar hoy con lo que queda en casa.
+async function proponerPlatosBiblioteca(ctxTexto, cuantos, yaTiene, momento) {
+  const n = Math.max(1, Math.min(3, parseInt(cuantos, 10) || 1));
+  const pedido = [
+    ctxTexto,
+    '',
+    `TAREA: propon ${n} plato(s) NUEVO(S) para la biblioteca de recetas de esta familia.`,
+    momento ? `Deben servir para: ${momento}.` : 'Pueden ser de cualquier momento del dia.',
+    yaTiene.length
+      ? `YA TIENE ESTOS EN SU BIBLIOTECA (NO los repitas ni propongas variantes casi iguales): ${yaTiene.join(', ')}`
+      : 'Su biblioteca esta vacia.',
+    '',
+    'Son recetas para GUARDAR y reutilizar: elige platos ricos, de su region y realistas para su',
+    'presupuesto. No mires ninguna despensa: lista los ingredientes que el plato necesita.',
+    '',
+    REGLAS_PLANIFICADOR,
+    '',
+    'Devuelve SOLO un JSON: { "platos": [ { ... } ] }, y cada plato con:',
+    FORMATO_PLATO,
+  ].join('\n');
+
+  const { data, usage } = await pedir(
+    SYSTEM_CASILLAS,
+    [{ texto: pedido }],
+    Math.min(MAX_TOKENS_PLANIFICADOR, 1200 + n * 2000)
+  );
+  return { resultado: data, usage };
+}
+
 module.exports = {
+  proponerPlatosBiblioteca,
   explicarPorTexto,
   explicarPorImagen,
   generarPlatos,

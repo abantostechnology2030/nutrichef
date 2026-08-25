@@ -759,6 +759,33 @@ offset del día vía `DIA_NUM`). Une las dos fuentes:
 - **El rango de fechas se compara en hora de PERÚ** (`date(creado_en, '-5 hours')`). Sin el desfase, todo lo hecho entre las 19:00 y la medianoche caería en el día siguiente y los totales no cuadrarían con lo que ve el usuario. Una fecha con formato inválido **se ignora** en vez de romper la consulta.
 - ⚠️ **En la columna de llamadas NO va el símbolo ∞.** Las llamadas *hechas* son siempre un número; lo que sí puede ser ilimitado es el **tope del plan**, y eso vive en la columna de *escaneos restantes* (que dice "ilimitados", no ∞).
 
+### Tres vías para crear un plato en la biblioteca (2026-08-25)
+`+ Nuevo plato` ya no abre el formulario: pregunta **cómo** quieres crearlo. Son las mismas tres del calendario a propósito — el usuario ya las conoce de ahí:
+1. **A mano** (lo de siempre, sin IA).
+2. **Escribo el nombre y lo genera la IA** → reutiliza `verificarPlatos()`, el mismo flujo de *"✍️ Ya sé qué cocinar"*. Es el mismo problema (el usuario dice QUÉ y la IA lo desarrolla) y escribir otro prompt daría recetas con distinto formato para el mismo plato.
+3. **Que la IA proponga uno** → `proponerPlatosBiblioteca()`, al que se le mandan los platos que YA tiene para que no los repita. Sin eso, "proponme algo" devuelve por tercera vez el mismo ají de gallina.
+
+`POST /api/platos/generar` los crea con **`guardado=1`**: el sentido es llenar la biblioteca, no ocupar una casilla. Cuesta **una generación** (se cobra contra la semana actual, porque un plato de biblioteca no pertenece a ninguna semana) y **el tope `platos_max` se comprueba ANTES de llamar a la IA**: generar y luego rechazar sería cobrar una generación por nada.
+
+⚠️ **A `proponerPlatosBiblioteca` NO se le manda la despensa**, aunque el hogar la use: un plato de biblioteca es una receta para reutilizar más adelante, no una propuesta para cocinar hoy con lo que queda en casa.
+
+### Generar la semana completa (2026-08-25)
+Botón **"✨ Generar la semana"** que pregunta **días** (L–D) y **comidas** (desayuno/almuerzo/cena) antes de nada, y muestra cuántas casillas llenará y cuántas generaciones puede costar.
+
+🔴 **SOLO LLENA LAS CASILLAS VACÍAS.** Ésa es la condición que permitió traer de vuelta este botón: la ruta vieja se eliminó el 2026-07-15 porque **borraba la semana antes de escribir** y destruía los platos elegidos a mano. Si alguien cambia esto, se rompe otra vez lo mismo.
+
+**Primero la biblioteca, después la IA.** `POST /api/plan/desde-biblioteca` coloca los platos guardados que encajen (sin IA y sin cupo; un plato **sin momento** vale para cualquiera, y no repite uno que ya esté esa semana). Lo que quede sin cubrir lo genera la IA.
+
+⚠️ **El bucle de días va en el NAVEGADOR, no en el servidor.** Con Claude de prioridad, 7 días serían ~210 s y **nginx corta a los 180**. Además así se ve el progreso día a día y lo ya generado queda guardado aunque el siguiente falle. Si se queda sin cupo a mitad, **para y cuenta lo que sí quedó hecho**.
+
+### Aporte nutricional detallado (2026-08-25)
+`info.nutrientes` trae **valor + % del valor diario** de carbohidratos, proteínas, grasas, fibra, hierro, sodio y equivalente en sal, y se pinta como **barras horizontales** en su propia caja de color.
+- **La barra mide el %VD, no el valor absoluto:** son unidades distintas (g y mg) y en la misma escala 581 mg de sodio se vería 20 veces más "grande" que 29 g de proteína.
+- **`calorias_vd` se calcula en el backend** (kcal/2000), no se le pide a la IA: es aritmética, y pedirla invita a que devuelva un número incoherente con las calorías que ella misma dio.
+- **`info.recomendaciones`** son avisos POR INTEGRANTE (con su nombre) y van **arriba y en su propia caja**: en un hogar con diabetes o hipertensión es lo más importante de esa pantalla, y entre los números no se leen.
+- **Sodio y sal se pintan en ámbar sobre el 20% del VD y en rojo sobre el 40%.** El resto no cambia de color: destacar todo es no destacar nada.
+- **Los platos viejos siguen funcionando:** `nutrientes` es opcional y, si no está, se muestran las etiquetas `alto/medio/bajo` de antes. El techo de tokens por casilla subió de **1600 a 2000** por estos campos.
+
 ### Fase 6 — admin
 Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `generaciones`). Falta pulir la UI: mostrar el desglose de generaciones por tipo (menu/dia/plato/detalle/verificar) y el aviso de crédito.
 

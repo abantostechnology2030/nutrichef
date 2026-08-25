@@ -156,8 +156,21 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     const p2 = await abrir('platos.html', token, usuario);
     check(p2.errores.length === 0, `sin errores tras borrar ${p2.errores.join(' | ')}`);
     check(p2.doc.querySelectorAll('#lista .result-section').length === 4, 'quedan 4 tras borrar uno');
+    // "+ Nuevo plato" ya no abre el formulario: primero pregunta COMO quieres crearlo.
+    // Son las mismas tres vias del calendario (a mano / escribo el nombre / que lo proponga
+    // la IA), y las tres acaban guardando el plato en la biblioteca.
     p2.doc.getElementById('btn-nuevo').click();
-    await esperar(150);
+    await esperar(200);
+    const vias = [...p2.doc.querySelectorAll('[data-via]')];
+    check(vias.length === 3, `ofrece las 3 vias para crear un plato (= ${vias.length})`);
+    check(vias.map((v) => v.dataset.via).join(',') === 'manual,nombre,proponer',
+      `en orden: manual, escribir el nombre, proponer (${vias.map((v) => v.dataset.via).join(', ')})`);
+    check(/gastan una generación/i.test(txt(p2.doc, '.modal-body')),
+      'y avisa que las dos con IA gastan cupo');
+
+    // La via manual es la de siempre.
+    vias.find((v) => v.dataset.via === 'manual').click();
+    await esperar(200);
     check(txt(p2.doc, '.modal h3') === 'Nuevo plato', `el formulario se abre (titulo: "${txt(p2.doc, '.modal h3')}")`);
     check(p2.doc.querySelectorAll('.modal [data-fila]').length === 2, 'el form arranca con 2 filas de ingrediente');
     p2.doc.querySelector('.modal #f-add-ing').click();

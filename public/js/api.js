@@ -602,6 +602,13 @@ function modalCargando({ ic = '👨‍🍳', titulo = 'Cocinando…', texto = ''
   }, 1000);
 
   return {
+    // Fija un texto concreto y DETIENE la rotacion: cuando el que llama sabe en que paso va
+    // de verdad ("generando martes, 3 de 7"), un mensaje generico rotando al lado seria ruido
+    // y ademas lo pisaria al siguiente tick.
+    paso(txt) {
+      if (rot) clearInterval(rot);
+      elPaso.textContent = txt;
+    },
     cerrar() {
       if (rot) clearInterval(rot);
       clearInterval(reloj);
