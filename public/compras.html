@@ -63,13 +63,27 @@
                 <input id="c-presupuesto" type="number" step="0.10" min="0" placeholder="Ej: 250" class="input" style="width:auto" /></div>
             </div>
 
+            <!-- La columna de presupuesto por producto es OPCIONAL: quien solo quiere marcar lo
+                 que compra no tiene por que ver un campo mas en cada fila. -->
+            <label class="switch-fila" style="margin:12px 0 0">
+              <input type="checkbox" id="c-presupuestar" />
+              <span><b>Presupuestar producto por producto</b>
+                <span class="muted" style="display:block;font-size:12.5px">
+                  Agrega una columna para anotar cuánto piensas gastar en cada producto y compararlo con lo que gastaste de verdad.
+                </span>
+              </span>
+            </label>
+
             <!-- El resumen del gasto va ARRIBA y fijo: es el numero por el que se mira esta
                  pantalla mientras se empuja el carrito. -->
             <div class="totales-barra" id="totales">
               <div><span class="muted">Marcados</span><b id="t-marcados">0</b></div>
               <div><span class="muted">Gastado</span><b id="t-gastado">S/ 0.00</b></div>
+              <!-- Va PEGADO a "Gastado" a proposito: lo presupuestado solo significa algo al
+                   lado de lo que llevas gastado. -->
+              <div id="t-presupuestado-caja" class="hidden"><span class="muted">Presupuestado</span><b id="t-presupuestado">S/ 0.00</b></div>
               <div><span class="muted">Presupuesto</span><b id="t-presu">—</b></div>
-              <div id="t-dif-caja"><span class="muted">Diferencia</span><b id="t-dif">—</b></div>
+              <div id="t-dif-caja"><span class="muted" id="t-dif-txt">Diferencia</span><b id="t-dif">—</b></div>
             </div>
 
             <div class="row acciones-compra" style="gap:8px;flex-wrap:wrap;margin:12px 0">
@@ -81,10 +95,11 @@
 
             <!-- Se dice de donde salen las cantidades: no las inventa nadie, son la suma de lo
                  que piden los platos que el usuario tiene programados esa semana. -->
-            <div class="cabecera-cols">
+            <div class="cabecera-cols" id="cabecera-cols">
               <span>Producto</span>
               <span>Cantidad según tu plan</span>
               <span>Precio (S/)</span>
+              <span class="col-presu">Presupuesto (S/)</span>
               <span></span>
             </div>
             <div id="lista-productos" class="stack" style="gap:10px"><p class="muted">Cargando…</p></div>
@@ -124,6 +139,9 @@
     // Categorias abiertas. Se guarda aparte del HTML porque la lista se repinta entera al
     // marcar algo, y sin esto el acordeon se cerraria solo en cada clic.
     const ABIERTAS = new Set();
+    // Si el usuario quiere la columna de presupuesto. Es una preferencia de PANTALLA (como el
+    // acordeon), asi que vive en el dispositivo: los importes si van a la base de datos.
+    let PRESUPUESTAR = localStorage.getItem('nutrichefia_presupuestar') === '1';
 
     const hoyPeru = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
     const sumarDias = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -162,6 +180,7 @@
           // se hace mirando la lista en el mercado ("¿y esto para que era?").
           platos: i.platos || [],
           precio: '',
+          presupuesto: '',
           // TODO arranca DESMARCADO. Esta lista se marca EN EL SUPERMERCADO, producto por
           // producto, conforme cae al carrito: la marca significa "ya lo tengo aqui", y darla
           // por hecha de entrada obliga a desmarcar lo que no encontraste, que es justo lo que
@@ -178,6 +197,10 @@
     }
 
     function pintarLista() {
+      // La clase va en la TARJETA, no en cada fila: el CSS de las columnas necesita saberlo
+      // tanto en la cabecera como en las filas, y ponerlo arriba lo dice una sola vez.
+      document.querySelector('#panel-lista .card-verde').classList.toggle('con-presu', PRESUPUESTAR);
+      document.getElementById('cabecera-cols').classList.toggle('con-presu', PRESUPUESTAR);
       const cont = document.getElementById('lista-productos');
       if (!ITEMS.length) {
         cont.innerHTML = '<p class="muted">No hay productos. Programa platos en tu plan de comidas, o agrega productos a mano.</p>';
@@ -195,6 +218,9 @@
         // Subtotal del pasillo = lo MARCADO de ese pasillo. Es en lo que uno piensa mientras
         // compra ("las carnes ya me llevaron 80 soles"), y el total de arriba solo no lo dice.
         const sub = items.reduce((n, x) => n + (x.comprado ? (parseFloat(x.precio) || 0) : 0), 0);
+        // El presupuesto del pasillo cuenta TODOS sus productos (no solo los marcados): es lo
+        // que pensabas gastar en esa zona del mercado, la hayas comprado o no.
+        const subP = items.reduce((n, x) => n + (parseFloat(x.presupuesto) || 0), 0);
         const abierta = ABIERTAS.has(cat);
         return `
         <div class="cat-acordeon ${abierta ? 'abierta' : ''}" data-cat="${cat}">
@@ -203,6 +229,7 @@
             ${chipCategoria(cat)}
             <span class="cat-cuenta">${marcados} de ${items.length}</span>
             <span class="cat-subtotal">${soles(sub)}</span>
+            ${PRESUPUESTAR ? `<span class="cat-subtotal cat-subtotal-presu" title="Presupuestado en este pasillo">de ${soles(subP)}</span>` : ''}
           </button>
           <div class="cat-cuerpo">
             ${items.map((it) => `
@@ -220,6 +247,10 @@
                   <span>S/</span>
                   <input class="input" type="number" step="0.10" min="0" data-precio="${it.i}" value="${it.precio}" placeholder="0.00" />
                 </div>
+                ${PRESUPUESTAR ? `<div class="compra-presu" title="Cuánto pensabas gastar en este producto">
+                  <span>Pres.</span>
+                  <input class="input" type="number" step="0.10" min="0" data-presu="${it.i}" value="${it.presupuesto}" placeholder="0.00" />
+                </div>` : ''}
                 <button class="btn btn-danger btn-sm" data-quitar="${it.i}" title="Quitar de la lista">✕</button>
               </div>`).join('')}
           </div>
@@ -231,10 +262,24 @@
     function totalizar() {
       const marcados = ITEMS.filter((i) => i.comprado);
       const gastado = marcados.reduce((n, i) => n + (parseFloat(i.precio) || 0), 0);
-      const presu = parseFloat(document.getElementById('c-presupuesto').value);
+      const presuSemana = parseFloat(document.getElementById('c-presupuesto').value);
       document.getElementById('t-marcados').textContent = `${marcados.length} de ${ITEMS.length}`;
       document.getElementById('t-gastado').textContent = soles(gastado);
-      document.getElementById('t-presu').textContent = Number.isFinite(presu) ? soles(presu) : '—';
+      document.getElementById('t-presu').textContent = Number.isFinite(presuSemana) ? soles(presuSemana) : '—';
+
+      // El total de la columna: TODOS los productos con presupuesto, marcados o no. Lo que se
+      // compara es "lo que pensaba gastar" contra "lo que gaste", y descontar del plan lo que al
+      // final no compraste haria que la comparacion cuadrase siempre.
+      const conPresu = ITEMS.filter((i) => Number.isFinite(parseFloat(i.presupuesto)));
+      const presuItems = conPresu.reduce((n, i) => n + parseFloat(i.presupuesto), 0);
+      document.getElementById('t-presupuestado-caja').classList.toggle('hidden', !PRESUPUESTAR);
+      document.getElementById('t-presupuestado').textContent = conPresu.length ? soles(presuItems) : '—';
+
+      // La diferencia se mide contra la columna si la estas usando, y contra el presupuesto de
+      // la semana si no. Dos "diferencias" a la vez no dirian nada: la etiqueta dice cual es.
+      const usaItems = PRESUPUESTAR && conPresu.length > 0;
+      const presu = usaItems ? presuItems : presuSemana;
+      document.getElementById('t-dif-txt').textContent = usaItems ? 'Presupuestado − gastado' : 'Diferencia';
       const caja = document.getElementById('t-dif-caja');
       const el = document.getElementById('t-dif');
       if (!Number.isFinite(presu)) {
@@ -258,6 +303,11 @@
       const sub = marcados.reduce((n, i) => n + (parseFloat(ITEMS[i].precio) || 0), 0);
       caja.querySelector('.cat-cuenta').textContent = `${marcados.length} de ${idx.length}`;
       caja.querySelector('.cat-subtotal').textContent = soles(sub);
+      const elP = caja.querySelector('.cat-subtotal-presu');
+      if (elP) {
+        const subP = idx.reduce((n, i) => n + (parseFloat(ITEMS[i]?.presupuesto) || 0), 0);
+        elP.textContent = 'de ' + soles(subP);
+      }
     }
 
     document.getElementById('lista-productos').addEventListener('input', (e) => {
@@ -265,6 +315,11 @@
       if (t.dataset.precio !== undefined) {
         ITEMS[t.dataset.precio].precio = t.value;
         // El precio tambien mueve el subtotal de su pasillo, no solo el total de arriba.
+        refrescarPasillo(t.closest('.cat-acordeon'));
+        totalizar();
+      }
+      if (t.dataset.presu !== undefined) {
+        ITEMS[t.dataset.presu].presupuesto = t.value;
         refrescarPasillo(t.closest('.cat-acordeon'));
         totalizar();
       }
@@ -320,6 +375,18 @@
     }
     document.getElementById('c-presupuesto').oninput = totalizar;
 
+    // Encender o apagar la columna repinta la lista entera (hay que meter o quitar un campo en
+    // cada fila). Los importes ya escritos NO se pierden: viven en ITEMS, no en el DOM.
+    const chkPresu = document.getElementById('c-presupuestar');
+    chkPresu.checked = PRESUPUESTAR;
+    chkPresu.onchange = () => {
+      PRESUPUESTAR = chkPresu.checked;
+      localStorage.setItem('nutrichefia_presupuestar', PRESUPUESTAR ? '1' : '0');
+      document.getElementById('cabecera-cols').classList.toggle('con-presu', PRESUPUESTAR);
+      document.querySelector('#panel-lista .card-verde').classList.toggle('con-presu', PRESUPUESTAR);
+      pintarLista();
+    };
+
     document.getElementById('btn-todos').onclick = () => { ITEMS.forEach((i) => { i.comprado = true; }); pintarLista(); };
     document.getElementById('btn-ninguno').onclick = () => { ITEMS.forEach((i) => { i.comprado = false; }); pintarLista(); };
 
@@ -328,7 +395,7 @@
       if (!nombre) return;
       // Este si nace marcado: se agrega a mano porque acabas de echarlo al carro (no estaba en
       // el plan). Agregarlo y tener que marcarlo despues seria un clic sin sentido.
-      ITEMS.push({ nombre, categoria: 'otro', cantidad: '', precio: '', comprado: true });
+      ITEMS.push({ nombre, categoria: 'otro', cantidad: '', precio: '', presupuesto: '', comprado: true });
       pintarLista();
     };
 
@@ -396,7 +463,10 @@
 
         cont.innerHTML = d.compras.length
           ? d.compras.map((c) => {
-              const dif = c.diferencia;
+              // Si se presupuesto producto por producto, ESE es el numero contra el que hay que
+              // comparar: es mas fino que el presupuesto de la semana entera y es el que el
+              // usuario acaba de armar. Si no lo uso, se compara con el de la semana, como antes.
+              const dif = c.diferencia_items != null ? c.diferencia_items : c.diferencia;
               const badge = dif == null ? ''
                 : `<span class="tag ${dif >= 0 ? 'tag-ok' : 'tag-falta'}">${dif >= 0 ? 'ahorró' : 'se pasó'} ${soles(Math.abs(dif))}</span>`;
               return `<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px">
@@ -407,7 +477,11 @@
                     <span class="tag">${c.total_comprados} producto(s)</span>
                     <b>${soles(c.gastado)}</b></span>
                 </div>
-                ${c.presupuesto != null ? `<p class="muted" style="font-size:12px;margin-top:4px">Presupuesto: ${soles(c.presupuesto)}</p>` : ''}
+                ${c.presupuestado_items != null
+                  ? `<p class="muted" style="font-size:12px;margin-top:4px">Presupuestado por producto: <b>${soles(c.presupuestado_items)}</b>
+                       <span class="muted">(${c.con_presupuesto} de ${c.total_items} productos)</span>${
+                       c.presupuesto != null ? ` · presupuesto de la semana: ${soles(c.presupuesto)}` : ''}</p>`
+                  : (c.presupuesto != null ? `<p class="muted" style="font-size:12px;margin-top:4px">Presupuesto: ${soles(c.presupuesto)}</p>` : '')}
                 ${c.con_precio < c.total_comprados
                   ? `<p class="muted" style="font-size:11.5px;margin-top:4px">⚠️ ${c.total_comprados - c.con_precio} producto(s) sin precio: el total es parcial.</p>` : ''}
                 <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
@@ -416,7 +490,8 @@
                 </div>
                 <div class="hidden" id="det-${c.id}" style="margin-top:10px">
                   ${c.items.map((i) => `<div class="row" style="justify-content:space-between;font-size:12.5px;padding:3px 0;border-top:1px solid var(--bg)">
-                    <span>${i.comprado ? '✅' : '⬜'} ${esc(i.nombre)} ${i.cantidad ? `<span class="muted">· ${esc(i.cantidad)}</span>` : ''}</span>
+                    <span>${i.comprado ? '✅' : '⬜'} ${esc(i.nombre)} ${i.cantidad ? `<span class="muted">· ${esc(i.cantidad)}</span>` : ''}${
+                      i.presupuesto != null ? ` <span class="muted">· presup. ${soles(i.presupuesto)}</span>` : ''}</span>
                     <span>${i.precio != null ? soles(i.precio) : '<span class="muted">sin precio</span>'}</span>
                   </div>`).join('')}
                 </div>
@@ -520,6 +595,13 @@
               doc.text(String(it.cantidad), M + 260, y);
               doc.setFont('helvetica', 'normal');
             }
+            // Con la columna encendida, el PDF lleva lo presupuestado impreso y deja el hueco
+            // para el precio: en el mercado se compara mirando el papel.
+            if (PRESUPUESTAR && it.presupuesto !== '' && it.presupuesto != null) {
+              doc.setTextColor(110); doc.setFontSize(9);
+              doc.text(`pres. S/ ${Number(it.presupuesto).toFixed(2)}`, W - M - 190, y);
+              doc.setFontSize(10);
+            }
             doc.setTextColor(150); doc.text('S/ __________', W - M - 90, y); doc.setTextColor(30);
             y += 17;
           }
@@ -537,6 +619,10 @@
 
         doc.setDrawColor(210); doc.line(M, y, W - M, y); y += 16;
         doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        const totalPresu = ITEMS.reduce((n, x) => n + (parseFloat(x.presupuesto) || 0), 0);
+        if (PRESUPUESTAR && totalPresu > 0) {
+          doc.text(`PRESUPUESTADO  S/ ${totalPresu.toFixed(2)}`, M, y);
+        }
         doc.text('TOTAL  S/ ______________', W - M - 190, y);
 
         return doc;

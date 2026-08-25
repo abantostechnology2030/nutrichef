@@ -922,6 +922,19 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .compra-precio { display: flex; align-items: center; gap: 4px; font-size: 12.5px; }
 .compra-precio input { padding: 6px 9px !important; font-size: 12.5px !important; width: 100%; }
 
+/* ===== Columna opcional de presupuesto por producto =====
+   Se enciende con un interruptor y por eso las columnas viven en dos variantes: sin ella la
+   fila es la de siempre. La clase va en la TARJETA (.con-presu), no en cada fila, para que la
+   cabecera de columnas y las filas no puedan quedar desalineadas entre si. */
+.compra-presu { display: flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.compra-presu input { padding: 6px 9px !important; font-size: 12.5px !important; width: 100%; }
+.col-presu { display: none; }
+.con-presu .col-presu { display: block; }
+.con-presu .compra-fila,
+.cabecera-cols.con-presu { grid-template-columns: 1fr 110px 120px 120px auto; }
+/* El subtotal presupuestado del pasillo, junto al gastado: "S/ 48.50 de S/ 60.00". */
+.cat-subtotal.cat-subtotal-presu { background: none; color: var(--muted); font-weight: 700; padding: 2px 0; }
+
 @media (max-width: 760px) {
   /* En el telefono la fila pasa a DOS LINEAS: el producto ocupa la primera entera y debajo van
      cantidad, precio y quitar.
@@ -938,6 +951,24 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
       "cant  precio quitar";
     row-gap: 10px;
   }
+  /* Con la columna de presupuesto encendida, en el telefono NO caben cuatro cosas en una linea
+     (a 282px cada una tendria ~65px): el presupuesto se lleva su propio renglon a lo ancho. */
+  /* Con los dos subtotales (gastado y presupuestado), la cabecera del pasillo no cabe en una
+     linea de 282px y el segundo se salia por el borde. Que envuelva, y que el chip de la
+     categoria pueda encogerse en vez de empujar al resto fuera. */
+  .cat-cab { flex-wrap: wrap; row-gap: 4px; }
+  .cat-cab .cat-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .con-presu .compra-fila {
+    /* Las columnas hay que REPETIRLAS aqui: la regla de escritorio (.con-presu .compra-fila)
+       define cinco, y si aqui solo se cambian las areas quedan cinco columnas para tres areas.
+       El resultado medido era una fila con la cantidad en 20px y la cruz en 120. */
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "check check  check"
+      "cant  precio quitar"
+      "presu presu  presu";
+  }
+  .compra-presu { grid-area: presu; }
   .compra-check { grid-area: check; flex-wrap: nowrap; }
   .compra-cant { grid-area: cant; width: 100%; }
   .compra-precio { grid-area: precio; min-width: 0; }

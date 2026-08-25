@@ -272,6 +272,10 @@ for (const [col, tipo] of [
   ['precio', 'REAL'],
   ['comprado', 'INTEGER NOT NULL DEFAULT 1'],
   ['fecha_compra', 'TEXT'],
+  // presupuesto -> soles que el usuario PENSABA gastar en ESE producto. Es opcional y va aparte
+  // de compras.presupuesto (el de la semana entera): uno se fija antes de salir de casa y el
+  // otro producto por producto. Con los dos se puede comparar lo planeado con lo comprado.
+  ['presupuesto', 'REAL'],
 ]) {
   if (!db.prepare('PRAGMA table_info(compra_items)').all().some((c) => c.name === col)) {
     db.exec(`ALTER TABLE compra_items ADD COLUMN ${col} ${tipo}`);

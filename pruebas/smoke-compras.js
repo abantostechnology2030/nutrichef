@@ -154,6 +154,60 @@ async function abrir(pagina, token, usuario) {
     check(/se arma de nuevo cada vez que entras/i.test(doc.body.textContent),
       'la pagina explica que la lista se rehace con el plan de esa semana');
 
+    // ===== La columna opcional de presupuesto por producto =====
+    console.log('\n=== presupuesto por producto ===');
+    const chk = doc.getElementById('c-presupuestar');
+    check(!!chk, 'la pagina ofrece el interruptor de presupuestar por producto');
+    check(chk.checked === false, 'arranca APAGADO: quien solo marca lo que compra no ve un campo mas');
+    check(doc.querySelectorAll('[data-presu]').length === 0, 'y con el apagado no hay columna');
+    check(doc.getElementById('t-presupuestado-caja').classList.contains('hidden'),
+      'ni total de presupuestado en la barra');
+
+    chk.checked = true;
+    chk.dispatchEvent(new win.Event('change', { bubbles: true }));
+    await esperar(300);
+    const presus = [...doc.querySelectorAll('[data-presu]')];
+    check(presus.length === 3, `al encenderlo, cada producto tiene su campo (= ${presus.length})`);
+    check(!doc.getElementById('t-presupuestado-caja').classList.contains('hidden'),
+      'y aparece el total de presupuestado, al lado del gastado');
+
+    // Se presupuestan los tres y se compra solo uno, mas barato de lo previsto.
+    const escribir = (el, v) => { el.value = v; el.dispatchEvent(new win.Event('input', { bubbles: true })); };
+    escribir(presus[0], '10');
+    escribir(presus[1], '25');
+    escribir(presus[2], '5');
+    await esperar(150);
+    check(/40\.00/.test(doc.getElementById('t-presupuestado').textContent),
+      `el total suma los tres: "${doc.getElementById('t-presupuestado').textContent}" (10 + 25 + 5)`);
+
+    const primerCheck = doc.querySelector('#lista-productos input[data-check]');
+    primerCheck.checked = true;
+    primerCheck.dispatchEvent(new win.Event('change', { bubbles: true }));
+    escribir(doc.querySelector(`[data-precio="${primerCheck.dataset.check}"]`), '8');
+    await esperar(200);
+    check(/8\.00/.test(doc.getElementById('t-gastado').textContent), 'lo gastado cuenta solo lo marcado');
+    check(/Presupuestado/.test(doc.getElementById('t-dif-txt').textContent),
+      `la diferencia dice contra que compara: "${doc.getElementById('t-dif-txt').textContent}"`);
+    check(/32\.00/.test(doc.getElementById('t-dif').textContent),
+      `y es presupuestado menos gastado: "${doc.getElementById('t-dif').textContent}" (40 - 8)`);
+
+    // Se guarda y se comprueba que el presupuesto de cada producto llega a la base de datos.
+    doc.getElementById('btn-guardar').click();
+    await esperar(900);
+    const hist = await apiSrv('/api/compras');
+    const guardada = hist.cuerpo.compras[0];
+    check(!!guardada, 'la compra se guardo');
+    check(guardada.presupuestado_items === 40, `con el presupuesto por producto sumado: ${guardada.presupuestado_items}`);
+    check(guardada.con_presupuesto === 3, `y sabe cuantos productos lo traen (${guardada.con_presupuesto} de ${guardada.total_items})`);
+    check(guardada.gastado === 8, `el gasto real: ${guardada.gastado}`);
+    check(guardada.diferencia_items === 32, `y la diferencia contra lo presupuestado: ${guardada.diferencia_items}`);
+    const conP = guardada.items.filter((i) => i.presupuesto != null).length;
+    check(conP === 3, `cada producto guarda el suyo (${conP} de ${guardada.items.length})`);
+    // Lo presupuestado cuenta TAMBIEN lo que no se compro: si no, la comparacion cuadraria siempre.
+    const noComprado = guardada.items.find((i) => !i.comprado);
+    check(noComprado && noComprado.presupuesto != null,
+      'incluido un producto que al final no se compro (por eso el plan no cuadra solo)');
+
     win.close();
   } finally {
     limpiar();

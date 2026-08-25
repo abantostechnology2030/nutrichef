@@ -39,6 +39,11 @@ function compraPublica(fila) {
   const comprados = items.filter((i) => i.comprado);
   const gastado = comprados.reduce((n, i) => n + (i.precio || 0), 0);
   const conPrecio = comprados.filter((i) => i.precio != null).length;
+  // El presupuesto por producto suma TODOS los de la lista, no solo los comprados: lo que se
+  // quiere comparar es "lo que pensaba gastar" contra "lo que gaste", y descontar del plan lo
+  // que al final no compraste haria que la comparacion cuadrase siempre.
+  const presupuestado = items.reduce((n, i) => n + (i.presupuesto || 0), 0);
+  const conPresupuesto = items.filter((i) => i.presupuesto != null).length;
   return {
     ...fila,
     items,
@@ -50,6 +55,11 @@ function compraPublica(fila) {
     gastado: Math.round(gastado * 100) / 100,
     presupuesto: fila.presupuesto,
     diferencia: fila.presupuesto == null ? null : Math.round((fila.presupuesto - gastado) * 100) / 100,
+    // Presupuesto POR PRODUCTO (la columna opcional). Va aparte del de la semana: son dos
+    // formas distintas de presupuestar y el usuario puede usar una, la otra o las dos.
+    presupuestado_items: conPresupuesto ? Math.round(presupuestado * 100) / 100 : null,
+    con_presupuesto: conPresupuesto,
+    diferencia_items: conPresupuesto ? Math.round((presupuestado - gastado) * 100) / 100 : null,
   };
 }
 
@@ -108,6 +118,8 @@ function itemsEntrantes(body, fechaCompra) {
       categoria: normCat(i?.categoria),
       cantidad: i?.cantidad ? String(i.cantidad).trim().slice(0, 40) : null,
       precio: normPrecio(i?.precio),
+      // Mismo criterio que el precio: un texto que no es numero es "sin presupuesto", no 0.
+      presupuesto: normPrecio(i?.presupuesto),
       comprado: i?.comprado ? 1 : 0,
       fecha_compra: normFecha(i?.fecha_compra, fechaCompra),
     }))
@@ -139,11 +151,11 @@ router.post('/', (req, res) => {
     id = info.lastInsertRowid;
 
     const ins = db.prepare(
-      `INSERT INTO compra_items (compra_id, nombre, categoria, nivel, cantidad, precio, comprado, fecha_compra)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO compra_items (compra_id, nombre, categoria, nivel, cantidad, precio, presupuesto, comprado, fecha_compra)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const it of items) {
-      ins.run(id, it.nombre, it.categoria, 'bastante', it.cantidad, it.precio, it.comprado, it.comprado ? it.fecha_compra : null);
+      ins.run(id, it.nombre, it.categoria, 'bastante', it.cantidad, it.precio, it.presupuesto, it.comprado, it.comprado ? it.fecha_compra : null);
     }
     volcarADespensa(usuario.id, items);
   })();
@@ -174,11 +186,11 @@ router.patch('/:id', (req, res) => {
       const items = itemsEntrantes(req.body, f.fecha || fechaPeru());
       db.prepare('DELETE FROM compra_items WHERE compra_id = ?').run(f.id);
       const ins = db.prepare(
-        `INSERT INTO compra_items (compra_id, nombre, categoria, nivel, cantidad, precio, comprado, fecha_compra)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO compra_items (compra_id, nombre, categoria, nivel, cantidad, precio, presupuesto, comprado, fecha_compra)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       for (const it of items) {
-        ins.run(f.id, it.nombre, it.categoria, 'bastante', it.cantidad, it.precio, it.comprado, it.comprado ? it.fecha_compra : null);
+        ins.run(f.id, it.nombre, it.categoria, 'bastante', it.cantidad, it.precio, it.presupuesto, it.comprado, it.comprado ? it.fecha_compra : null);
       }
       db.prepare('UPDATE compras SET total_items = ? WHERE id = ?').run(items.filter((i) => i.comprado).length, f.id);
       volcarADespensa(req.usuario.id, items);

@@ -970,6 +970,29 @@ de la familia le importa (por su nombre)** y de donde sale el numero.
 - Lo cubre **`npm run smoke:compras`** (gratis), que crea su propio usuario, hogar, platos y
   semana fija: no hereda estado ni depende de la fecha en que se corra.
 
+### Presupuesto POR PRODUCTO en "Mis compras" (2026-08-26)
+Columna opcional: un interruptor la enciende y cada producto gana un campo para anotar cuanto
+pensabas gastar en el. El total va **pegado al de lo gastado** y la diferencia compara los dos.
+
+- **Es opcional a proposito.** Quien solo quiere marcar lo que compra no tiene por que ver un
+  campo mas en cada una de las 35 filas. Con el interruptor apagado el campo **no se pinta**
+  (no es que se pinte escondido): encenderlo repinta la lista de todas formas.
+- **La preferencia vive en `localStorage`, los importes en la BD** (`compra_items.presupuesto`).
+  Querer la columna es una decision de pantalla, como el acordeon; lo presupuestado es un dato.
+- 🔴 **El total presupuestado suma TODOS los productos, no solo los comprados.** Lo que se compara
+  es *"lo que pensaba gastar"* contra *"lo que gaste"*, y descontar del plan lo que al final no
+  compraste haria que la comparacion **cuadrase siempre**. Lo fija un aserto.
+- **Convive con `compras.presupuesto`** (el de la semana entera), que no se toca: son dos formas
+  de presupuestar y el usuario puede usar una, la otra o las dos. Para no tener dos "diferencias"
+  a la vez, la barra **compara contra la columna si la estas usando** y contra el presupuesto
+  semanal si no — y la etiqueta lo dice (*"Presupuestado − gastado"*).
+- Cada pasillo muestra los dos numeros (*"S/ 48.50 de S/ 60.00"*), y el PDF imprime lo
+  presupuestado de cada producto y su total, para comparar sobre el papel en el mercado.
+- ⚠️ **En movil la columna se lleva su propio renglon** (`"presu presu presu"`): a 282px, cuatro
+  cosas en una linea dejan cada una en ~65px. Y **las columnas hay que repetirlas** dentro del
+  `@media`: la regla de escritorio define cinco, y cambiando solo las areas quedan cinco columnas
+  para tres areas — medido, la cantidad se quedaba en 20px y la cruz en 120.
+
 ### Analisis de consumo (`nutricion.routes.js` + `analisis.html`) — 2026-08-25
 Mira hacia **ATRAS**: que se comio en un rango de fechas y que le dice eso a esta familia (o a
 **un integrante**), con la lista de alimentos, los nutrientes y sugerencias.
