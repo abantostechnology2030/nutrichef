@@ -625,7 +625,7 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
   Ahora `[hidden] { display: none !important; }` esta junto a `.hidden` en `style.css`.
 - **`sed` puede fallar en silencio.** Si editas con `sed`, verifica el resultado: di por hecho que un bloque se había insertado y no era así.
 
-## POR DÓNDE SEGUIR (pausa: 2026-07-18 · fases 1-5 hechas · **EN PRODUCCIÓN**)
+## POR DÓNDE SEGUIR (última sesión: 2026-08-25 · fases 1-5 hechas · **EN PRODUCCIÓN**)
 
 > **La app es pública:** https://nutrichefia.solucionesctec.com. Cualquier cambio que subas a
 > `main` y despliegues lo ven usuarios reales. Redeploy y trampas: `DEPLOY.md`.
@@ -637,6 +637,37 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 > **Lo siguiente en producto es la fase 6** (pulir la UI del admin). La fase 5 (compra por
 > periodo + lista de faltantes + PDF) se cerró el 2026-07-18. Del rebranding solo falta el
 > arte propio del chef del semáforo.
+>
+> ### Lo que entró el 2026-08-25 (todo desplegado y verificado)
+>
+> | Qué | Dónde está documentado |
+> |---|---|
+> | **Análisis de consumo** (nueva sección + `/api/nutricion`) | "Analisis de consumo" |
+> | **Vaciar la semana** del calendario | "Vaciar la semana" |
+> | Las **peticiones del hogar** (`hogar.notas`) pasan a ser obligatorias en el prompt | "Las PETICIONES de la familia" |
+> | "Mis platos" → **"Mis Recetas"**, con **filtros y paginación** | dos secciones con ese nombre |
+> | Explicación **por nutriente** al tocarlo, sin IA | "Que significa cada nutriente" |
+> | Las **instrucciones** del plan, arriba y en amarillo | "Las instrucciones del plan…" |
+> | "Mis compras": **todo desmarcado** + **subtotal por pasillo** | "Mis compras: todo desmarcado…" |
+> | **Una sola cabecera** (`.hero-seccion`) en las diez pantallas | "Una sola cabecera…" |
+> | El **favicon** con fondo transparente + `scripts/recortar-fondo.js` | "Rebranding" en Deuda |
+> | Dos arreglos de **móvil**: la fila de campos y la lista de productos | sus dos secciones |
+>
+> **Y tres mejoras en `npm run movil`**, que es lo que hace que estas cosas no vuelvan a pasar:
+> abre los acordeones antes de medir (antes revisaba listas invisibles), detecta **texto
+> aplastado** y **filas de campos torcidas**. Las tres se verificaron **rompiendo el CSS a
+> propósito** para comprobar que fallan cuando deben.
+>
+> **Pruebas gratis que hay ahora:** `smoke`, `smoke:platos`, `smoke:inicio`, `smoke:compras`,
+> `smoke:analisis` y `movil`. Todas en verde al cerrar la sesión.
+>
+> ### Lo que NO se ha probado y conviene mirar
+> - **El informe del análisis con un hogar cuyos platos tengan los 7 nutrientes.** Se probó con
+>   platos en formato viejo (solo calorías), que es el caso más común hoy, y con datos sembrados.
+> - **Nada de esto se ha probado con Claude** (`ai_modo='claude'`), incluida la regla 9 de las
+>   peticiones. Es la advertencia de siempre: el fallback tapa las diferencias entre proveedores
+>   y ahí ya se escondió un bug meses.
+> - **El coste real del análisis**: una llamada medida en ~9 s con Gemini, sin apuntar los tokens.
 >
 > ✅ **El consumo de la despensa (2026-07-27) está verificado con IA real (Gemini).** Devuelve
 > `consume` en **11/11 ingredientes** y con criterio: `Pollo 80, Papa 40, Ajo 5, Sal 2,
@@ -660,14 +691,16 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 > **Lo que NO se probó:** el ancla nueva con **Claude** (solo con Gemini; misma advertencia de
 > arriba, y ahí ya se escondió un bug meses), el backfill de una semana de 21 platos de un tirón,
 > y el ciclo completo *comprar → cocinar los 21 platos → ¿queda todo cerca de 0?*, que es la
-> comprobación que cierra el modelo. **Producción sigue con el ancla vieja hasta que se
-> despliegue**, y al arrancar allí la migración borrará el `consume` de los platos existentes
-> (ver `config.consume_escala`): los usuarios verán reaparecer "🍳 Completar platos".
+> comprobación que cierra el modelo. **El ancla nueva ya está desplegada** desde entonces, y la
+> migración (`config.consume_escala`) borró el `consume` de los platos que existían: los usuarios
+> vieron reaparecer el botón de completar recetas, que es lo esperado.
 
-> **La fase 4 se cerró el 2026-07-16.** El calendario ya tiene **las tres vías** para llenar
-> una casilla: *"✨ Proponer"* (la IA elige), *"✍️ Ya sé qué cocinar"* (la familia elige y la
-> IA verifica) y *"📋 Mis platos"* (de su biblioteca, sin IA). El modal del plato muestra la
-> receta, el aporte nutricional, la cobertura y un botón **"☆ Guardar en mi biblioteca"**.
+> **La fase 4 se cerró el 2026-07-16.** El calendario tuvo entonces **tres vías** para llenar una
+> casilla: *"✨ Proponer"*, *"✍️ Ya sé qué cocinar"* y *"📋 Mis platos"*.
+> ⚠️ **Desde el 2026-08-25 quedan DOS**: *"✍️ Ya sé qué cocinar"* se retiró del calendario y esa
+> forma de crear vive ahora en **Mis Recetas**, que es donde el plato queda guardado para
+> reutilizarlo (ver "La biblioteca va SIEMPRE primero"). El botón del modal tampoco se llama ya
+> "Guardar en mi biblioteca", sino **"Guardar en Mis Recetas"**.
 
 > **Cambio de modelo (2026-07-15):** la generación pasó de **la semana de un golpe** al
 > **día a la carta**. Se eliminó la ruta que armaba los 21 platos, `POST /generar` ahora
@@ -681,8 +714,8 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
      `generarPlatos` la trae en la misma llamada (ver "El plato nace COMPLETO"). El modal
      `verPlato()` la pinta en un `<ol>`.
    - `POST /api/plan/detallar` quedó como **backfill** de los platos viejos (`pasos`/`info` en
-     NULL), y el botón del calendario es **"🍳 Completar platos (N)"**, que solo aparece si
-     hay alguno incompleto.
+     NULL), y el botón del calendario es **"🍳 Completar recetas (N)"** (se llamaba "Completar
+     platos" y nadie sabía qué completaba), que solo aparece si hay alguno incompleto.
    - `normPasos()` (en `plan.routes.js`) **le quita la numeración manual** a cada paso: la IA
      escribe "1. Sancochar…" pese a que el prompt se lo prohíbe, y el `<ol>` ya numera —
      salía "1. 1. Sancochar el pollo".
@@ -852,7 +885,7 @@ Pagina propia (compras.html + compras.routes.js). Es OTRA forma de registrar la 
 
 ⚠️ **Y por eso `platos_max` dejo de contarlos.** `guardadosDe()` cuenta solo `origen = 'manual'`. Si contara los generados, un usuario Free (5) se quedaria sin poder crear nada tras generar dos dias, y el tope dejaria de medir lo que pretende medir. Lo que produce la IA ya esta limitado por `generaciones_max`.
 
-### "Mis platos": filtros y paginacion (2026-08-25)
+### "Mis Recetas": filtros y paginacion (2026-08-25)
 La biblioteca paso de una decena de platos a **68 en produccion** (todo lo generado se guarda desde
 el 2026-08-25), y una lista plana de 68 tarjetas con un solo buscador dejo de servir.
 
