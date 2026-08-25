@@ -100,7 +100,11 @@ function textoContexto(ctx) {
         : 'DESPENSA: vacia (no tiene ingredientes registrados).'
     );
   }
-  if (ctx.hogar.notas) partes.push(`NOTAS DE LA FAMILIA: ${ctx.hogar.notas}`);
+  // Las escribio el usuario y son la parte del contexto que mas le importa a el: se nombran
+  // como PETICIONES (la regla 9 del prompt las trata como obligatorias) y no como "notas", que
+  // se leia como un comentario de fondo. Ya paso: un hogar pidio ensalada y bebida en cada
+  // almuerzo y la IA lo cumplia solo a ratos.
+  if (ctx.hogar.notas) partes.push(`PETICIONES DE LA FAMILIA (obligatorias, salvo que choquen con una alergia o condicion medica): ${ctx.hogar.notas}`);
 
   // Instrucciones generales del admin (config.ia_instrucciones): valen para TODOS los
   // hogares y se anteponen a todos los flujos del planificador. NUNCA por encima de las

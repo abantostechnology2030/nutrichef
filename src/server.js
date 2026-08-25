@@ -29,6 +29,9 @@ app.use('/api/hogar', require('./routes/hogar.routes'));       // familia, condi
 app.use('/api/despensa', require('./routes/despensa.routes')); // inventario + compra semanal
 app.use('/api/compras', require('./routes/compras.routes'));   // 'Mis compras': gasto, precios e historico
 app.use('/api/plan', require('./routes/plan.routes'));         // calendario 7x3 + generacion IA
+// Analisis de consumo: mira hacia ATRAS (que se comio en un rango). Se monta en /api/nutricion
+// y no en /api/analisis porque ese ya es el ESCANER de productos, que es otra cosa.
+app.use('/api/nutricion', require('./routes/nutricion.routes'));
 app.use('/api/platos', require('./routes/platos.routes'));     // biblioteca del usuario (guardado = 1)
 app.use('/api/pagos', require('./routes/pagos.routes'));
 app.use('/api/soporte', require('./routes/soporte.routes'));

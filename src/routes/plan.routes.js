@@ -1009,7 +1009,7 @@ router.post('/detallar', requiereHogar, async (req, res) => {
 
   res.json({
     mensaje: detallados
-      ? `${detallados} plato(s) completados.` + (enBiblioteca ? ` ${enBiblioteca} se agregaron a Mis platos.` : '')
+      ? `${detallados} plato(s) completados.` + (enBiblioteca ? ` ${enBiblioteca} se agregaron a Mis Recetas.` : '')
       : 'La IA no pudo completar estos platos.',
     detallados,
     semana,
@@ -1251,6 +1251,39 @@ router.delete('/:id', (req, res) => {
   res.json({ mensaje: 'Casilla vaciada.', semana: it.semana, plan: planSemana(req.usuario.id, it.semana) });
 });
 
+// DELETE /api/plan/semana/:semana -> vacia TODAS las casillas de esa semana
+//
+// Existe como ruta propia y no como 21 llamadas al DELETE de una casilla: borrar de a una deja
+// la semana a medias si se cae la conexion a la mitad, y cada borrado devolveria el plan entero
+// por la red. Aqui es UNA transaccion: o se vacia la semana, o no se toca.
+//
+// Hace lo mismo que vaciar una casilla, pero para todas: devuelve a la despensa lo que se le
+// habia descontado a las ya cocinadas y borra los platos que queden huerfanos.
+// Las RECETAS no se pierden: desde 2026-08-25 todo plato generado nace guardado en la
+// biblioteca, y limpiarPlatoHuerfano respeta guardado=1.
+router.delete('/semana/:semana', (req, res) => {
+  const semana = lunesDe(req.params.semana);
+  const casillas = db.prepare('SELECT * FROM plan_comidas WHERE usuario_id = ? AND semana = ?').all(req.usuario.id, semana);
+  if (!casillas.length) return res.status(404).json({ error: 'Esa semana ya esta vacia.' });
+
+  db.transaction(() => {
+    for (const it of casillas) {
+      if (it.cocinado) revertirConsumo(req.usuario.id, it);
+      db.prepare('DELETE FROM plan_comidas WHERE id = ?').run(it.id);
+    }
+    // Los huerfanos se limpian DESPUES de borrarlas todas: un mismo plato puede estar en dos
+    // casillas de la semana, y comprobarlo casilla por casilla lo daria por "aun en uso".
+    for (const id of [...new Set(casillas.map((c) => c.plato_id))]) limpiarPlatoHuerfano(req.usuario.id, id);
+  })();
+
+  res.json({
+    mensaje: `Se vaciaron ${casillas.length} comida(s) de la semana.`,
+    vaciadas: casillas.length,
+    semana,
+    plan: planSemana(req.usuario.id, semana),
+  });
+});
+
 // POST /api/plan/copiar { desde, hacia } -> duplica la programacion de una semana en otra
 router.post('/copiar', (req, res) => {
   const desde = lunesDe(req.body?.desde);
@@ -1292,3 +1325,9 @@ module.exports = router;
 module.exports.crearPlato = crearPlato;
 module.exports.registrarGeneracion = registrarGeneracion;
 module.exports.cupoAgotado = cupoAgotado;
+// El analisis de consumo (nutricion.routes.js) reutiliza estas dos: la lista de alimentos de un
+// rango es EXACTAMENTE la misma que la de la lista de compras, y la fecha de una casilla tiene
+// que calcularse igual en todas partes (DIA_NUM, domingo = septimo dia) o dos pantallas dirian
+// que se comio en dias distintos.
+module.exports.consolidarPlan = consolidarPlan;
+module.exports.fechaCasilla = fechaCasilla;

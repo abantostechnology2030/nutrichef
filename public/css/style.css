@@ -751,6 +751,20 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .nutri-txt { min-width: 0; }
 .nutri-val { font-weight: 700; text-align: right; white-space: nowrap; }
 .nutri-uni { font-weight: 600; font-size: 11px; color: var(--muted); }
+
+/* ===== Analisis de consumo ===== */
+/* Cada nutriente comentado por la IA: el comentario y la sugerencia van separados porque son
+   dos cosas distintas (que pasa / que hacer), y juntos se leen como un parrafo suelto. */
+.analisis-nutri {
+  background: var(--white); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; margin-bottom: 8px;
+}
+.analisis-nutri p { font-size: 12.5px; line-height: 1.55; color: var(--muted); margin-top: 4px; }
+.analisis-nutri p.sug { color: var(--ink); }
+.tag.est-bajo { background: var(--amber-soft); color: var(--amber); }
+.tag.est-adecuado { background: var(--green-soft); color: #1f6b3f; }
+.tag.est-alto { background: var(--danger-soft); color: var(--danger); }
+.campos-analisis .input { min-width: 140px; }
 .nutri-barra { height: 8px; border-radius: 999px; background: var(--bg); overflow: hidden; }
 .nutri-barra i { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
 .nutri-barra i.barra-media { background: var(--amber); }

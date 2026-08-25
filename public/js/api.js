@@ -75,13 +75,16 @@ function pintarSidebar(seccionActiva) {
     items.push({ id: 'plan', href: '/plan.html', ic: '📅', txt: 'Plan de comidas' });
     // La despensa es un modulo OPCIONAL: si el hogar no la activo, no se ofrece.
     if (u.despensa_activa) items.push({ id: 'despensa', href: '/despensa.html', ic: '🛒', txt: 'Mi despensa' });
-    items.push({ id: 'platos', href: '/platos.html', ic: '🍲', txt: 'Mis platos' });
+    items.push({ id: 'platos', href: '/platos.html', ic: '🍲', txt: 'Mis Recetas' });
     // "Mis compras" NO depende de la despensa: llevar la cuenta de lo que gastas es util
     // aunque no lleves inventario.
     items.push({ id: 'compras', href: '/compras.html', ic: '🧾', txt: 'Mis compras' });
+    // "Analisis" mira hacia ATRAS (que se comio y como estuvo); "Analizar producto" es el
+    // escaner de un producto suelto. Van separados en el menu por eso mismo.
+    items.push({ id: 'analisis', href: '/analisis.html', ic: '📊', txt: 'Análisis' });
     items.push({ id: 'hogar', href: '/hogar.html', ic: '👨‍👩‍👧', txt: 'Mi hogar' });
   }
-  items.push({ id: 'suscripcion', href: '/mi-plan.html', ic: '💳', txt: 'Mi suscripcion' });
+  items.push({ id: 'suscripcion', href: '/mi-plan.html', ic: '💳', txt: 'Mi suscripción' });
   if (!esAdmin) items.push({ id: 'soporte', href: '/soporte.html', ic: '💬', txt: 'Soporte' });
   if (esAdmin) items.push({ id: 'admin', href: '/admin.html', ic: '🛠️', txt: 'Panel admin' });
 

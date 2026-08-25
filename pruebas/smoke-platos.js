@@ -143,7 +143,7 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     check(doc.querySelector('#filtro-momento').options.length === 4, 'el filtro trae 3 momentos + "todos"');
     check(txt(doc, '#lista').includes('Aji de gallina de prueba'), 'el plato creado aparece en la lista');
 
-    // El boton "+ Nuevo plato" con la biblioteca llena avisa en vez de abrir el formulario.
+    // El boton "+ Nueva receta" con la biblioteca llena avisa en vez de abrir el formulario.
     doc.getElementById('btn-nuevo').click();
     await esperar(150);
     const modal = doc.querySelector('.modal-back .modal');
@@ -156,7 +156,7 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     const p2 = await abrir('platos.html', token, usuario);
     check(p2.errores.length === 0, `sin errores tras borrar ${p2.errores.join(' | ')}`);
     check(p2.doc.querySelectorAll('#lista .result-section').length === 4, 'quedan 4 tras borrar uno');
-    // "+ Nuevo plato" ya no abre el formulario: primero pregunta COMO quieres crearlo.
+    // "+ Nueva receta" ya no abre el formulario: primero pregunta COMO quieres crearlo.
     // Son las mismas tres vias del calendario (a mano / escribo el nombre / que lo proponga
     // la IA), y las tres acaban guardando el plato en la biblioteca.
     p2.doc.getElementById('btn-nuevo').click();
@@ -171,7 +171,7 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     // La via manual es la de siempre.
     vias.find((v) => v.dataset.via === 'manual').click();
     await esperar(200);
-    check(txt(p2.doc, '.modal h3') === 'Nuevo plato', `el formulario se abre (titulo: "${txt(p2.doc, '.modal h3')}")`);
+    check(txt(p2.doc, '.modal h3') === 'Nueva receta', `el formulario se abre (titulo: "${txt(p2.doc, '.modal h3')}")`);
     check(p2.doc.querySelectorAll('.modal [data-fila]').length === 2, 'el form arranca con 2 filas de ingrediente');
     p2.doc.querySelector('.modal #f-add-ing').click();
     check(p2.doc.querySelectorAll('.modal [data-fila]').length === 3, 'se puede agregar otra fila');
@@ -282,7 +282,7 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     // ===== plan.html: cargar un plato de la biblioteca en una casilla =====
     // La 2a via para llenar el calendario (la 1a es la IA). Se prueba aqui y no en
     // smoke-plan.js porque NO usa IA: asi la prueba es gratis y se corre siempre.
-    console.log('\n=== plan.html: cargar un plato desde "Mis platos" ===');
+    console.log('\n=== plan.html: cargar un plato desde "Mis Recetas" ===');
     // Estado FIJADO a proposito: esta seccion no hereda la biblioteca de las pruebas de
     // arriba. Aquella borra `platos[0]` ordenando por creado_en DESC, pero creado_en tiene
     // precision de SEGUNDOS y todos los platos del test nacen en el mismo segundo: el
@@ -325,7 +325,7 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     // pero poner un plato PROPIO no la necesita. Los dos botones no se bloquean igual.
     const casillaLunes = () => pl.doc.querySelector('.dia-fila:first-child .casilla');
     check(casillaLunes().querySelector('[data-gen]').disabled === true, 'sin hogar, "Proponer" (IA) esta deshabilitado');
-    check(casillaLunes().querySelector('[data-lib]').disabled === false, 'pero "Mis platos" sigue disponible (no usa IA)');
+    check(casillaLunes().querySelector('[data-lib]').disabled === false, 'pero "Mis Recetas" sigue disponible (no usa IA)');
 
     casillaLunes().querySelector('[data-lib]').click();
     await esperar(600);
@@ -387,6 +387,33 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     check(/Cómo prepararlo/.test(detalle), 'el detalle muestra los pasos de un plato que si los tiene');
     check(/Hervir la leche/.test(detalle), 'y son los pasos reales del plato');
     check(!/próxima versión/.test(detalle), 'sin el aviso de "llega en la proxima version" para ese plato');
+
+    // ===== Vaciar la semana entera =====
+    // Va aqui, al final de la seccion del plan: deja la semana vacia, que es justo el estado
+    // del que parte la siguiente corrida.
+    console.log('\n=== vaciar la semana ===');
+    const antesDeVaciar = (await apiSrv('/api/platos')).cuerpo.total;
+    const ocupadas = (p) => Object.values(p).flatMap((m) => Object.values(m)).filter(Boolean).length;
+
+    // El smoke trabaja sobre la semana ACTUAL (es la que abre plan.html por defecto); se le
+    // pregunta al servidor en vez de calcularla aqui, para no repetir la regla del lunes.
+    const SEMANA = (await apiSrv('/api/plan')).cuerpo.semana;
+    const planAntes = (await apiSrv(`/api/plan?semana=${SEMANA}`)).cuerpo.plan;
+    check(ocupadas(planAntes) > 0, `la semana tiene ${ocupadas(planAntes)} casilla(s) antes de vaciar`);
+
+    const vaciada = await apiSrv(`/api/plan/semana/${SEMANA}`, { method: 'DELETE' });
+    check(vaciada.status === 200, `DELETE /semana responde 200 (fue ${vaciada.status})`);
+    check(vaciada.cuerpo.vaciadas === ocupadas(planAntes), `dice cuantas quito (${vaciada.cuerpo.vaciadas})`);
+    check(ocupadas(vaciada.cuerpo.plan) === 0, 'y devuelve la semana ya vacia');
+
+    // Lo importante: vaciar el CALENDARIO no toca el RECETARIO. Si se perdieran las recetas,
+    // el usuario perderia lo que le costo una generacion por limpiar una semana.
+    const trasVaciar = (await apiSrv('/api/platos')).cuerpo.total;
+    check(trasVaciar === antesDeVaciar, `las recetas guardadas siguen ahi: ${antesDeVaciar} -> ${trasVaciar}`);
+
+    // Vaciar una semana ya vacia no es un exito silencioso: avisa.
+    const otraVez = await apiSrv(`/api/plan/semana/${SEMANA}`, { method: 'DELETE' });
+    check(otraVez.status === 404, `vaciar una semana ya vacia avisa en vez de callar (fue ${otraVez.status})`);
 
     // ===== Explicacion de cada nutriente =====
     //

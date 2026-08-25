@@ -362,7 +362,7 @@
     document.getElementById('btn-reiniciar-despensa').onclick = async () => {
       const ok = await confirmar(
         '<p>Se van a borrar <b>todos los productos</b> de tu despensa y <b>todo el historial de compras</b>.</p>'
-        + '<p><b>No se tocan</b> tu plan de comidas, tus platos guardados ni tu hogar.</p>'
+        + '<p><b>No se tocan</b> tu plan de comidas, tus recetas guardadas ni tu hogar.</p>'
         + '<p class="muted" style="font-size:12.5px">Si solo quieres dejar de usar la despensa, apaga el interruptor: eso NO borra nada.</p>',
         { titulo: '¿Reiniciar tu despensa a cero?', ok: 'Sí, borrar todo', peligro: true }
       );

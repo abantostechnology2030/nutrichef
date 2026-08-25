@@ -42,10 +42,15 @@ REGLAS INNEGOCIABLES:
 2. CONDICIONES MEDICAS: adapta el plato de verdad (menos sal e hipertension, menos azucar y carbohidratos simples con diabetes, sin gluten con celiaquia, sin lacteos con intolerancia, etc.). No basta con advertir: cambia la receta.
 3. DIETA: respeta la dieta del hogar (vegetariana = sin carne ni pescado; vegana = sin ningun producto animal; pescetariana = pescado si, carne no).
 4. DESPENSA PRIMERO: prioriza SIEMPRE lo que la familia ya tiene. Cada producto de su despensa dice cuanto le "queda" en porcentaje: con 20% o menos alcanza para un plato, no para varios; con 70% o mas puedes repetirlo en la semana; con 0% se le acabo y cuenta como que NO lo tiene. Puedes incluir ingredientes que NO tenga, pero solo los justos y baratos, y debes listarlos como faltantes.
-5. REGION: cocina del estilo de su region (costa, sierra o selva) y de su ciudad si la indican. Usa nombres de platos que esa familia reconozca.
+5. REGION Y CIUDAD: cocina del estilo de su region (costa, sierra o selva). Si indican CIUDAD, apoyate en ella de verdad: propon platos tipicos de esa ciudad o de su departamento, con el nombre con el que se conocen alli, y con los ingredientes que se consiguen en su mercado. Usa nombres de platos que esa familia reconozca.
 6. VARIEDAD: no repitas el mismo plato en la semana. Varia proteinas y guarniciones.
 7. MOMENTO: el desayuno peruano es ligero (pan, avena, quinua, huevo, fruta, emoliente); el almuerzo es la comida fuerte (entrada opcional + segundo con arroz/papa); la cena es liviana y facil.
-8. PRESUPUESTO: "bajo" = platos economicos de olla; "alto" = puedes proponer cortes y pescados mas caros.`;
+8. PRESUPUESTO: "bajo" = platos economicos de olla; "alto" = puedes proponer cortes y pescados mas caros.
+9. PETICIONES DE LA FAMILIA: el bloque "PETICIONES DE LA FAMILIA" son instrucciones que escribio el propio usuario. NO son una preferencia vaga: CUMPLELAS en TODOS los platos a los que apliquen, no solo en algunos.
+   - Si piden un acompañamiento o una bebida (ensalada, refresco, infusion, sopa de entrada), va DENTRO del plato: nombralo en el titulo o en los ingredientes Y en los pasos. Un plato que no lo incluya se considera mal hecho.
+   - Si piden algo sobre el conjunto del dia (por ejemplo, cena ligera si el almuerzo fue pesado), aplicalo mirando las otras casillas del mismo dia.
+   - Si evitan un alimento ("no nos gusta el pescado"), no lo propongas.
+   - Solo hay una excepcion: si una peticion choca con una alergia o una condicion medica, mandan la alergia y la condicion, y lo explicas en el campo "nota" del plato.`;
 
 // El aporte nutricional (platos.info). Vive aparte porque lo comparten TRES flujos:
 // generar el menu, regenerar una casilla y detallar platos viejos. Si cada uno tuviera su
@@ -511,6 +516,68 @@ async function verificarPlatos(ctxTexto, pedidos) {
   return { resultado: data, usage };
 }
 
+// ===== ANALISIS DE CONSUMO =====
+//
+// Mira HACIA ATRAS: que comio esta familia en un rango de fechas y que le dice eso. Es el unico
+// flujo que no propone platos, asi que NO hereda REGLAS_PLANIFICADOR (que habla de proponer y
+// de la despensa): heredarlas empujaba a la IA a "arreglar" el pasado proponiendo un menu nuevo.
+//
+// Los NUMEROS los calcula el backend (suma de lo que ya esta en platos.info). A la IA se le pide
+// solo lo que un numero no puede dar: interpretarlos para ESTE hogar o ESTA persona. Pedirle que
+// sume seria pagar por aritmetica y arriesgar que invente cifras que no cuadran con la pantalla.
+const SYSTEM_CONSUMO = `Eres un nutricionista peruano que revisa lo que una familia comio en un periodo y se lo explica en lenguaje claro, sin tecnicismos y sin asustar.
+
+COMO TRABAJAS:
+- Los numeros ya estan calculados y te los damos hechos. NO los recalcules ni los contradigas: interpretalos.
+- OJO CON LA UNIDAD: el promedio es POR PERSONA Y POR DIA, no el total de la familia. Cada plato aporta lo de UNA porcion, asi que "1800 kcal al dia" significa que cada miembro comio eso, no los cuatro juntos. No digas "poco para cuatro personas".
+- Habla de comida real y peruana ("cambia parte del arroz por quinua", "agrega sangrecita una vez por semana"), no de nutrientes abstractos.
+- Se honesto: si algo esta bien, dilo. Si todo saliera "mal" o todo "perfecto", el analisis no serviria de nada.
+- Si el analisis es de UNA persona, hablale de ELLA por su nombre y segun su edad y sus condiciones medicas. Si es de la familia, habla del conjunto y nombra a quien deba tener un cuidado especial.
+- Ten en cuenta cuantas comidas hay registradas: si son pocas, los promedios diarios se quedan cortos y hay que decirlo en vez de concluir que la familia come poco.
+- Las condiciones medicas y las alergias mandan sobre cualquier otra consideracion.
+- No diagnostiques ni receta nada. Recomienda consultar a un profesional cuando corresponda.
+
+DEVUELVE SOLO JSON valido con esta forma:
+{
+  "resumen": "<2 a 4 frases: que se comio en el periodo y como estuvo>",
+  "veredicto": "bien" | "atencion" | "riesgo",
+  "nutrientes": {
+    "calorias":      { "estado": "bajo"|"adecuado"|"alto", "comentario": "<por que, con el numero delante>", "sugerencia": "<que hacer, concreto>" },
+    "carbohidratos": { "estado": ..., "comentario": ..., "sugerencia": ... },
+    "proteinas":     { ... },
+    "grasas":        { ... },
+    "fibra":         { ... },
+    "hierro":        { ... },
+    "sodio":         { ... }
+  },
+  "alimentos": [ { "nombre": "<uno de los alimentos de la lista>", "comentario": "<que aporta y si conviene subirlo o bajarlo en ESTE hogar>" } ],
+  "faltan": [ "<grupo de alimentos que casi no aparece en el periodo, ej. 'pescado', 'menestras', 'fruta'>" ],
+  "sugerencias": [ "<accion concreta para el proximo periodo>" ],
+  "alertas": [ "<solo si una condicion medica o una alergia lo justifica; nombra a la persona>" ]
+}
+En "alimentos" comenta como maximo 6, los mas presentes. En "sugerencias", entre 3 y 6. "alertas" y "faltan" pueden ir vacios.`;
+
+// datos: el resumen YA CALCULADO (ventana, comidas, nutrientes por dia, alimentos, platos).
+// ambito: { tipo: 'familia' | 'integrante', ... } — de quien es el analisis.
+async function analizarConsumo(ctxTexto, datos, ambito) {
+  const prompt = [
+    ctxTexto,
+    '',
+    ambito.tipo === 'integrante'
+      ? `ANALIZA PARA UNA SOLA PERSONA: ${JSON.stringify(ambito)}. La familia come los mismos platos, asi que los alimentos son los del hogar; lo que cambia es si le convienen A ELLA por su edad y sus condiciones.`
+      : 'ANALIZA PARA TODA LA FAMILIA en conjunto.',
+    '',
+    `LO QUE COMIERON EN EL PERIODO (ya calculado, no lo recalcules): ${JSON.stringify(datos)}`,
+    '',
+    'Devuelve SOLO el JSON pedido.',
+  ].join('\n');
+
+  // 2500 tokens: 7 nutrientes con comentario y sugerencia (~1.100) + resumen, alimentos,
+  // sugerencias y alertas. Medido: cabe con holgura y truncarse costaria la llamada entera.
+  const { data, usage } = await pedir(SYSTEM_CONSUMO, [{ texto: prompt }], 2500);
+  return { resultado: data, usage };
+}
+
 console.log(`[IA] Proveedor por defecto: ${PROVIDER} (configurable en admin: ai_modo/ai_prioridad)`);
 
 // Propone platos NUEVOS para la biblioteca del usuario (no para una casilla del calendario).
@@ -548,6 +615,7 @@ async function proponerPlatosBiblioteca(ctxTexto, cuantos, yaTiene, momento) {
 }
 
 module.exports = {
+  analizarConsumo,
   proponerPlatosBiblioteca,
   explicarPorTexto,
   explicarPorImagen,

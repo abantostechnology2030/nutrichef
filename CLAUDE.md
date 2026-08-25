@@ -48,6 +48,7 @@ npm run smoke:inicio # dashboard + barra inferior + perfil (gratis, ~10s)
 npm run movil        # revisa el LAYOUT en movil con Chrome real + capturas (gratis, ~30s)
 npm run smoke:platos # smoke test de la biblioteca + el calendario sin IA (gratis, ~20s)
 npm run smoke:compras # "Mis compras": lista, subtotales por pasillo (gratis, ~10s)
+npm run smoke:analisis # analisis de consumo: la aritmetica del periodo (gratis, ~10s)
 npm run smoke:plan   # calendario + generar + verificar con IA REAL (4 llamadas, ~60s)
                      #   -> $0.012 con gemini | $0.047 con claude  (segun ai_prioridad!)
 ```
@@ -110,6 +111,7 @@ src/
     despensa.routes.js   # inventario (alta inmediata) + /compra (snapshot por periodo) + /compras (historial, con borrado)
     compras.routes.js    # "Mis compras": precios, presupuesto, gasto e historico
     plan.routes.js       # calendario 7x3 + /generar (POR DIA) + /verificar + /detallar + /copiar + /faltantes y /necesidad
+    nutricion.routes.js  # ANALISIS de consumo de un rango (resumen sin IA + informe con IA)
     platos.routes.js     # biblioteca: CRUD de platos manuales + guardar/quitar (tope platos_max)
     pagos.routes.js      # info del paywall (incl. yape_qr) + comprobante Yape + /historial
     soporte.routes.js    # mensajes de contacto
@@ -125,7 +127,8 @@ public/
   despensa.html          # ver la despensa (buscar) + registrar compra (agregar producto + marcar comprados)
   compras.html           # MIS COMPRAS: lista para el super (cantidad, precio, check), PDF e historico
   plan.html              # CALENDARIO 7x3 + boton "Generar dia" con IA en cada dia
-  platos.html            # "Mis platos": la biblioteca (crear/editar/borrar recetas)
+  platos.html            # "Mis Recetas": el recetario (crear/editar/borrar)
+  analisis.html          # ANALISIS DE CONSUMO: que se comio en un rango y que dice de ello
   mi-plan.html           # "Mi suscripcion": planes y pago Yape
   soporte.html  admin.html
   css/style.css  js/api.js  js/vendor/jspdf.umd.min.js  sw.js  manifest.webmanifest
@@ -933,6 +936,95 @@ de la familia le importa (por su nombre)** y de donde sale el numero.
   se guarda a medias, asi que un cambio en el plan se refleja solo.
 - Lo cubre **`npm run smoke:compras`** (gratis), que crea su propio usuario, hogar, platos y
   semana fija: no hereda estado ni depende de la fecha en que se corra.
+
+### Analisis de consumo (`nutricion.routes.js` + `analisis.html`) — 2026-08-25
+Mira hacia **ATRAS**: que se comio en un rango de fechas y que le dice eso a esta familia (o a
+**un integrante**), con la lista de alimentos, los nutrientes y sugerencias.
+
+- **Se monta en `/api/nutricion`, NO en `/api/analisis`**: ese ya es el **escaner de productos**,
+  que es otra cosa. En el menu conviven "🔍 Analizar producto" (un producto suelto) y
+  "📊 Análisis" (lo que se comio en un periodo).
+- 🔴 **Reparto del trabajo: los NUMEROS los suma el backend, la LECTURA la hace la IA.** Los
+  totales salen de `platos.info`, que ya esta en la BD. Pedirselos a la IA seria pagar por
+  aritmetica y arriesgar cifras que no cuadran con las que el usuario ve en pantalla.
+- **El resumen (`GET /resumen`) no usa IA ni cupo**: se puede abrir las veces que haga falta.
+  Solo el informe (`POST /informe`) cuesta **una generacion** (`tipo='analisis'`), cobrada
+  contra la **semana actual** porque un analisis puede cruzar varias semanas.
+- 🔴 **El promedio es POR PERSONA Y DIA, no de la familia.** `platos.info` es el aporte de **una
+  porcion**, asi que sumar los platos de un dia da lo que comio **una persona**. Por eso la clave
+  se llama `por_persona_dia`, la pantalla lo dice y el prompt lo repite: leerlo como el total de
+  la familia hace concluir que comen la cuarta parte de lo que comen.
+- 🔴 **El promedio se divide entre los DIAS CON COMIDAS, no entre los dias del rango.** En 30 dias
+  con una sola semana planificada, dividir entre 30 diria que la familia come 400 kcal al dia.
+  Aun asi se muestran las dos cifras (`comidas.total` de `comidas.posibles`), porque un dia con
+  solo el desayuno tambien tira el promedio hacia abajo.
+- 🔴 **"Cero" y "no lo sabemos" NO son lo mismo.** Un plato sin `info` no suma 0: no se cuenta.
+  Y un nutriente que **ningun** plato reporta llega a la pantalla como **"🤷 Sin datos"**: el
+  backend le **borra el estado** aunque la IA lo haya marcado. Medido con platos en formato viejo:
+  devolvia `fibra: bajo` con el comentario *"no tenemos registro de fibra"* — el texto decia la
+  verdad y la etiqueta de al lado decia otra cosa.
+- **Las calorias y los 7 nutrientes se cuentan por separado** (`con_calorias` / `con_analisis`):
+  un plato anterior al aporte detallado tiene calorias pero no nutrientes, y descartarlo entero
+  perderia tambien sus calorias.
+- **La lista de alimentos es `consolidarPlan()`**, la misma de la lista de compras (por eso se
+  exporta desde `plan.routes.js`). Dos listas distintas del mismo periodo acabarian dando
+  cantidades distintas del mismo arroz.
+- **Por integrante cambia la LENTE, no la comida**: la familia come los mismos platos; lo que
+  cambia es si le convienen a esa persona por su edad y sus condiciones. Se le dice explicitamente
+  a la IA para que no se invente un consumo individual que no tenemos.
+- **`REFERENCIA_DIARIA`** (adulto: 2000 kcal, 275 g de carbohidratos, 50 g de proteina…) vive en
+  el backend. **Sodio y sal siguen a la OMS** (2 g y 5 g), mas exigente que la etiqueta habitual
+  de 2300 mg y lo que importa en un pais con mucha hipertension.
+- **El prompt NO hereda `REGLAS_PLANIFICADOR`**: es el unico flujo que no propone platos, y esas
+  reglas hablan de proponer y de la despensa — heredarlas empujaba a "arreglar" el pasado con un
+  menu nuevo.
+- Lo cubre **`npm run smoke:analisis`** (gratis): fija la aritmetica (sumas, promedio entre dias
+  con comidas, %VD) con platos sembrados, que es justo lo que se rompe en silencio.
+
+### Vaciar la semana (2026-08-25)
+Boton **"🧹 Vaciar la semana"** en el plan + `DELETE /api/plan/semana/:semana`.
+- Es **una ruta y una transaccion**, no 21 DELETE de casilla: borrar de a una deja la semana a
+  medias si se corta la conexion.
+- Hace lo mismo que vaciar una casilla pero para todas: **devuelve a la despensa** lo que se le
+  descontó a las cocinadas y limpia los platos huerfanos. Los huerfanos se limpian **despues** de
+  borrarlas todas (un mismo plato puede estar en dos casillas, y comprobarlo casilla por casilla
+  lo daria por "aun en uso").
+- **Las RECETAS no se pierden** y el modal lo dice: desde el 2026-08-25 todo plato generado nace
+  guardado, y `limpiarPlatoHuerfano` respeta `guardado=1`. Sin ese aviso, "vaciar la semana"
+  suena a que tambien se borra lo que costo una generacion.
+- El boton **solo aparece si hay algo que vaciar** (mismo criterio que la lista de compras), y
+  vaciar una semana ya vacia responde **404** en vez de callar.
+
+### Las PETICIONES de la familia (`hogar.notas`) son obligatorias (2026-08-25)
+Reportado por un usuario: pidio en las notas que *"todos los almuerzos incluyan una ensalada y una
+bebida saludable"* y la IA lo cumplia **solo a ratos**.
+
+**La causa no era que no llegaran**: `contexto.js` ya las mandaba. Era que llegaban como
+*"NOTAS DE LA FAMILIA"* al final del bloque, **sin ninguna regla que dijera que hay que
+cumplirlas**, compitiendo con la despensa y el presupuesto. Un dato de fondo, no una instruccion.
+
+- Ahora el contexto las llama **"PETICIONES DE LA FAMILIA (obligatorias…)"** y el prompt tiene su
+  **regla 9**: cumplelas en TODOS los platos a los que apliquen; si piden un acompañamiento o una
+  bebida va **dentro** del plato (nombre + ingredientes + pasos); si piden algo del conjunto del
+  dia, mirar las otras casillas; **la unica excepcion es una alergia o una condicion medica**.
+- **La regla 5 usa la CIUDAD de verdad**: platos tipicos de esa ciudad, con su nombre local y con
+  lo que hay en su mercado. El campo ya existia en el hogar y en el contexto, pero la regla lo
+  mencionaba de pasada.
+- ✅ **Verificado con IA real** (Gemini, hogar de prueba con esas mismas notas y ciudad Cusco):
+  el almuerzo salio *"Ají de Papa con Huevo Duro, Arroz y **Ensalada Fresca con Refresco de
+  Maracuyá**"* y la cena de 300 kcal frente a un almuerzo de 650 — cumpliendo tambien la segunda
+  peticion ("si el almuerzo fue alto en calorias, la cena minima"). Platos de sierra: papa huayro,
+  huacatay, pan andino.
+
+### "Mis platos" pasa a llamarse "Mis Recetas" (2026-08-25)
+Solo cambia el **texto visible**. Los identificadores no se tocan: la pagina sigue siendo
+`platos.html`, la ruta `/api/platos` y la tabla `platos`. Renombrar rutas y tablas por un cambio
+de rotulo es cambiar el motor por pintar la puerta.
+- El boton del detalle del plato decia **"☆ Guardar en mi biblioteca"** sin decir que era esa
+  biblioteca ni para que servia, y desde que todo plato generado nace guardado aparecia casi
+  siempre ya activado: se leia como un adorno. Ahora dice **"★ Está en Mis Recetas"** /
+  **"☆ Guardar en Mis Recetas"**, con un `title` que explica que guardarlo permite reutilizarlo
+  **sin gastar otra generacion**, y el aviso al pulsarlo dice la consecuencia.
 
 ### Fase 6 — admin
 Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `generaciones`). Falta pulir la UI: mostrar el desglose de generaciones por tipo (menu/dia/plato/detalle/verificar) y el aviso de crédito.

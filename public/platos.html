@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NutriChefIA — Mis platos</title>
+  <title>NutriChefIA — Mis Recetas</title>
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
   <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
@@ -18,7 +18,7 @@
     <div class="main">
       <header class="topbar">
         <button class="hamb">☰</button>
-        <h2>Mis platos</h2>
+        <h2>Mis Recetas</h2>
         <div class="spacer"></div>
         <span class="analisis-pill" id="pill-platos">…</span>
       </header>
@@ -27,13 +27,13 @@
         <div class="card card-tint">
           <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
             <div>
-              <h3 style="margin-bottom:4px">Tu biblioteca de platos</h3>
+              <h3 style="margin-bottom:4px">Tu recetario</h3>
               <p class="muted" style="font-size:13px;max-width:60ch">
                 Aquí guardas las recetas que quieres reutilizar: las tuyas de siempre y las que
                 te gustaron del menú. Desde el calendario puedes ponerlas en cualquier casilla.
               </p>
             </div>
-            <button class="btn" id="btn-nuevo" type="button">+ Nuevo plato</button>
+            <button class="btn" id="btn-nuevo" type="button">+ Nueva receta</button>
           </div>
           <div id="alerta" class="alert" style="margin-top:12px"></div>
         </div>
@@ -198,7 +198,7 @@
           ? `<p class="muted">Ningún plato de tu biblioteca coincide con lo que buscas.
                <button class="btn btn-ghost btn-sm" type="button" data-limpiar>Quitar los filtros</button></p>`
           : `<p class="muted">
-              Todavía no guardas ningún plato. Crea uno con “+ Nuevo plato”, o guarda los que te
+              Todavía no guardas ninguna receta. Crea una con “+ Nueva receta”, o guarda las que te
               gusten del <a href="/plan.html" style="color:var(--primary);font-weight:600">plan de comidas</a>.
             </p>`;
         return;
@@ -370,7 +370,7 @@
       const back = document.createElement('div');
       back.className = 'modal-back show';
       back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:620px">
-        <h3>${plato ? 'Editar plato' : 'Nuevo plato'}</h3>
+        <h3>${plato ? 'Editar receta' : 'Nueva receta'}</h3>
         <div class="modal-body">
           <div id="alerta-form" class="alert"></div>
           <div class="field">
@@ -498,7 +498,7 @@
       const back = document.createElement('div');
       back.className = 'modal-back show';
       back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:520px;text-align:left">
-        <h3>+ Nuevo plato</h3>
+        <h3>+ Nueva receta</h3>
         <div class="modal-body">
           <p class="muted" style="font-size:13px;margin-bottom:14px">
             Se guardará en tu biblioteca para que puedas ponerlo en el calendario cuantas veces quieras.

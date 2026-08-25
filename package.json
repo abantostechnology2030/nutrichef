@@ -13,7 +13,8 @@
     "smoke:plan": "node pruebas/smoke-plan.js",
     "smoke:inicio": "node pruebas/smoke-inicio.js",
     "movil": "node pruebas/revisar-movil.js",
-    "smoke:compras": "node pruebas/smoke-compras.js"
+    "smoke:compras": "node pruebas/smoke-compras.js",
+    "smoke:analisis": "node pruebas/smoke-analisis.js"
   },
   "keywords": [
     "nutricion",

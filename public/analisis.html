@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Análisis de consumo</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Análisis de consumo</h2>
+        <div class="spacer"></div>
+        <span class="analisis-pill" id="pill-gen">…</span>
+      </header>
+
+      <div class="content stack">
+        <!-- Las instrucciones van arriba y en amarillo, como en el plan de comidas. -->
+        <div class="card instrucciones">
+          <h3>📊 Instrucciones</h3>
+          <ol class="pasos-plan">
+            <li><b>Elige el rango de fechas</b> que quieres revisar (una semana, un mes…).</li>
+            <li><b>Elige de quién</b>: de toda la familia o de un integrante en particular.</li>
+            <li>Verás <b>qué se comió</b> y sus valores nutricionales. Luego pide el
+              <b>análisis de la IA</b> para saber qué significan y qué mejorar.</li>
+          </ol>
+        </div>
+
+        <div id="alerta" class="alert"></div>
+
+        <div class="card card-tint">
+          <div class="row campos-analisis" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div class="field" style="margin:0"><label>Desde</label>
+              <input id="f-inicio" type="date" class="input" style="width:auto" /></div>
+            <div class="field" style="margin:0"><label>Hasta</label>
+              <input id="f-fin" type="date" class="input" style="width:auto" /></div>
+            <div class="field" style="margin:0"><label>¿De quién?</label>
+              <select id="f-quien" class="input" style="width:auto"><option value="">👨‍👩‍👧 Toda la familia</option></select></div>
+          </div>
+
+          <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
+            <button class="btn btn-ghost btn-sm" data-rango="semana" type="button">Esta semana</button>
+            <button class="btn btn-ghost btn-sm" data-rango="anterior" type="button">Semana pasada</button>
+            <button class="btn btn-ghost btn-sm" data-rango="mes" type="button">Últimos 30 días</button>
+          </div>
+
+          <label class="switch-fila" style="margin-top:12px">
+            <input type="checkbox" id="f-cocinados" />
+            <span><b>Solo lo que marqué como cocinado</b>
+              <span class="muted" style="display:block;font-size:12.5px">
+                Actívalo si marcas tus platos al cocinarlos: analiza lo que de verdad se comió y no lo que estaba programado.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div id="resumen"><p class="muted">Cargando…</p></div>
+      </div>
+    </div>
+  </div>
+
+  <img class="mascota" src="/img/mascota-home.png" alt="" aria-hidden="true" />
+
+  <script src="/js/api.js"></script>
+  <script>
+    exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('analisis');
+    activarMenuMovil();
+
+    const al = document.getElementById('alerta');
+    let D = null;        // el resumen numerico (sin IA)
+    let INFORME = null;  // lo que dijo la IA, si ya se pidio
+
+    const NUTRI_TXT = {
+      calorias: ['Energía', 'kcal'], carbohidratos: ['Carbohidratos', 'g'], proteinas: ['Proteína', 'g'],
+      grasas: ['Grasas', 'g'], fibra: ['Fibra', 'g'], hierro: ['Hierro', 'mg'], sodio: ['Sodio', 'mg'], sal: ['Eq. de sal', 'g'],
+    };
+    const EST_TXT = { bajo: '🔻 Bajo', adecuado: '✅ Adecuado', alto: '🔺 Alto' };
+    const VEREDICTO = {
+      bien: { ic: '✅', txt: 'Buena alimentación en este periodo', clase: 'sem-verde-bn' },
+      atencion: { ic: '⚠️', txt: 'Hay cosas que conviene ajustar', clase: 'sem-amarillo-bn' },
+      riesgo: { ic: '🚨', txt: 'Conviene corregirlo pronto', clase: 'sem-rojo-bn' },
+    };
+
+    function avisar(msg, tipo = 'error') {
+      al.textContent = msg;
+      al.className = `alert alert-${tipo} show`;
+      setTimeout(() => al.classList.remove('show'), 5000);
+    }
+
+    // ===== Fechas =====
+    const hoy = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10); // hora de Perú
+    const sumar = (f, n) => { const d = new Date(f + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    const lunes = (f) => { const d = new Date(f + 'T00:00:00Z'); return sumar(f, -((d.getUTCDay() + 6) % 7)); };
+    const fmt = (f) => new Date(f + 'T00:00:00Z').toLocaleDateString('es-PE', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+    function ponerRango(cual) {
+      const l = lunes(hoy());
+      if (cual === 'semana') { pon(l, sumar(l, 6)); }
+      else if (cual === 'anterior') { pon(sumar(l, -7), sumar(l, -1)); }
+      else { pon(sumar(hoy(), -29), hoy()); }
+      cargar();
+    }
+    function pon(a, b) {
+      document.getElementById('f-inicio').value = a;
+      document.getElementById('f-fin').value = b;
+    }
+
+    // ===== Resumen (sin IA) =====
+    function params() {
+      const p = new URLSearchParams({
+        inicio: document.getElementById('f-inicio').value,
+        fin: document.getElementById('f-fin').value,
+      });
+      const q = document.getElementById('f-quien').value;
+      if (q) p.set('integrante_id', q);
+      if (document.getElementById('f-cocinados').checked) p.set('solo_cocinados', '1');
+      return p;
+    }
+
+    async function cargar() {
+      const cont = document.getElementById('resumen');
+      cont.innerHTML = '<p class="muted">Cargando…</p>';
+      INFORME = null; // el informe es de un rango y un ámbito concretos: al cambiarlos, deja de valer
+      try {
+        D = await api(`/api/nutricion/resumen?${params()}`);
+        pintarIntegrantes();
+        pintar();
+      } catch (e) {
+        if (e.status === 403 && e.upgrade) { location.href = e.redirect || '/mi-plan.html'; return; }
+        if (e.necesita_hogar) { location.href = '/hogar.html'; return; }
+        cont.innerHTML = `<p class="muted">No se pudo cargar: ${esc(e.error || 'error')}</p>`;
+      }
+    }
+
+    function pintarIntegrantes() {
+      const sel = document.getElementById('f-quien');
+      if (sel.options.length > 1) return; // ya están
+      sel.innerHTML = '<option value="">👨‍👩‍👧 Toda la familia</option>'
+        + (D.integrantes || []).map((i) => `<option value="${i.id}">${i.avatar || '🙂'} ${esc(i.nombre)}${i.edad ? ` (${i.edad} años)` : ''}</option>`).join('');
+    }
+
+    function barra(clave) {
+      const v = D.por_persona_dia[clave];
+      const vd = D.vd_por_dia[clave];
+      const [txt, uni] = NUTRI_TXT[clave];
+      // Sin dato no se pinta una barra en cero: cero y "no lo sabemos" no son lo mismo.
+      const hay = v > 0;
+      const tono = (clave === 'sodio' || clave === 'sal') && vd >= 100 ? ' barra-alta'
+        : (clave === 'sodio' || clave === 'sal') && vd >= 70 ? ' barra-media' : '';
+      return `<div class="nutri-fila">
+        <span class="nutri-txt">${txt}</span>
+        <span class="nutri-val">${hay ? v : '—'} <span class="nutri-uni">${uni}</span></span>
+        <span class="nutri-barra"><i style="width:${hay ? Math.max(2, Math.min(100, vd)) : 0}%" class="${tono}"></i></span>
+        <span class="nutri-vd">${hay ? vd + '%' : ''}</span>
+      </div>`;
+    }
+
+    function pintar() {
+      const cont = document.getElementById('resumen');
+      const c = D.comidas;
+      document.getElementById('pill-gen').innerHTML = `📊 ${c.total} comida(s)`;
+
+      if (!c.total) {
+        cont.innerHTML = `<div class="card"><p class="muted">
+          No hay comidas programadas entre el ${fmt(D.ventana.inicio)} y el ${fmt(D.ventana.fin)}.
+          Programa tu semana en el <a href="/plan.html" style="color:var(--primary);font-weight:600">plan de comidas</a>
+          y vuelve aquí.</p></div>`;
+        return;
+      }
+
+      // Aviso de cobertura: cuántas de las comidas posibles están programadas y cuántas tienen
+      // el detalle nutricional. Sin esto, un promedio bajo se lee como "comen poco" cuando lo
+      // que pasa es que solo se planificaron tres almuerzos.
+      const faltanDetalle = c.total - c.con_analisis;
+      const avisos = [];
+      if (c.total < c.posibles) {
+        avisos.push(`📅 Tienes <b>${c.total} de ${c.posibles}</b> comidas posibles programadas en este rango.
+          Los promedios son de los <b>${D.ventana.dias_con_plan} día(s)</b> que sí tienen comidas.`);
+      }
+      if (faltanDetalle > 0) {
+        avisos.push(`🍳 <b>${faltanDetalle}</b> plato(s) todavía no tienen el detalle de nutrientes
+          (hierro, fibra, sodio…). Complétalos con <b>“Completar recetas”</b> en el
+          <a href="/plan.html"><b>plan de comidas</b></a> para que este análisis sea exacto.`);
+      }
+
+      cont.innerHTML = `
+        <div class="card">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:4px">
+            <h3>${D.ambito.tipo === 'integrante' ? `Lo que comió ${esc(D.ambito.nombre)}` : 'Lo que comió la familia'}</h3>
+            <span class="muted" style="font-size:13px">${fmt(D.ventana.inicio)} — ${fmt(D.ventana.fin)}</span>
+          </div>
+          <p class="muted" style="font-size:13px">
+            ${c.total} comida(s): ${c.por_momento.desayuno} desayuno(s), ${c.por_momento.almuerzo} almuerzo(s)
+            y ${c.por_momento.cena} cena(s).${c.cocinadas ? ` ${c.cocinadas} marcadas como cocinadas.` : ''}
+          </p>
+          ${avisos.length ? `<div class="reco-foto" style="margin-top:10px;font-size:12.5px;line-height:1.6">${avisos.join('<br>')}</div>` : ''}
+
+          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:12px">
+            ${D.semaforos.verde ? `<span class="tag sem-verde-bn"><span class="sem-dot"></span>${D.semaforos.verde} saludable(s)</span>` : ''}
+            ${D.semaforos.ambar ? `<span class="tag sem-amarillo-bn"><span class="sem-dot"></span>${D.semaforos.ambar} ocasional(es)</span>` : ''}
+            ${D.semaforos.rojo ? `<span class="tag sem-rojo-bn"><span class="sem-dot"></span>${D.semaforos.rojo} poco recomendable(s)</span>` : ''}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="nutri-cab">
+            <b>🥗 Promedio por persona y día</b>
+            <span class="muted">% de lo recomendado al día</span>
+          </div>
+          <div class="nutri-tabla">${Object.keys(NUTRI_TXT).map(barra).join('')}</div>
+          <p class="muted" style="font-size:11.5px;margin-top:10px">
+            Cada plato aporta lo de <b>una porción</b>, así que esto es lo que comió <b>una persona</b> en un día
+            promedio, no la olla entera. Referencias de un adulto (2000 kcal; sodio y sal según la OMS).
+            Es una estimación orientativa: no reemplaza la consulta con un nutricionista.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
+            <h3>✨ Análisis y sugerencias</h3>
+            <button class="btn btn-sm" id="btn-analizar">${INFORME ? '🔄 Volver a analizar' : '✨ Analizar con IA'}</button>
+          </div>
+          <div id="informe">${INFORME ? pintarInforme(INFORME) : `<p class="muted" style="font-size:13px;margin-top:8px">
+            Los números de arriba salen de tus platos y no cuestan nada. Pulsa el botón para que la IA
+            los interprete ${D.ambito.tipo === 'integrante' ? `para <b>${esc(D.ambito.nombre)}</b>` : 'para tu familia'},
+            te diga qué está bien y qué conviene cambiar. <b>Cuesta una generación de IA.</b>
+          </p>`}</div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin-bottom:8px">🥕 Alimentos del periodo <span class="muted" style="font-weight:400;font-size:14px">· ${D.alimentos.length}</span></h3>
+          ${D.alimentos_por_categoria.map((g) => `
+            <div style="margin-bottom:12px">
+              <div style="margin-bottom:6px">${chipCategoria(g.categoria)}</div>
+              <div class="row" style="gap:6px;flex-wrap:wrap">
+                ${g.items.map((a) => `<span class="tag" title="En ${a.casillas} plato(s)${a.medida ? ` · ${esc(a.medida)}` : ''}">
+                  ${iconoIngrediente(a.nombre, a.categoria)} ${esc(a.nombre)}${a.medida ? ` <b>${esc(a.medida)}</b>` : ''}</span>`).join('')}
+              </div>
+            </div>`).join('')}
+        </div>`;
+
+      document.getElementById('btn-analizar').onclick = analizar;
+    }
+
+    // ===== El informe de la IA =====
+    function pintarInforme(inf) {
+      const v = VEREDICTO[inf.veredicto];
+      const filas = Object.entries(inf.nutrientes || {}).map(([k, n]) => {
+        const [txt] = NUTRI_TXT[k] || [k];
+        return `<div class="analisis-nutri">
+          <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <b>${txt}</b>
+            ${n.estado ? `<span class="tag est-${n.estado}">${EST_TXT[n.estado] || n.estado}</span>`
+              : (n.sin_datos ? '<span class="tag">🤷 Sin datos</span>' : '')}
+          </div>
+          ${n.comentario ? `<p>${esc(n.comentario)}</p>` : ''}
+          ${n.sugerencia ? `<p class="sug">👉 ${esc(n.sugerencia)}</p>` : ''}
+        </div>`;
+      }).join('');
+
+      return `
+        ${v ? `<div class="sem-banner ${v.clase}" style="margin:10px 0"><span class="sem-dot"></span><span>${v.ic} ${v.txt}</span></div>` : ''}
+        ${inf.resumen ? `<p style="font-size:13.5px;line-height:1.65;margin-bottom:12px">${esc(inf.resumen)}</p>` : ''}
+        ${inf.alertas?.length ? `<div class="nutri-recos" style="border-left-color:var(--danger);margin-bottom:12px">
+          <b style="color:var(--danger)">⚠️ Atención</b>
+          <ul>${inf.alertas.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+        ${inf.sugerencias?.length ? `<div class="nutri-recos" style="margin-bottom:12px">
+          <b>👉 Qué hacer el próximo periodo</b>
+          <ul>${inf.sugerencias.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+        ${inf.faltan?.length ? `<p style="font-size:13px;margin-bottom:12px">🔎 <b>Casi no aparecieron:</b> ${inf.faltan.map(esc).join(', ')}.</p>` : ''}
+        ${filas ? `<h4 style="margin:14px 0 8px">Nutriente por nutriente</h4>${filas}` : ''}
+        ${inf.alimentos?.length ? `<h4 style="margin:14px 0 8px">Sobre lo que más comieron</h4>
+          ${inf.alimentos.map((a) => `<div class="analisis-nutri"><b>${iconoIngrediente(a.nombre)} ${esc(a.nombre)}</b><p>${esc(a.comentario)}</p></div>`).join('')}` : ''}
+        <p class="muted" style="font-size:11.5px;margin-top:12px">
+          🥗 Análisis orientativo generado por IA a partir de tus platos. No es un diagnóstico ni
+          reemplaza la consulta con un nutricionista o un profesional de salud.
+        </p>`;
+    }
+
+    async function analizar() {
+      const btn = document.getElementById('btn-analizar');
+      const cuerpo = {
+        inicio: document.getElementById('f-inicio').value,
+        fin: document.getElementById('f-fin').value,
+        solo_cocinados: document.getElementById('f-cocinados').checked,
+      };
+      const q = document.getElementById('f-quien').value;
+      if (q) cuerpo.integrante_id = Number(q);
+
+      // El modal de espera es el mismo del plan: la llamada tarda y sin señal parece colgado.
+      const esperando = modalCargando({
+        titulo: 'Analizando lo que comieron…',
+        texto: 'La IA está revisando los platos del periodo y sus nutrientes.',
+        pasos: ['📊 Sumando los nutrientes del periodo…', '🥗 Comparando con lo recomendado…',
+          '👨‍👩‍👧 Mirando las condiciones de tu hogar…', '👉 Escribiendo las sugerencias…'],
+      });
+      btn.disabled = true;
+      try {
+        const r = await api('/api/nutricion/informe', { method: 'POST', body: cuerpo });
+        INFORME = r.informe;
+        if (r.resumen) D = { ...D, ...r.resumen };
+        pintar();
+        avisar('Análisis listo.', 'ok');
+      } catch (e) {
+        if (e.status === 403 && e.upgrade) { avisar(e.error); setTimeout(() => { location.href = e.redirect || '/mi-plan.html'; }, 2500); return; }
+        avisar(e.error || 'No se pudo analizar el periodo.');
+      } finally {
+        esperando.cerrar();
+        btn.disabled = false;
+      }
+    }
+
+    // ===== Eventos =====
+    for (const b of document.querySelectorAll('[data-rango]')) b.onclick = () => ponerRango(b.dataset.rango);
+    document.getElementById('f-inicio').onchange = cargar;
+    document.getElementById('f-fin').onchange = cargar;
+    document.getElementById('f-quien').onchange = cargar;
+    document.getElementById('f-cocinados').onchange = cargar;
+
+    (function init() {
+      const q = new URLSearchParams(location.search);
+      const ok = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+      // Se puede llegar desde el plan con ?inicio=&fin= (la semana que estabas viendo).
+      const l = lunes(hoy());
+      pon(ok(q.get('inicio')) ? q.get('inicio') : l, ok(q.get('fin')) ? q.get('fin') : sumar(l, 6));
+      cargar();
+    })();
+  </script>
+</body>
+</html>
