@@ -104,6 +104,11 @@
                 </div>
                 <button class="btn btn-sm" id="btn-cc-add" type="button" style="margin-bottom:2px">+ Agregar</button>
               </div>
+              <span class="muted" style="font-size:12px">
+                El porcentaje es <b>cuánto tienes de lo que tu plan necesita para el periodo</b>,
+                no cuánto pesa el envase. Si acabas de comprarlo, deja <b>Bastante (100%)</b>.
+                Después puedes ajustarlo con su barra.
+              </span>
             </div>
 
             <!-- Categorias y productos: marcar cuales compre -->
@@ -160,7 +165,12 @@
     const conocidosCompra = new Set(); // nombres ya vistos por el checklist (para no re-marcar)
     const pctCompra = new Map();       // nombre (lower) -> cuanto se compro de el (0-100)
 
-    const NIVEL_TXT = { poco: '🔸 Poco', normal: '🔹 Normal', bastante: '🟢 Bastante' };
+    // El PORCENTAJE va en la etiqueta, no solo la palabra. "Normal" no dice en ningún sitio
+    // que sea 60%: alguien agrega su carne recién comprada eligiendo "Normal" (que suena a
+    // "una cantidad normal de carne") y le aparece al 60%, que parece un dato arrastrado de
+    // antes. Reportado así el 2026-08-25. Estos números son PORCENTAJE_NIVEL en db.js: si los
+    // cambias ahí, cámbialos aquí o la etiqueta miente.
+    const NIVEL_TXT = { poco: '🔸 Poco (25%)', normal: '🔹 Normal (60%)', bastante: '🟢 Bastante (100%)' };
     const nivelSelect = (valor, attrs = '') =>
       `<select class="input" ${attrs} style="width:auto;padding:6px 10px;font-size:13px">
         ${NIVELES.map((n) => `<option value="${n}" ${n === valor ? 'selected' : ''}>${NIVEL_TXT[n] || n}</option>`).join('')}
