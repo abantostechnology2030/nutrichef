@@ -10,7 +10,7 @@
 // llevar la cuenta de lo que gasta no deberia depender de si lleva inventario.
 const express = require('express');
 const {
-  db, lunesDe, fechaPeru, sumarDias, clampPct, nivelDePorcentaje, CATEGORIAS_ING,
+  db, lunesDe, fechaPeru, sumarDias, clampPct, nivelDePorcentaje, CATEGORIAS_ING, claveIng,
 } = require('../db');
 const { requiereAuth } = require('../middleware/auth');
 const { requierePlanificador } = require('../middleware/planificador');
@@ -75,6 +75,40 @@ router.get('/', (req, res) => {
       presupuestado_total: Math.round(compras.reduce((n, c) => n + (c.presupuesto || 0), 0) * 100) / 100,
     },
   });
+});
+
+// ===== Productos archivados de la lista =====
+//
+// OJO: estas rutas van ANTES de /:id. Declaradas despues, Express leeria "archivados" como el
+// id de una compra y devolveria 404.
+const archivadosDe = (usuarioId) =>
+  db.prepare('SELECT id, nombre, clave, creado_en FROM compras_archivados WHERE usuario_id = ? ORDER BY nombre')
+    .all(usuarioId);
+
+// GET /api/compras/archivados -> lo que el usuario quito de su lista
+router.get('/archivados', (req, res) => {
+  res.json({ archivados: archivadosDe(req.usuario.id) });
+});
+
+// POST /api/compras/archivados { nombre } -> quitar un producto de la lista, para siempre
+router.post('/archivados', (req, res) => {
+  const nombre = String(req.body?.nombre || '').trim().slice(0, 80);
+  if (!nombre) return res.status(400).json({ error: 'Falta el nombre del producto.' });
+  const clave = claveIng(nombre);
+  if (!clave) return res.status(400).json({ error: 'Ese nombre no es valido.' });
+  // Archivar dos veces el mismo producto no es un error: el usuario no tiene por que saber si ya
+  // estaba, y fallar aqui dejaria la X sin efecto visible.
+  db.prepare('INSERT OR IGNORE INTO compras_archivados (usuario_id, nombre, clave) VALUES (?, ?, ?)')
+    .run(req.usuario.id, nombre, clave);
+  res.json({ mensaje: `"${nombre}" no volvera a salir en tu lista.`, archivados: archivadosDe(req.usuario.id) });
+});
+
+// DELETE /api/compras/archivados/:id -> devolverlo a la lista
+router.delete('/archivados/:id', (req, res) => {
+  const r = db.prepare('DELETE FROM compras_archivados WHERE id = ? AND usuario_id = ?')
+    .run(Number(req.params.id), req.usuario.id);
+  if (!r.changes) return res.status(404).json({ error: 'Ese producto no esta en tu archivo.' });
+  res.json({ mensaje: 'Vuelve a estar en tu lista.', archivados: archivadosDe(req.usuario.id) });
 });
 
 // GET /api/compras/:id

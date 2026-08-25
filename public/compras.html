@@ -142,6 +142,9 @@
     // Si el usuario quiere la columna de presupuesto. Es una preferencia de PANTALLA (como el
     // acordeon), asi que vive en el dispositivo: los importes si van a la base de datos.
     let PRESUPUESTAR = localStorage.getItem('nutrichefia_presupuestar') === '1';
+    // Lo que el usuario quito de la lista con la X. La lista se arma de nuevo cada vez desde el
+    // plan, asi que sin esto lo quitado volvia a salir a la siguiente visita.
+    let ARCHIVADOS = [];
 
     const hoyPeru = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
     const sumarDias = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -160,6 +163,14 @@
     document.getElementById('t-lista').onclick = () => { verTab('lista'); cargarLista(); };
     document.getElementById('t-historial').onclick = () => verTab('historial');
 
+    // La MISMA normalizacion que usa el servidor (claveIng en db.js): minusculas, sin tildes,
+    // espacios colapsados y un singular simple. Si aqui se normalizara distinto, un producto
+    // archivado como "Tomates" volveria a aparecer escrito "tomate".
+    const clave = (n) => String(n || '').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ').trim()
+      .replace(/(es|s)$/, '');
+
     // ===== La lista =====
     // Sale de GET /api/plan/necesidad: TODO lo que piden los platos de esa semana, con su
     // cantidad sumada. No de /faltantes, que omite lo que ya tienes — y en el supermercado
@@ -171,8 +182,13 @@
       const cont = document.getElementById('lista-productos');
       cont.innerHTML = '<p class="muted">Cargando…</p>';
       try {
+        // El archivo se pide ANTES de armar la lista: si llegara despues, lo quitado parpadearia
+        // en pantalla antes de desaparecer.
+        try { ARCHIVADOS = (await api('/api/compras/archivados')).archivados || []; }
+        catch { ARCHIVADOS = []; }
+        const archivadas = new Set(ARCHIVADOS.map((a) => a.clave));
         const d = await api(`/api/plan/necesidad?inicio=${inicio}&fin=${fin}`);
-        ITEMS = (d.items || []).map((i) => ({
+        ITEMS = (d.items || []).filter((i) => !archivadas.has(clave(i.nombre))).map((i) => ({
           nombre: i.nombre,
           categoria: i.categoria,
           cantidad: i.medida || '',
@@ -346,9 +362,27 @@
       if (para) { verParaQue(ITEMS[Number(para.dataset.para)]); return; }
       const b = e.target.closest('[data-quitar]');
       if (!b) return;
-      ITEMS.splice(Number(b.dataset.quitar), 1);
-      pintarLista();
+      quitarProducto(Number(b.dataset.quitar));
     });
+
+    // Quitar un producto lo ARCHIVA: la lista se rehace desde el plan en cada visita, asi que
+    // borrarlo solo de la pantalla no serviria de nada (volveria a salir mañana). Se puede
+    // deshacer desde "Agregar producto", y el aviso lo dice para que no parezca definitivo.
+    async function quitarProducto(i) {
+      const it = ITEMS[i];
+      if (!it) return;
+      ITEMS.splice(i, 1);
+      pintarLista();
+      try {
+        const r = await api('/api/compras/archivados', { method: 'POST', body: { nombre: it.nombre } });
+        ARCHIVADOS = r.archivados || ARCHIVADOS;
+        alerta(alLista, `"${it.nombre}" ya no saldra en tu lista. Puedes devolverlo desde "+ Agregar".`, 'ok');
+      } catch (err) {
+        // Si el servidor no pudo archivarlo, se dice: si no, el usuario creeria que quedo
+        // quitado para siempre y a la semana siguiente lo veria volver sin explicacion.
+        alerta(alLista, 'Lo quitamos de esta lista, pero no pudimos archivarlo: puede volver a aparecer.');
+      }
+    }
 
     // Todos los platos que usan ese producto. En la fila solo cabe el primero; el resto se ven
     // aqui, porque un ingrediente basico puede estar en diez platos y no cabria de ninguna forma.
@@ -391,13 +425,75 @@
     document.getElementById('btn-ninguno').onclick = () => { ITEMS.forEach((i) => { i.comprado = false; }); pintarLista(); };
 
     document.getElementById('btn-agregar').onclick = async () => {
-      const nombre = await pedirTexto('Agregar producto', 'Nombre del producto', 'Ej: Papel toalla');
+      const nombre = await pedirProducto();
       if (!nombre) return;
       // Este si nace marcado: se agrega a mano porque acabas de echarlo al carro (no estaba en
       // el plan). Agregarlo y tener que marcarlo despues seria un clic sin sentido.
       ITEMS.push({ nombre, categoria: 'otro', cantidad: '', precio: '', presupuesto: '', comprado: true });
       pintarLista();
     };
+
+    // Agregar un producto: uno nuevo, o uno de los que quitaste antes. Los archivados van en el
+    // MISMO sitio donde se agrega porque es ahi donde uno se pregunta "¿y el aceite?": tenerlos
+    // en otra pantalla los haria invisibles.
+    function pedirProducto() {
+      return new Promise((resolve) => {
+        const back = document.createElement('div');
+        back.className = 'modal-back show';
+        const lista = () => (ARCHIVADOS.length
+          ? ARCHIVADOS.map((a) => `<div class="archivado-fila">
+              <span>${iconoIngrediente(a.nombre)} ${esc(a.nombre)}</span>
+              <button type="button" class="btn btn-ghost btn-sm" data-volver="${a.id}">Volver a agregar</button>
+            </div>`).join('')
+          : '<p class="muted" style="font-size:12.5px;margin:0">No has quitado ningún producto todavía.</p>');
+
+        back.innerHTML = `<div class="modal" role="dialog" style="max-width:460px;text-align:left">
+          <h3>Agregar producto</h3>
+          <div class="modal-body">
+            <div class="field"><label>Nombre del producto</label>
+              <input id="pt-valor" placeholder="Ej: Papel toalla" autocomplete="off" /></div>
+            <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+              <b style="font-size:13px">🗂️ Productos que quitaste</b>
+              <p class="muted" style="font-size:12px;margin:2px 0 10px">
+                No vuelven a salir en tu lista aunque tu plan los pida. Devuélvelos cuando los necesites.
+              </p>
+              <div id="pt-archivados" class="stack" style="gap:6px">${lista()}</div>
+            </div>
+          </div>
+          <div class="row" style="justify-content:flex-end;gap:8px">
+            <button class="btn btn-ghost btn-sm" data-no>Cancelar</button>
+            <button class="btn btn-sm" data-si>Agregar</button>
+          </div>
+        </div>`;
+        document.body.appendChild(back);
+        const input = back.querySelector('#pt-valor');
+        setTimeout(() => input.focus(), 50);
+        const cerrar = (v) => { back.remove(); resolve(v); };
+        back.querySelector('[data-no]').onclick = () => cerrar(null);
+        back.querySelector('[data-si]').onclick = () => cerrar(input.value.trim() || null);
+        input.onkeydown = (e) => { if (e.key === 'Enter') cerrar(input.value.trim() || null); };
+        back.onclick = (e) => { if (e.target === back) cerrar(null); };
+
+        // Devolver uno a la lista NO cierra el modal: lo normal es recuperar varios de una vez.
+        back.querySelector('#pt-archivados').onclick = async (e) => {
+          const b = e.target.closest('[data-volver]');
+          if (!b) return;
+          const a = ARCHIVADOS.find((x) => x.id === Number(b.dataset.volver));
+          b.disabled = true; b.textContent = '…';
+          try {
+            const r = await api(`/api/compras/archivados/${b.dataset.volver}`, { method: 'DELETE' });
+            ARCHIVADOS = r.archivados || [];
+            back.querySelector('#pt-archivados').innerHTML = lista();
+            // Se vuelve a armar la lista para que salga en su pasillo y con su cantidad del plan.
+            await cargarLista();
+            alerta(alLista, `"${a ? a.nombre : 'El producto'}" vuelve a estar en tu lista.`, 'ok');
+          } catch (err) {
+            b.disabled = false; b.textContent = 'Volver a agregar';
+            alerta(alLista, err.error || 'No pudimos devolverlo a la lista.');
+          }
+        };
+      });
+    }
 
     // Pedir un texto sin usar prompt(): el nativo no se puede estilar y en móvil sale fatal.
     function pedirTexto(titulo, etiqueta, placeholder) {

@@ -970,6 +970,30 @@ de la familia le importa (por su nombre)** y de donde sale el numero.
 - Lo cubre **`npm run smoke:compras`** (gratis), que crea su propio usuario, hogar, platos y
   semana fija: no hereda estado ni depende de la fecha en que se corra.
 
+### La X archiva el producto (2026-08-26)
+Reportado: *"lo elimino con la X y vuelve a salir al recargar la lista"*. Y es lo que tenia que
+pasar: **la lista se arma de nuevo cada vez que entras**, con los platos programados de esa
+semana, asi que quitarlo solo de la pantalla no dura nada — el plan lo sigue pidiendo.
+
+Ahora la X lo **archiva** (`compras_archivados`) y la lista lo descarta al armarse.
+- **Es por USUARIO, no por semana**: quien quita el aji panca de su lista no lo quiere ver la
+  semana que viene tampoco.
+- **Se deshace desde "+ Agregar producto"**, que ahora abre un modal con dos cosas: el campo para
+  uno nuevo y la lista de **"Productos que quitaste"** con su boton *Volver a agregar*. Van en el
+  MISMO sitio porque es ahi donde uno se pregunta *"¿y el aceite?"*: en otra pantalla serian
+  invisibles y el archivo se volveria una via de un solo sentido.
+- Devolver uno **no cierra el modal** (lo normal es recuperar varios) y **rehace la lista**, para
+  que vuelva a su pasillo y con la cantidad que pide el plan.
+- 🔴 **La clave del archivo es `claveIng`, la MISMA que deduplica la lista.** Si el archivo
+  normalizara distinto, "Tomates" quedaria archivado y "tomate" seguiria apareciendo. El
+  frontend repite esa normalizacion para filtrar sin esperar al servidor; si se toca una, se
+  toca la otra.
+- El aviso al quitar dice que se puede deshacer: sin eso, la X parece definitiva.
+- Si el servidor no pudo archivarlo **se dice**, en vez de dejarlo quitado solo en pantalla: el
+  usuario lo veria volver a la semana siguiente sin explicacion.
+- Lo cubre `smoke:compras`, y el aserto que importa es *"al recargar la lista sigue sin salir"*:
+  es exactamente lo que fallaba.
+
 ### Presupuesto POR PRODUCTO en "Mis compras" (2026-08-26)
 Columna opcional: un interruptor la enciende y cada producto gana un campo para anotar cuanto
 pensabas gastar en el. El total va **pegado al de lo gastado** y la diferencia compara los dos.

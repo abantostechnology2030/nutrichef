@@ -421,6 +421,31 @@ db.exec(`
   );
 `);
 
+// ===== PRODUCTOS ARCHIVADOS DE LA LISTA DE COMPRAS =====
+//
+// La lista de "Mis compras" se arma de nuevo CADA VEZ que entras, con los platos programados de
+// esa semana. Por eso quitar un producto con la X no bastaba: al recargar volvia a salir, porque
+// el plan lo sigue pidiendo.
+//
+// Aqui se anota lo que el usuario decidio no comprar ("eso ya lo tengo", "esta semana no"). Es
+// por USUARIO y no por semana: quien quita el aji panca de su lista no lo quiere ver la semana
+// que viene tampoco. Y se puede deshacer: "Agregar producto" muestra los archivados para volver
+// a ponerlos, que es lo que evita que esto sea una via de un solo sentido.
+//
+// La clave es la MISMA normalizacion que deduplica la lista de compras (claveIng): si el archivo
+// normalizara distinto, "Tomates" quedaria archivado y "tomate" seguiria apareciendo.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS compras_archivados (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL,
+    nombre     TEXT    NOT NULL,
+    clave      TEXT    NOT NULL,
+    creado_en  TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (usuario_id, clave),
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+  );
+`);
+
 // ===== SOPORTE (mensajes de contacto del usuario al admin) =====
 db.exec(`
   CREATE TABLE IF NOT EXISTS soporte (

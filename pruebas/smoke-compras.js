@@ -208,6 +208,50 @@ async function abrir(pagina, token, usuario) {
     check(noComprado && noComprado.presupuesto != null,
       'incluido un producto que al final no se compro (por eso el plan no cuadra solo)');
 
+    // ===== Quitar un producto lo ARCHIVA =====
+    // La lista se rehace desde el plan cada vez que entras, asi que quitarlo solo de la pantalla
+    // no serviria de nada: volveria a salir a la siguiente visita. Eso es justo lo que se prueba.
+    console.log('\n=== archivar productos de la lista ===');
+    const filas = () => [...doc.querySelectorAll('#lista-productos input[data-check]')].length;
+    const antesDeQuitar = filas();
+    const quitar = doc.querySelector('#lista-productos [data-quitar]');
+    const nombreQuitado = quitar.closest('.compra-fila').querySelector('.compra-nombre').textContent.trim().split(' para ')[0].trim();
+    quitar.click();
+    await esperar(700);
+    check(filas() === antesDeQuitar - 1, `la X lo quita de la pantalla (${antesDeQuitar} -> ${filas()})`);
+
+    const arch = await apiSrv('/api/compras/archivados');
+    check(arch.cuerpo.archivados.length === 1, `y lo ARCHIVA en el servidor (${arch.cuerpo.archivados.length})`);
+    check(arch.cuerpo.archivados[0].nombre === nombreQuitado,
+      `con su nombre: "${arch.cuerpo.archivados[0].nombre}"`);
+
+    // Lo que de verdad se quiere: que al REHACER la lista no vuelva a aparecer.
+    const pg2 = await abrir(`compras.html?inicio=${SEMANA}&fin=${FIN}`, token, usuario);
+    const filas2 = pg2.doc.querySelectorAll('#lista-productos input[data-check]').length;
+    check(filas2 === antesDeQuitar - 1, `al recargar la lista sigue sin salir (${filas2} productos)`);
+    check(!pg2.doc.getElementById('lista-productos').textContent.includes(nombreQuitado),
+      `"${nombreQuitado}" ya no esta en la lista`);
+
+    // Y se puede deshacer desde "Agregar producto".
+    pg2.doc.getElementById('btn-agregar').click();
+    await esperar(300);
+    const modal = [...pg2.doc.querySelectorAll('.modal-back')].pop();
+    check(!!modal && /Productos que quitaste/i.test(modal.textContent),
+      'el modal de agregar muestra los productos quitados');
+    const volver = modal.querySelector('[data-volver]');
+    check(!!volver, 'con su boton para devolverlo a la lista');
+    check(modal.textContent.includes(nombreQuitado), `y ahi aparece "${nombreQuitado}"`);
+    check(!!modal.querySelector('#pt-valor'), 'y sigue pudiendo agregarse uno nuevo a mano');
+
+    volver.click();
+    await esperar(1200);
+    const arch2 = await apiSrv('/api/compras/archivados');
+    check(arch2.cuerpo.archivados.length === 0, 'devolverlo lo saca del archivo');
+    const filas3 = pg2.doc.querySelectorAll('#lista-productos input[data-check]').length;
+    check(filas3 === antesDeQuitar, `y vuelve a la lista, en su pasillo (${filas3} productos)`);
+
+    pg2.win.close();
+
     win.close();
   } finally {
     limpiar();
