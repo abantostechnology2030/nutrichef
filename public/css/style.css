@@ -923,13 +923,37 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .compra-precio input { padding: 6px 9px !important; font-size: 12.5px !important; width: 100%; }
 
 @media (max-width: 760px) {
-  /* En el telefono la fila pasa a dos lineas: nombre arriba, cantidad y precio abajo. En una
-     sola linea los campos quedaban en 40px y no se podia escribir. */
-  .compra-fila { grid-template-columns: 1fr auto; grid-template-areas: "check quitar" "cant precio"; }
-  .compra-check { grid-area: check; }
-  .compra-cant { grid-area: cant; }
-  .compra-precio { grid-area: precio; }
-  .compra-fila > .btn-danger { grid-area: quitar; }
+  /* En el telefono la fila pasa a DOS LINEAS: el producto ocupa la primera entera y debajo van
+     cantidad, precio y quitar.
+     🔴 La version anterior era "check quitar" / "cant precio" con columnas 1fr auto, y se veia
+     ROTA: la columna "auto" la dimensionaba el bloque del PRECIO (que es ancho), asi que se
+     quedaba con 172 de los 282 px y al nombre le tocaban 79. El resultado era el nombre partido
+     letra a letra en vertical ("A..." / "v...") y la cruz de quitar estirada a lo ancho.
+     La leccion: con grid-template-areas, una columna "auto" la manda el elemento MAS ANCHO de
+     toda la columna, no el de la fila que se esta mirando. */
+  .compra-fila {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "check check check"
+      "cant  precio quitar";
+    row-gap: 10px;
+  }
+  .compra-check { grid-area: check; flex-wrap: nowrap; }
+  .compra-cant { grid-area: cant; width: 100%; }
+  .compra-precio { grid-area: precio; min-width: 0; }
+  .compra-fila > .btn-danger { grid-area: quitar; align-self: center; }
+  /* El nombre y el "para que plato es" comparten la primera linea y se van al siguiente renglon
+     si no caben, en vez de estrujarse el uno al otro. */
+  .compra-nombre {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
+    flex: 1 1 auto; min-width: 0; overflow: visible; white-space: normal;
+  }
+  .para-que {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    /* 17px de alto es poco para un pulgar: es un boton de verdad (abre el modal con todos los
+       platos) y se pulsa de pie en el supermercado. */
+    min-height: 32px; display: inline-flex; align-items: center; padding-top: 0;
+  }
   .totales-barra { grid-template-columns: repeat(2, 1fr); }
 }
 

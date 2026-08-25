@@ -1078,6 +1078,32 @@ campos de una misma fila acaben a la misma altura **y** midan lo mismo.
 - Se verifico rompiendo un campo **en caliente** (24 px mas alto, y la etiqueta partida en dos):
   la comprobacion los caza los dos. Una comprobacion que no puede fallar no comprueba nada.
 
+### La LISTA de productos en movil (2026-08-25)
+Reportado dos veces como *"se distorsiona"*. La fila de cada producto se veia **deshecha**: el
+nombre partido letra a letra en vertical (*"A…" / "v…"*), el *"para que plato es"* en una columna
+de palabras sueltas y la cruz de quitar estirada a lo ancho de media pantalla.
+
+🔴 **La causa: con `grid-template-areas`, una columna `auto` la dimensiona el elemento MAS ANCHO
+de toda la columna, no el de la fila que estas mirando.** El layout era
+`"check quitar" / "cant precio"` con `1fr auto`: la columna derecha la mandaba el **bloque del
+precio** (ancho), que se quedaba con 172 de los 282 px, y al nombre le tocaban 79.
+
+Ahora el producto ocupa **la primera linea entera** y debajo van cantidad, precio y quitar:
+`"check check check" / "cant precio quitar"`, con la cantidad algo mas ancha que el precio
+("17 cucharadas" es mas largo que "S/ 0.00"). El nombre y el *"para que es"* comparten linea y el
+segundo baja al siguiente renglon si no cabe, en vez de estrujarse el uno al otro.
+
+⚠️ **`npm run movil` no lo veia, y por eso paso dos veces.** Dos arreglos en el revisor:
+- **Ahora ABRE los acordeones antes de medir.** Lo que esta dentro de uno cerrado no tiene tamaño:
+  la revision pasaba por encima de la lista entera y daba "todo correcto" con las filas rotas.
+- **Comprueba el "texto aplastado"**: una caja de menos de 70px cuyo contenido necesita mas del
+  doble de ancho. Es el sintoma exacto de una columna de grid que se quedo sin sitio, y no lo
+  pillaba ninguna otra comprobacion (no hay desborde de pagina ni texto pequeño).
+  Verificado volviendo al layout roto: **25 avisos**; con el bueno, ninguno.
+- De paso, **el area de toque de una casilla es su `<label>`**, no el cuadradito de 22px: el aviso
+  saltaba en tres pantallas sin nada que arreglar, y a los avisos que siempre estan ahi se les
+  deja de hacer caso.
+
 ### Fase 6 — admin
 Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `generaciones`). Falta pulir la UI: mostrar el desglose de generaciones por tipo (menu/dia/plato/detalle/verificar) y el aviso de crédito.
 

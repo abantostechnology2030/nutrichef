@@ -91,7 +91,12 @@ const REVISION = `(() => {
   out.toquePequeno = [];
   for (const el of document.querySelectorAll('button, a, select, input[type=checkbox], input[type=range], .btn')) {
     if (!visible(el)) continue;
-    const r = el.getBoundingClientRect();
+    // Una casilla de 22px envuelta en una <label> se pulsa por la etiqueta ENTERA: se mide esa.
+    // Si no, salta el aviso en media app sin que haya nada que arreglar, y a los avisos que
+    // siempre estan ahi se les deja de hacer caso.
+    const etiqueta = el.closest('label');
+    const caja = (etiqueta && el.matches('input')) ? etiqueta : el;
+    const r = caja.getBoundingClientRect();
     if (r.height < 32 || r.width < 32) {
       out.toquePequeno.push({ el: desc(el), w: Math.round(r.width), h: Math.round(r.height) });
     }
@@ -144,7 +149,23 @@ const REVISION = `(() => {
     }
   }
 
-  // 4) Texto diminuto.
+  // 4) Texto APLASTADO: una caja tan estrecha que su contenido no cabe ni de lejos y la palabra
+  //    se parte letra a letra en vertical ("A..." / "v..."). Es el sintoma clasico de una
+  //    columna de grid que se quedo sin ancho porque otra de la misma columna era mas ancha.
+  //    No lo pilla ninguna otra comprobacion: no hay desborde de la pagina ni texto pequeno.
+  out.aplastados = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (!visible(el)) continue;
+    const propio = [...el.childNodes].some((n2) => n2.nodeType === 3 && n2.textContent.trim().length > 3);
+    if (!propio) continue;
+    const r = el.getBoundingClientRect();
+    // Necesita el DOBLE de ancho del que tiene, y ademas es estrecha de verdad.
+    if (r.width < 70 && el.scrollWidth > el.clientWidth * 2 && el.clientWidth > 0) {
+      out.aplastados.push({ el: desc(el), ancho: Math.round(r.width), necesita: el.scrollWidth });
+    }
+  }
+
+  // 5) Texto diminuto.
   out.textoChico = [];
   for (const el of document.querySelectorAll('body *')) {
     if (!visible(el) || !el.childNodes.length) continue;
@@ -154,7 +175,7 @@ const REVISION = `(() => {
     if (px && px < 11.5) out.textoChico.push({ el: desc(el), px: Math.round(px * 10) / 10 });
   }
 
-  // 5) Lo que tape la barra inferior fija.
+  // 6) Lo que tape la barra inferior fija.
   const bn = document.querySelector('.bottomnav');
   out.barra = null;
   if (bn && visible(bn)) {
@@ -202,6 +223,15 @@ const REVISION = `(() => {
       await enviar('Page.navigate', { url: BASE + '/' + pag });
       await esperar(2600); // deja que carguen los datos por API y se repinte
 
+      // Se DESPLIEGA lo plegado antes de medir. Lo que esta dentro de un acordeon cerrado no
+      // tiene tamaño, asi que la revision pasaba por encima de la lista de la compra entera y
+      // daba "todo correcto" con las filas visiblemente rotas. Ya me paso: el layout de la lista
+      // estaba deshecho en el telefono y aqui salia limpio.
+      await enviar('Runtime.evaluate', {
+        expression: `document.querySelectorAll('.cat-acordeon:not(.abierta) .cat-cab').forEach((b) => b.click())`,
+      });
+      await esperar(600);
+
       const r = await enviar('Runtime.evaluate', { expression: REVISION, returnByValue: true });
       const d = r.result.value;
 
@@ -220,6 +250,10 @@ const REVISION = `(() => {
         console.log('    filas de campos torcidas (' + d.camposTorcidos.length + '):');
         for (const c of d.camposTorcidos) console.log('       ' + c.ids + ' -> ' + c.dif + '  [' + c.caja + ']');
       } else console.log('    filas de campos: cuadradas');
+      if (d.aplastados.length) {
+        console.log('    texto aplastado (' + d.aplastados.length + '):');
+        for (const a of d.aplastados.slice(0, 6)) console.log('       ' + a.ancho + 'px de ancho para ' + a.necesita + 'px de texto  ' + a.el);
+      } else console.log('    texto aplastado: ninguno');
       if (d.textoChico.length) {
         console.log('    texto < 11.5px (' + d.textoChico.length + '): ' +
           d.textoChico.slice(0, 4).map((t) => t.px + 'px ' + t.el.slice(0, 30)).join(' | '));
