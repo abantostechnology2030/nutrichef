@@ -11,8 +11,16 @@ persona (clics, formularios, tabs). Sirven para responder *"¿la página corre?"
 npm run dev                    # el servidor DEBE estar arriba en :3002
 npm install                    # jsdom es devDependency
 npm run smoke                  # hogar + despensa (gratis, ~10s)
+npm run smoke:platos           # biblioteca (filtros y paginación) + calendario (gratis, ~20s)
+npm run smoke:compras          # "Mis compras": lista y subtotales por pasillo (gratis, ~10s)
+npm run smoke:inicio           # dashboard + barra inferior + perfil (gratis, ~10s)
 npm run smoke:plan             # calendario + generación IA REAL (~$0.014, ~60s)
+npm run movil                  # layout en móvil con Chrome real + capturas (gratis, ~30s)
 ```
+
+`smoke:platos` y `smoke:compras` **crean su propio usuario** (con su hogar, sus platos y una
+semana fija) y lo borran al terminar: no heredan estado de otra corrida ni dependen de la fecha
+en que se ejecuten.
 
 ## Qué necesitan
 

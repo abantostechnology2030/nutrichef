@@ -193,6 +193,92 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     check(nuevo?.porciones === 3, `guarda las porciones (fue ${nuevo?.porciones})`);
     check(nuevo?.ingredientes[0]?.nombre === 'Papa', 'guarda el ingrediente escrito en el form');
 
+    // ===== Filtros y paginacion de la biblioteca =====
+    //
+    // Se siembran 15 platos DIRECTO EN LA BD (origen 'ia', que no cuenta contra platos_max) para
+    // pasar de las 12 de una pagina. Crearlos por la API seria imposible: este usuario es Free.
+    // Se van solos al borrar el usuario, por el CASCADE.
+    console.log('\n=== filtros y paginacion ===');
+    const sembrar = db.prepare(
+      `INSERT INTO platos (usuario_id, nombre, momento, porciones, ingredientes, tiempo_min, dificultad, origen, guardado)
+       VALUES (?, ?, ?, 2, '[]', ?, ?, 'ia', 1)`
+    );
+    const MOMS = ['desayuno', 'almuerzo', 'cena'];
+    for (let i = 0; i < 15; i++) {
+      sembrar.run(usuario.id, `Plato sembrado ${String(i + 1).padStart(2, '0')}`, MOMS[i % 3], 10 + i, i % 2 ? 'facil' : 'media');
+    }
+
+    const pg = await abrir('platos.html', token, usuario);
+    check(pg.errores.length === 0, `sin errores de runtime ${pg.errores.join(' | ')}`);
+
+    const enPantalla = () => pg.doc.querySelectorAll('#lista .result-section').length;
+    const total = (await apiSrv('/api/platos')).cuerpo.total;
+    check(total === 20, `la biblioteca tiene 20 platos (= ${total})`);
+    check(enPantalla() === 12, `la primera pagina muestra 12, no los 20 (= ${enPantalla()})`);
+    check(txt(pg.doc, '#cont').includes('1-12 de 20'), `el contador dice cuales estas viendo: "${txt(pg.doc, '#cont')}"`);
+    check(!pg.doc.getElementById('paginacion').hidden, 'la paginacion se muestra');
+    check(txt(pg.doc, '#pag-txt') === 'Página 1 de 2', `"${txt(pg.doc, '#pag-txt')}"`);
+    check(pg.doc.getElementById('pag-antes').disabled, 'en la primera pagina, "Anterior" esta deshabilitado');
+
+    const idsPag1 = [...pg.doc.querySelectorAll('#lista [data-ver]')].map((b) => b.dataset.ver);
+    pg.doc.getElementById('pag-sigue').click();
+    await esperar(500);
+    check(txt(pg.doc, '#pag-txt') === 'Página 2 de 2', 'pasa a la pagina 2');
+    check(enPantalla() === 8, `quedan 8 en la ultima pagina (= ${enPantalla()})`);
+    check(pg.doc.getElementById('pag-sigue').disabled, 'en la ultima, "Siguiente" esta deshabilitado');
+    const idsPag2 = [...pg.doc.querySelectorAll('#lista [data-ver]')].map((b) => b.dataset.ver);
+    // creado_en tiene precision de SEGUNDOS y estos 15 platos nacen en el mismo: sin el
+    // desempate por id en el ORDER BY, un plato saldria en las dos paginas y otro en ninguna.
+    check(idsPag1.every((id) => !idsPag2.includes(id)), 'ningun plato se repite entre las dos paginas');
+    check(new Set([...idsPag1, ...idsPag2]).size === 20, 'entre las dos paginas estan los 20');
+
+    // Filtrar vuelve a la pagina 1: seguir en la 2 dejaria la lista vacia con resultados.
+    pg.doc.getElementById('filtro-momento').value = 'desayuno';
+    pg.doc.getElementById('filtro-momento').dispatchEvent(new pg.win.Event('change'));
+    await esperar(500);
+    const desayunos = (await apiSrv('/api/platos?momento=desayuno')).cuerpo.total;
+    check(enPantalla() === Math.min(12, desayunos), `filtra por momento (${enPantalla()} en pantalla de ${desayunos})`);
+    check(pg.doc.getElementById('paginacion').hidden, 'con una sola pagina, la paginacion desaparece');
+    check(!pg.doc.getElementById('btn-limpiar').hidden, 'aparece "Quitar filtros"');
+
+    // Un filtro sin resultados NO debe decir "todavia no guardas ningun plato".
+    pg.doc.getElementById('buscar').value = 'zzz-no-existe';
+    pg.doc.getElementById('buscar').dispatchEvent(new pg.win.Event('input'));
+    await esperar(700);
+    check(enPantalla() === 0, 'sin coincidencias no pinta tarjetas');
+    check(/coincide con lo que buscas/i.test(txt(pg.doc, '#lista')),
+      `distingue "sin resultados" de "sin platos": "${txt(pg.doc, '#lista').slice(0, 60)}"`);
+
+    pg.doc.getElementById('btn-limpiar').click();
+    await esperar(500);
+    check(enPantalla() === 12, `quitar los filtros devuelve la lista entera (= ${enPantalla()})`);
+    check(pg.doc.getElementById('btn-limpiar').hidden, 'y el boton de quitar filtros se esconde');
+
+    // Los filtros nuevos, contra el servidor.
+    const soloMios = (await apiSrv('/api/platos?origen=mio')).cuerpo;
+    check(soloMios.platos.every((p) => p.origen === 'manual'), `"solo los tuyos" trae ${soloMios.total} manuales`);
+    const soloIA = (await apiSrv('/api/platos?origen=ia')).cuerpo;
+    check(soloIA.platos.every((p) => p.origen !== 'manual') && soloIA.total === 15,
+      `"solo los de la IA" trae los 15 sembrados (= ${soloIA.total})`);
+    check(soloMios.total + soloIA.total === total, 'los dos origenes suman el total (no se pierde ninguno)');
+    const sinUsar = (await apiSrv('/api/platos?uso=sin_usar')).cuerpo;
+    check(sinUsar.total === total, `"nunca los usaste" trae todos, que aun no estan en el plan (= ${sinUsar.total})`);
+    const porNombre = (await apiSrv('/api/platos?orden=nombre')).cuerpo.platos.map((p) => p.nombre);
+    const ordenados = [...porNombre].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    check(porNombre.join('|') === ordenados.join('|'), 'el orden alfabetico llega ordenado del servidor');
+    const rapidos = (await apiSrv('/api/platos?orden=tiempo')).cuerpo.platos.map((p) => p.tiempo_min).filter((t) => t != null);
+    check(rapidos.every((t, i) => i === 0 || rapidos[i - 1] <= t), `el orden por tiempo va de menor a mayor (${rapidos.slice(0, 4).join(', ')}…)`);
+    check(soloIA.resumen.total === total && soloIA.resumen.ia === 15,
+      'el resumen cuenta la biblioteca ENTERA, no la pagina filtrada');
+
+    // Sin paginar sigue devolviendo todo: el selector de platos del calendario llama asi.
+    const todos = (await apiSrv('/api/platos')).cuerpo;
+    check(todos.platos.length === 20 && todos.por_pagina === null,
+      `sin pedir paginacion vienen los 20 (= ${todos.platos.length})`);
+
+    // Se quitan los sembrados para que las secciones siguientes vean la biblioteca de antes.
+    db.prepare("DELETE FROM platos WHERE usuario_id = ? AND nombre LIKE 'Plato sembrado %'").run(usuario.id);
+
     // ===== plan.html: cargar un plato de la biblioteca en una casilla =====
     // La 2a via para llenar el calendario (la 1a es la IA). Se prueba aqui y no en
     // smoke-plan.js porque NO usa IA: asi la prueba es gratis y se corre siempre.
@@ -301,6 +387,66 @@ const txt = (doc, sel) => (doc.querySelector(sel)?.textContent || '').trim().rep
     check(/Cómo prepararlo/.test(detalle), 'el detalle muestra los pasos de un plato que si los tiene');
     check(/Hervir la leche/.test(detalle), 'y son los pasos reales del plato');
     check(!/próxima versión/.test(detalle), 'sin el aviso de "llega en la proxima version" para ese plato');
+
+    // ===== Explicacion de cada nutriente =====
+    //
+    // Va AL FINAL a proposito: necesita un integrante con una condicion medica, y crear uno deja
+    // el hogar "configurado", que es justo lo contrario de lo que comprueba la seccion anterior
+    // ("sin hogar, Proponer esta deshabilitado").
+    console.log('\n=== explicacion de los nutrientes ===');
+    await apiSrv('/api/hogar/integrantes', {
+      method: 'POST',
+      body: JSON.stringify({ nombre: 'Abuela Rosa', edad: 70, condiciones: ['hipertension'] }),
+    });
+
+    const nt = await abrir('plan.html', token, usuario);
+    check(nt.errores.length === 0, `sin errores de runtime ${nt.errores.join(' | ')}`);
+
+    // Las instrucciones ahora van ARRIBA DE TODO, antes del selector de fechas.
+    const cards = [...nt.doc.querySelectorAll('.content > .card')];
+    const iInstr = cards.findIndex((c) => c.classList.contains('instrucciones'));
+    const iSelector = cards.findIndex((c) => c.querySelector('#lbl-semana'));
+    check(iInstr >= 0 && iInstr < iSelector, `las instrucciones van antes del selector de fechas (${iInstr} < ${iSelector})`);
+    check(/Instrucciones/.test(nt.doc.querySelector('.instrucciones h3')?.textContent || ''), 'con el titulo "Instrucciones"');
+    check((nt.doc.querySelectorAll('.instrucciones .pasos-plan li') || []).length === 3, 'y sus 3 pasos');
+
+    // Se pinta el bloque nutricional de un plato de prueba y se toca una fila.
+    const caja = nt.doc.createElement('div');
+    caja.innerHTML = nt.win.bloqueNutri({
+      calorias: 480, calorias_vd: 24, semaforo: 'ambar', resumen: 'Plato de prueba',
+      nutrientes: {
+        carbohidratos: { v: 60, vd: 20 }, proteinas: { v: 25, vd: 50 }, grasas: { v: 12, vd: 15 },
+        fibra: { v: 3, vd: 12 }, hierro: { v: 2, vd: 11 }, sodio: { v: 900, vd: 39 }, sal: { v: 2.3, vd: 46 },
+      },
+    });
+    nt.doc.body.appendChild(caja);
+    const botones = caja.querySelectorAll('[data-nutri]');
+    check(botones.length === 8, `cada nutriente trae su boton de explicacion (= ${botones.length}, con la energia)`);
+
+    const bSodio = [...botones].find((b) => b.dataset.nutri === 'sodio');
+    bSodio.click();
+    await esperar(200);
+    const expl = [...nt.doc.querySelectorAll('.modal-back')].pop();
+    const t = (expl?.textContent || '').replace(/\s+/g, ' ');
+    check(/Sodio/.test(t), 'el modal explica el nutriente que se toco');
+    check(/900 mg/.test(t) && /39%/.test(t), `repite el numero del plato: "${(t.match(/[\d.]+ mg[^]{0,28}/) || [''])[0].trim()}"`);
+    check(/sal|cubito|sillao/i.test(t), 'dice de donde viene el sodio en la comida real');
+    check(/presión|presion/i.test(t), 'y que pasa si hay de mas');
+    check(/Aporte alto/.test(t), 'lee el 39% como aporte ALTO (regla del 5 y el 20)');
+    check(/Abuela Rosa/.test(t), 'nombra a quien de la familia le importa (hipertension)');
+    check(/no reemplaza/i.test(t), 'y mantiene el aviso de que no reemplaza al profesional');
+    expl.querySelector('[data-cerrar]').click();
+
+    // El mismo % se lee distinto segun el nutriente: 50% de proteina es una BUENA noticia.
+    [...botones].find((b) => b.dataset.nutri === 'proteinas').click();
+    await esperar(200);
+    const tProt = ([...nt.doc.querySelectorAll('.modal-back')].pop()?.textContent || '').replace(/\s+/g, ' ');
+    check(/Aporte alto/.test(tProt) && /[Bb]uena noticia/.test(tProt),
+      'un aporte alto de proteina se lee como algo bueno, no como una advertencia');
+    check(!/Abuela Rosa/.test(tProt), 'y no le cuelga a la abuela un aviso que no le toca');
+    [...nt.doc.querySelectorAll('.modal-back')].pop().querySelector('[data-cerrar]').click();
+
+    nt.win.close();
 
     win.close();
     p2.win.close();

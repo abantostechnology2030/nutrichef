@@ -104,28 +104,93 @@ const SELECT_BASE = `
     FROM platos p
    WHERE p.usuario_id = ?`;
 
+// Los ordenes posibles de la biblioteca. Son una lista cerrada y no un campo libre: entra
+// directo en el ORDER BY.
+//
+// TODOS desempatan por p.id, y no es cosmetico: creado_en es datetime('now'), con precision de
+// SEGUNDOS, y generar una semana crea 21 platos en el mismo segundo. Sin desempate, SQLite puede
+// devolver esas filas en cualquier orden entre una consulta y la siguiente, asi que con
+// LIMIT/OFFSET la pagina 2 repetiria un plato que ya salio en la 1 y se saltaria otro.
+const ORDENES = {
+  reciente: 'p.creado_en DESC, p.id DESC',
+  antiguo: 'p.creado_en ASC, p.id ASC',
+  nombre: 'LOWER(p.nombre) ASC, p.id ASC',
+  tiempo: 'p.tiempo_min IS NULL, p.tiempo_min ASC, p.id ASC',
+};
+
 // GET /api/platos -> la biblioteca (solo guardados) + el estado del tope
+//
+// Filtros: q, momento, origen (mio|ia), dificultad, uso (en_plan|sin_usar) y orden.
+// Se resuelven en SQL y no en el cliente porque con paginacion el cliente solo tiene la pagina
+// que esta mirando: filtrar ahi diria "2 resultados" cuando hay 20.
 router.get('/', (req, res) => {
-  const { momento, q } = req.query;
+  const { momento, q, origen, dificultad, uso, orden } = req.query;
   const args = [req.usuario.id];
-  let sql = `${SELECT_BASE} AND p.guardado = 1`;
+  let where = 'p.usuario_id = ? AND p.guardado = 1';
 
   const m = normMomento(momento);
-  if (m) {
-    sql += ' AND p.momento = ?';
-    args.push(m);
-  }
+  if (m) { where += ' AND p.momento = ?'; args.push(m); }
+
   if (q) {
-    sql += ' AND LOWER(p.nombre) LIKE ?';
+    where += ' AND LOWER(p.nombre) LIKE ?';
     args.push(`%${String(q).toLowerCase().trim()}%`);
   }
-  sql += ' ORDER BY p.creado_en DESC';
+
+  // 'ia' es todo lo que NO escribio el usuario: los generados ('ia') y los que propuso el
+  // usuario y la IA verifico ('propuesto'). Preguntar por origen='ia' a secas dejaria fuera a
+  // los segundos, que para quien mira su biblioteca tampoco son "suyos".
+  if (origen === 'mio') where += " AND p.origen = 'manual'";
+  else if (origen === 'ia') where += " AND p.origen <> 'manual'";
+
+  const d = normDificultad(dificultad);
+  if (d) { where += ' AND p.dificultad = ?'; args.push(d); }
+
+  // "Sin usar" = nunca lo puso en el calendario. Es el filtro para redescubrir lo que tiene
+  // guardado y no esta aprovechando.
+  if (uso === 'en_plan') where += ' AND EXISTS (SELECT 1 FROM plan_comidas pc WHERE pc.plato_id = p.id)';
+  else if (uso === 'sin_usar') where += ' AND NOT EXISTS (SELECT 1 FROM plan_comidas pc WHERE pc.plato_id = p.id)';
+
+  const total = db.prepare(`SELECT COUNT(*) c FROM platos p WHERE ${where}`).get(...args).c;
+
+  // La paginacion es OPCIONAL: sin 'pagina' ni 'por_pagina' se devuelve todo, como siempre.
+  // El selector de platos del calendario (plan.html) llama a esta ruta sin parametros y los
+  // necesita TODOS para poder filtrarlos por momento; un tamano de pagina por defecto le
+  // esconderia media biblioteca sin que nadie lo note.
+  // Ojo con el 0: Math.max(1, ...) lo convertiria en 1, o sea "una pagina de un plato" cada vez
+  // que no se pide paginacion. Ausente y "0" significan SIN paginar, y eso se decide antes de topar.
+  const pedido = parseInt(req.query.por_pagina, 10);
+  const porPagina = Number.isFinite(pedido) && pedido > 0 ? Math.min(100, pedido) : 0;
+  const paginas = porPagina ? Math.max(1, Math.ceil(total / porPagina)) : 1;
+  // La pagina se topa contra el total: al filtrar estando en la 4 quedarian 2, y una pagina
+  // vacia se lee como "no tienes platos" cuando si los tiene.
+  const pagina = porPagina ? Math.min(paginas, Math.max(1, parseInt(req.query.pagina, 10) || 1)) : 1;
+
+  let sql = `${SELECT_BASE.replace('WHERE p.usuario_id = ?', 'WHERE ' + where)} ORDER BY ${ORDENES[orden] || ORDENES.reciente}`;
+  const argsPagina = [...args];
+  if (porPagina) { sql += ' LIMIT ? OFFSET ?'; argsPagina.push(porPagina, (pagina - 1) * porPagina); }
+
+  // Los conteos de la biblioteca ENTERA (sin filtros): es lo que deja decir "12 de 68" y saber
+  // que hay detras de cada filtro sin tener que probarlos uno por uno.
+  const resumen = db.prepare(
+    `SELECT COUNT(*) total,
+            SUM(CASE WHEN p.origen = 'manual' THEN 1 ELSE 0 END) mios,
+            SUM(CASE WHEN p.origen <> 'manual' THEN 1 ELSE 0 END) ia,
+            SUM(CASE WHEN EXISTS (SELECT 1 FROM plan_comidas pc WHERE pc.plato_id = p.id) THEN 1 ELSE 0 END) en_plan
+       FROM platos p WHERE p.usuario_id = ? AND p.guardado = 1`
+  ).get(req.usuario.id);
+  resumen.sin_usar = resumen.total - resumen.en_plan;
 
   res.json({
-    platos: db.prepare(sql).all(...args).map(platoPublico),
+    platos: db.prepare(sql).all(...argsPagina).map(platoPublico),
+    total,
+    pagina,
+    paginas,
+    por_pagina: porPagina || null,
+    resumen,
     limite: limiteDe(req.usuario),
     momentos: MOMENTOS,
     dificultades: DIFICULTADES,
+    ordenes: Object.keys(ORDENES),
   });
 });
 

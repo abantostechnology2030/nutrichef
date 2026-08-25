@@ -46,7 +46,8 @@ npm run dev        # node --watch src/server.js  <- usar este al desarrollar
 npm run smoke        # smoke test de hogar + despensa (gratis, ~10s, servidor arriba)
 npm run smoke:inicio # dashboard + barra inferior + perfil (gratis, ~10s)
 npm run movil        # revisa el LAYOUT en movil con Chrome real + capturas (gratis, ~30s)
-npm run smoke:platos # smoke test de la biblioteca + el calendario sin IA (gratis, ~15s)
+npm run smoke:platos # smoke test de la biblioteca + el calendario sin IA (gratis, ~20s)
+npm run smoke:compras # "Mis compras": lista, subtotales por pasillo (gratis, ~10s)
 npm run smoke:plan   # calendario + generar + verificar con IA REAL (4 llamadas, ~60s)
                      #   -> $0.012 con gemini | $0.047 con claude  (segun ai_prioridad!)
 ```
@@ -615,6 +616,10 @@ Backend y frontend son **el mismo proceso**: `npm run dev` y abrir `http://local
 - **`body.textContent` en jsdom incluye el código de los `<script>` del body.** Como estas páginas llevan su JS inline, un aserto tipo `/texto viejo/.test(doc.body.textContent)` hace match contra los **comentarios del fuente** y falla aunque la UI ya diga lo correcto. Ya me dio dos falsos negativos. Clona el body y quita los `<script>` antes de buscar texto visible.
 - **`creado_en` es `datetime('now')`: precisión de SEGUNDOS.** Un test que crea varias filas de golpe las deja **todas con el mismo timestamp**, así que `ORDER BY creado_en DESC` queda empatado y el "primero" es arbitrario entre corridas. Un smoke que borraba `platos[0]` y luego daba por hecho *qué* plato había borrado pasó **en falso** (el aserto "un plato de almuerzo no se ofrece" se cumplía porque el de almuerzo ya no existía). Si tu prueba depende de un plato concreto, **fija el estado tú mismo**; no heredes el que dejó la sección de arriba.
 - **Basura en la despensa = basura en el menú.** La IA usa lo que encuentre; un ingrediente de prueba olvidado genera platos reales alrededor de él.
+- **El atributo `hidden` lo pisa cualquier clase con `display`.** `.btn` es `inline-flex`,
+  asi que un boton con `hidden` **se seguia viendo** ("Quitar filtros" salia sin filtros
+  puestos, y la barra de paginacion con una sola pagina). El UA lo declara con especificidad 0.
+  Ahora `[hidden] { display: none !important; }` esta junto a `.hidden` en `style.css`.
 - **`sed` puede fallar en silencio.** Si editas con `sed`, verifica el resultado: di por hecho que un bloque se había insertado y no era así.
 
 ## POR DÓNDE SEGUIR (pausa: 2026-07-18 · fases 1-5 hechas · **EN PRODUCCIÓN**)
@@ -843,6 +848,84 @@ Pagina propia (compras.html + compras.routes.js). Es OTRA forma de registrar la 
 **Y `POST /api/plan/detallar` los deja en la biblioteca** al completarles la receta, dentro de la misma transacción que escribe los pasos: es donde el usuario espera encontrarlos después de habérsela pedido a la IA.
 
 ⚠️ **Y por eso `platos_max` dejo de contarlos.** `guardadosDe()` cuenta solo `origen = 'manual'`. Si contara los generados, un usuario Free (5) se quedaria sin poder crear nada tras generar dos dias, y el tope dejaria de medir lo que pretende medir. Lo que produce la IA ya esta limitado por `generaciones_max`.
+
+### "Mis platos": filtros y paginacion (2026-08-25)
+La biblioteca paso de una decena de platos a **68 en produccion** (todo lo generado se guarda desde
+el 2026-08-25), y una lista plana de 68 tarjetas con un solo buscador dejo de servir.
+
+- **Filtros**: momento, **origen** (los tuyos / los de la IA), **uso** (ya programados / nunca
+  usados) y **dificultad**, mas el **orden** (recientes, antiguos, A-Z, los mas rapidos de hacer).
+- 🔴 **Los resuelve el SERVIDOR, no el cliente.** Con paginacion el cliente solo tiene la pagina
+  que esta mirando: filtrar ahi diria *"2 resultados"* cuando hay 20. Por eso el GET acepta
+  `q`, `momento`, `origen`, `uso`, `dificultad` y `orden`.
+- **`origen=ia` es `origen <> 'manual'`**, no `= 'ia'`: si no, se quedarian fuera los
+  `'propuesto'` (los que el usuario nombro y la IA desarrollo), que para quien mira su
+  biblioteca tampoco son "suyos".
+- **La paginacion es OPCIONAL**: sin `por_pagina` se devuelve todo. El selector de platos del
+  calendario (`plan.html`) llama a `/api/platos` **sin parametros** y los necesita todos para
+  filtrarlos por momento; un tamano de pagina por defecto le esconderia media biblioteca sin que
+  nadie lo note. ⚠️ Y ojo con el clamp: `Math.max(1, ... || 0)` convierte el "sin paginar" en
+  **paginas de un plato** — ya paso; el 0 se decide **antes** de topar.
+- 🔴 **Todos los ORDER BY desempatan por `p.id`.** `creado_en` es `datetime('now')`, con
+  precision de **segundos**, y generar una semana crea 21 platos en el mismo segundo: sin
+  desempate, SQLite puede devolver esas filas en distinto orden entre dos consultas y con
+  `LIMIT/OFFSET` la pagina 2 repetiria un plato de la 1 y se saltaria otro. Lo cubre un aserto
+  ("ningun plato se repite entre las dos paginas").
+- **`resumen` cuenta la biblioteca ENTERA** (no la pagina ni el filtro): es lo que deja poner
+  *"Míos (5)"* / *"De la IA (15)"* en las propias opciones, para saber que hay detras de cada
+  filtro sin probarlos uno por uno.
+- **"Sin platos" y "sin resultados" NO son lo mismo**: al segundo se le ofrece *quitar los
+  filtros*, no crear un plato que quiza ya tiene.
+- **Las etiquetas de los filtros son cortas a proposito** ("🍽️ Momento", "✍️ Míos"): en el
+  telefono caben dos por fila y *"Todos los momentos"* se cortaba a la mitad. La opcion sin
+  filtro lleva el **nombre del filtro**, que es lo que dice de que va cada uno.
+
+### Las instrucciones del plan van ARRIBA y en amarillo (2026-08-25)
+Los tres pasos (elige la semana / genera / ve o cambia cada plato) salieron de la tarjeta del
+selector —donde competian con siete botones— a **su propia tarjeta `.instrucciones`, antes del
+selector de fechas**, con el titulo **"📋 Instrucciones"** y el amarillo del resto de avisos.
+Un aserto comprueba que van **antes** del selector, no solo que existen.
+
+### Que significa cada nutriente (2026-08-25)
+Cada fila del aporte nutricional es un **boton** que abre un modal con: el numero y su %VD, la
+lectura de ese %, que es el nutriente en comida real, que pasa si hay de mas o de menos, **a quien
+de la familia le importa (por su nombre)** y de donde sale el numero.
+- 🔴 **No lo escribe la IA.** El texto es el mismo para todos los platos: pedirlo seria pagar una
+  y otra vez por lo mismo y arriesgar que salga distinto en cada plato. Lo unico que cambia por
+  hogar son las condiciones medicas, y esas ya las tenemos (`/api/hogar`, pedido en segundo
+  plano; si falla, la explicacion sale igual pero sin la parte de la familia).
+- **`masEsMejor` distingue los dos sentidos**: un 39% de sodio es una advertencia y un 50% de
+  proteina es una buena noticia. Sin esa marca, la misma barra se leeria igual en los dos casos.
+- El corte es la **regla del 5 y el 20** de las tablas nutricionales: <5% aporte bajo, 5-19
+  moderado, >=20 alto.
+- Las condiciones se emparejan **sin tildes y por substring** contra el texto libre que escribio
+  el usuario (`hipertension`, `presion alta`…): la lista de condiciones **no es cerrada**.
+- **La etiqueta entera es el area de toque** (32px de alto), no solo el icono ⓘ: en el telefono
+  un icono de 14px no se acierta.
+
+### "Mis compras": todo desmarcado y subtotal por pasillo (2026-08-25)
+- 🔴 **TODO arranca DESMARCADO.** Esta lista se marca **en el supermercado**, producto por
+  producto, conforme cae al carro: la marca significa *"ya lo tengo aqui"*. Darla por hecha
+  obliga a **desmarcar** lo que no encontraste, que es justo lo que uno olvida hacer — y un
+  producto marcado por inercia entra a la despensa sin haberse comprado. (El checklist de
+  *Registrar compra* de la despensa es otra cosa y ahi **si** arrancan marcados: alli se declara
+  lo que ya trajiste.) El producto que agregas **a mano** si nace marcado: lo agregas porque
+  acabas de echarlo al carro.
+- **Cada pasillo dice cuantos llevas y CUANTO llevas gastado** en el. Es en lo que uno piensa
+  mientras compra (*"las carnes ya me llevaron 80 soles"*) y el total de arriba solo no lo dice.
+  El subtotal cuenta **solo lo marcado**: desmarcar lo devuelve a cero aunque el precio siga
+  escrito.
+- ⚠️ La cuenta y el subtotal se actualizan **a mano** (`refrescarPasillo`), no repintando: un
+  repintado cerraria el acordeon y perderia el sitio donde iba el usuario. El **precio** tambien
+  los mueve, no solo el check.
+- **En el PDF cada pasillo lleva su subtotal**: calculado si ya anotaste precios, y en blanco
+  (`S/ ______`) si no, para sumarlo a mano en el mercado.
+- **La lista se arma de nuevo CADA VEZ que entras**, con los platos programados de esa semana
+  (tambien al volver a la pestana desde el historial). Y se dice en pantalla, porque es **lo
+  contrario de la despensa**: la despensa es una sola y se arrastra; esta lista no se arrastra ni
+  se guarda a medias, asi que un cambio en el plan se refleja solo.
+- Lo cubre **`npm run smoke:compras`** (gratis), que crea su propio usuario, hogar, platos y
+  semana fija: no hereda estado ni depende de la fecha en que se corra.
 
 ### Fase 6 — admin
 Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `generaciones`). Falta pulir la UI: mostrar el desglose de generaciones por tipo (menu/dia/plato/detalle/verificar) y el aviso de crédito.

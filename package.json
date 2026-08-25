@@ -12,7 +12,8 @@
     "smoke:platos": "node pruebas/smoke-platos.js",
     "smoke:plan": "node pruebas/smoke-plan.js",
     "smoke:inicio": "node pruebas/smoke-inicio.js",
-    "movil": "node pruebas/revisar-movil.js"
+    "movil": "node pruebas/revisar-movil.js",
+    "smoke:compras": "node pruebas/smoke-compras.js"
   },
   "keywords": [
     "nutricion",

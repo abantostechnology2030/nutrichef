@@ -239,6 +239,9 @@ tbody tr:hover { background: var(--bg); }
 .overlay.show { display: block; }
 
 .hidden { display: none !important; }
+/* El atributo hidden lo pisa cualquier clase que declare display (un .btn es inline-flex), asi
+   que un boton "oculto" se seguia viendo. Se le da la misma fuerza que a .hidden. */
+[hidden] { display: none !important; }
 
 /* ===== Mascota decorativa (el chef) en distintas pantallas ===== */
 /* Mascota flotante del escaner. Sin uso hoy: la que habia (p1.png) era el superheroe "N"
@@ -679,7 +682,8 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   /* El menu hamburguesa media 22x32. */
   .hamb { min-width: 44px; min-height: 44px; }
   /* La barra de stock: mas alta para poder arrastrarla con el dedo. */
-  .stock-rango { height: 30px; }
+  /* 32px: es el minimo con el que un dedo acierta el slider (lo mide npm run movil). */
+  .stock-rango { height: 32px; }
   .stock-rango::-webkit-slider-thumb { width: 26px; height: 26px; }
 }
 
@@ -751,6 +755,31 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .nutri-barra i.barra-media { background: var(--amber); }
 .nutri-barra i.barra-alta { background: var(--danger); }
 .nutri-vd { text-align: right; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+
+/* La etiqueta del nutriente es un BOTON que abre su explicacion. Se disfraza de texto para no
+   llenar la tabla de botones, pero conserva un area de toque de 32px: en el telefono, un icono
+   de 14px no se acierta. */
+.nutri-info {
+  background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit;
+  text-align: left; cursor: pointer; min-height: 32px; display: flex; align-items: center;
+  gap: 4px; flex-wrap: wrap;
+}
+.nutri-info:hover .nutri-ic, .nutri-info:focus-visible .nutri-ic { color: var(--primary); }
+.nutri-ic { color: var(--muted); font-size: 12px; }
+
+/* El dato grande dentro del modal de explicacion. */
+.nutri-dato {
+  background: var(--primary-soft); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  font-size: 13px;
+}
+.nutri-dato b { font-size: 19px; color: var(--primary); }
+.nutri-dato-vd { font-size: 12px; color: var(--muted); font-weight: 700; }
+.nutri-lectura {
+  font-size: 12.5px; line-height: 1.5; border-radius: 10px; padding: 8px 10px; margin-bottom: 12px;
+}
+.nutri-lectura.verde { background: var(--green-soft); color: #1f6b3f; }
+.nutri-lectura.ambar { background: var(--amber-soft); color: var(--amber); }
 
 @media (max-width: 480px) {
   .nutri-fila { grid-template-columns: minmax(78px, 1.2fr) auto minmax(40px, 1fr) 34px; gap: 6px; font-size: 12px; }
@@ -838,6 +867,13 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .cat-flecha { transition: transform .15s; color: var(--muted); font-size: 12px; }
 .cat-acordeon.abierta .cat-flecha { transform: rotate(90deg); }
 .cat-cuenta { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 700; white-space: nowrap; }
+/* Subtotal del pasillo: lo que llevas gastado en esa categoria. Va en verde y a la derecha del
+   todo, junto a la cuenta de marcados, que son las dos cosas que se comprueban antes de pasar
+   al siguiente pasillo del mercado. */
+.cat-subtotal {
+  font-size: 12.5px; font-weight: 800; color: var(--primary); white-space: nowrap;
+  background: var(--primary-soft); border-radius: 999px; padding: 2px 8px;
+}
 .cat-cuerpo { display: none; padding: 10px; gap: 6px; flex-direction: column; }
 .cat-acordeon.abierta .cat-cuerpo { display: flex; }
 
@@ -870,12 +906,41 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   .barra-acciones .btn-copiar { flex: 1 1 100%; }
 }
 
-/* Los tres pasos del plan de comidas. La pantalla tiene muchos botones y sin esto no se sabe
-   por donde empezar; van numerados porque el orden importa. */
+/* Los tres pasos del plan de comidas. Van en su propia tarjeta AMARILLA y arriba del todo:
+   dentro de la tarjeta del selector, entre siete botones, no se leian. */
+.instrucciones {
+  background: var(--amber-soft); border-color: #ffe2b8;
+}
+.instrucciones h3 { color: var(--amber); margin-bottom: 2px; font-size: 16px; }
 .pasos-plan {
-  margin: 12px 0 0; padding: 10px 12px 10px 30px; list-style: decimal;
-  background: var(--white); border: 1px solid var(--line); border-radius: 12px;
-  font-size: 12.5px; line-height: 1.6; color: var(--muted);
+  margin: 8px 0 0; padding: 0 0 0 22px; list-style: decimal;
+  font-size: 13px; line-height: 1.65; color: var(--muted);
 }
 .pasos-plan li { margin-bottom: 2px; }
 .pasos-plan b { color: var(--ink); }
+
+/* Filtros de "Mis platos". Con una biblioteca de decenas de platos, buscar por nombre no basta:
+   hay que poder preguntar "que desayunos tengo", "cuales escribi yo" o "cuales nunca use".
+   Se envuelven en vez de encogerse: un select de 90px no deja leer su opcion. */
+.filtros-platos {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
+}
+.filtros-platos .input { flex: 1 1 175px; min-width: 0; width: auto; font-size: 13px; }
+.filtros-platos #buscar { flex: 2 1 220px; }
+.filtros-platos .btn { flex: 0 0 auto; }
+
+/* Paginacion. Separada de la lista por una linea para que no se lea como un plato mas. */
+.paginacion {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+  font-size: 13px; flex-wrap: wrap;
+}
+.paginacion .btn[disabled] { opacity: .45; cursor: default; }
+
+@media (max-width: 760px) {
+  /* En el telefono cada filtro ocupa media fila: a 175px cabria uno solo por linea y la barra
+     se comeria la pantalla antes de llegar a los platos. */
+  .filtros-platos .input { flex: 1 1 calc(50% - 4px); }
+  .filtros-platos #buscar { flex: 1 1 100%; }
+  .filtros-platos .btn { flex: 1 1 100%; }
+}

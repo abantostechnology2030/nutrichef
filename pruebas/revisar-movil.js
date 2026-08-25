@@ -124,7 +124,7 @@ const REVISION = `(() => {
 })()`;
 
 (async () => {
-  const paginas = (process.argv[2] || 'despensa.html,plan.html,inicio.html,platos.html,hogar.html,app.html,mi-plan.html')
+  const paginas = (process.argv[2] || 'despensa.html,plan.html,inicio.html,platos.html,compras.html,hogar.html,app.html,mi-plan.html')
     .split(',').map((s) => s.trim()).filter(Boolean);
 
   const L = await (await fetch(BASE + '/api/auth/login', {

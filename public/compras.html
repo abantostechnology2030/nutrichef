@@ -39,6 +39,13 @@
               La lista sale de los platos que tienes programados. Ve marcando lo que compras y,
               si quieres, anota el precio para llevar la cuenta.
             </p>
+            <!-- Se dice explicitamente porque es lo contrario de la despensa: la despensa es UNA
+                 y se arrastra, y esta lista NO se arrastra ni se guarda a medias. -->
+            <p class="muted" style="font-size:12.5px;margin-bottom:12px;background:var(--amber-soft);color:var(--amber);border:1px solid #ffe2b8;border-radius:10px;padding:8px 10px">
+              🔄 <b>Esta lista se arma de nuevo cada vez que entras</b>, con los platos que tengas
+              programados en la semana elegida. Si cambias un plato, vuelve aquí y la lista ya
+              estará al día. (Tu despensa, en cambio, es una sola y se mantiene.)
+            </p>
 
             <div class="row campos-compra" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
               <div class="field" style="margin:0"><label>Semana</label>
@@ -127,7 +134,7 @@
       document.getElementById('panel-historial').classList.toggle('hidden', cual !== 'historial');
       if (cual === 'historial') cargarHistorial();
     }
-    document.getElementById('t-lista').onclick = () => verTab('lista');
+    document.getElementById('t-lista').onclick = () => { verTab('lista'); cargarLista(); };
     document.getElementById('t-historial').onclick = () => verTab('historial');
 
     // ===== La lista =====
@@ -150,9 +157,12 @@
           // se hace mirando la lista en el mercado ("¿y esto para que era?").
           platos: i.platos || [],
           precio: '',
-          // Arrancan MARCADOS los que te faltan y desmarcado lo que ya tienes: es lo que de
-          // verdad vas a comprar. Con la despensa apagada no hay "falta", así que van todos.
-          comprado: U.despensa_activa ? !!i.falta : true,
+          // TODO arranca DESMARCADO. Esta lista se marca EN EL SUPERMERCADO, producto por
+          // producto, conforme cae al carrito: la marca significa "ya lo tengo aqui", y darla
+          // por hecha de entrada obliga a desmarcar lo que no encontraste, que es justo lo que
+          // uno olvida hacer. (El checklist de "Registrar compra" de la despensa es otra cosa
+          // y ahi si arrancan marcados: alli se declara lo que ya trajiste.)
+          comprado: false,
         }));
         PLATOS = d.platos_semana || [];
         pintarLista();
@@ -177,6 +187,9 @@
       cont.innerHTML = Object.keys(porCat).map((cat) => {
         const items = porCat[cat];
         const marcados = items.filter((x) => x.comprado).length;
+        // Subtotal del pasillo = lo MARCADO de ese pasillo. Es en lo que uno piensa mientras
+        // compra ("las carnes ya me llevaron 80 soles"), y el total de arriba solo no lo dice.
+        const sub = items.reduce((n, x) => n + (x.comprado ? (parseFloat(x.precio) || 0) : 0), 0);
         const abierta = ABIERTAS.has(cat);
         return `
         <div class="cat-acordeon ${abierta ? 'abierta' : ''}" data-cat="${cat}">
@@ -184,6 +197,7 @@
             <span class="cat-flecha">▸</span>
             ${chipCategoria(cat)}
             <span class="cat-cuenta">${marcados} de ${items.length}</span>
+            <span class="cat-subtotal">${soles(sub)}</span>
           </button>
           <div class="cat-cuerpo">
             ${items.map((it) => `
@@ -230,9 +244,25 @@
       }
     }
 
+    // La cuenta y el subtotal del pasillo se actualizan A MANO en vez de repintar la lista:
+    // repintar cerraria el acordeon y perderia el sitio donde iba el usuario.
+    function refrescarPasillo(caja) {
+      if (!caja) return;
+      const idx = [...caja.querySelectorAll('input[data-check]')].map((c) => Number(c.dataset.check));
+      const marcados = idx.filter((i) => ITEMS[i] && ITEMS[i].comprado);
+      const sub = marcados.reduce((n, i) => n + (parseFloat(ITEMS[i].precio) || 0), 0);
+      caja.querySelector('.cat-cuenta').textContent = `${marcados.length} de ${idx.length}`;
+      caja.querySelector('.cat-subtotal').textContent = soles(sub);
+    }
+
     document.getElementById('lista-productos').addEventListener('input', (e) => {
       const t = e.target;
-      if (t.dataset.precio !== undefined) { ITEMS[t.dataset.precio].precio = t.value; totalizar(); }
+      if (t.dataset.precio !== undefined) {
+        ITEMS[t.dataset.precio].precio = t.value;
+        // El precio tambien mueve el subtotal de su pasillo, no solo el total de arriba.
+        refrescarPasillo(t.closest('.cat-acordeon'));
+        totalizar();
+      }
       if (t.dataset.cant !== undefined) ITEMS[t.dataset.cant].cantidad = t.value;
     });
     document.getElementById('lista-productos').addEventListener('change', (e) => {
@@ -240,14 +270,7 @@
       if (t.dataset.check !== undefined) {
         ITEMS[t.dataset.check].comprado = t.checked;
         t.closest('.compra-fila').classList.toggle('marcada', t.checked);
-        // Se actualiza el contador del pasillo a mano en vez de repintar: repintar cerraria el
-        // acordeon y perderia el sitio donde iba el usuario.
-        const caja = t.closest('.cat-acordeon');
-        if (caja) {
-          const n = caja.querySelectorAll('input[data-check]:checked').length;
-          const tot = caja.querySelectorAll('input[data-check]').length;
-          caja.querySelector('.cat-cuenta').textContent = `${n} de ${tot}`;
-        }
+        refrescarPasillo(t.closest('.cat-acordeon'));
         totalizar();
       }
     });
@@ -298,6 +321,8 @@
     document.getElementById('btn-agregar').onclick = async () => {
       const nombre = await pedirTexto('Agregar producto', 'Nombre del producto', 'Ej: Papel toalla');
       if (!nombre) return;
+      // Este si nace marcado: se agrega a mano porque acabas de echarlo al carro (no estaba en
+      // el plan). Agregarlo y tener que marcarlo despues seria un clic sin sentido.
       ITEMS.push({ nombre, categoria: 'otro', cantidad: '', precio: '', comprado: true });
       pintarLista();
     };
@@ -493,7 +518,16 @@
             doc.setTextColor(150); doc.text('S/ __________', W - M - 90, y); doc.setTextColor(30);
             y += 17;
           }
-          y += 6;
+          // Subtotal del pasillo. En papel va en blanco (se suma a mano en el mercado); si ya
+          // anotaste precios en la pantalla, sale calculado. Es el mismo dato que la cabecera
+          // del acordeon, para que el PDF y la pantalla no digan cosas distintas.
+          const sub = porCat[cat].reduce((n2, x) => n2 + (x.comprado ? (parseFloat(x.precio) || 0) : 0), 0);
+          doc.setFont('helvetica', 'bold'); doc.setTextColor(90); doc.setFontSize(9);
+          doc.text(sub > 0 ? `Subtotal  S/ ${sub.toFixed(2)}` : 'Subtotal  S/ __________', W - M - 120, y);
+          doc.setFont('helvetica', 'normal'); doc.setTextColor(30); doc.setFontSize(10);
+          y += 12;
+          doc.setDrawColor(232); doc.line(M, y, W - M, y);
+          y += 12;
         }
 
         doc.setDrawColor(210); doc.line(M, y, W - M, y); y += 16;

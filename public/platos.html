@@ -41,14 +41,46 @@
         <div class="card">
           <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
             <h3>Guardados <span class="muted" id="cont" style="font-weight:400;font-size:14px"></span></h3>
-            <div class="row" style="gap:8px;flex-wrap:wrap">
-              <input id="buscar" class="input" placeholder="Buscar por nombre…" style="width:auto" />
-              <select id="filtro-momento" class="input" style="width:auto">
-                <option value="">Todos los momentos</option>
-              </select>
-            </div>
           </div>
+
+          <!-- Los filtros los resuelve el SERVIDOR (ver la ruta): en pantalla solo hay una
+               pagina, asi que filtrar aqui contaria sobre 12 platos y no sobre la biblioteca. -->
+          <div class="filtros-platos">
+            <input id="buscar" class="input" placeholder="🔎 Buscar por nombre…" />
+            <select id="filtro-momento" class="input" title="Desayuno, almuerzo o cena">
+              <option value="">🍽️ Momento</option>
+            </select>
+            <select id="filtro-origen" class="input" title="Los que escribiste tú o los que generó la IA">
+              <option value="">👤 Origen</option>
+              <option value="mio">✍️ Míos</option>
+              <option value="ia">✨ De la IA</option>
+            </select>
+            <select id="filtro-uso" class="input" title="Si ya los pusiste alguna vez en el calendario">
+              <option value="">📅 Uso</option>
+              <option value="en_plan">📅 Programados</option>
+              <option value="sin_usar">💤 Sin usar</option>
+            </select>
+            <select id="filtro-dificultad" class="input" title="Qué tan fácil es prepararlo">
+              <option value="">🔥 Dificultad</option>
+              <option value="facil">🟢 Fácil</option>
+              <option value="media">🟡 Media</option>
+              <option value="dificil">🔴 Difícil</option>
+            </select>
+            <select id="filtro-orden" class="input" title="En qué orden se listan">
+              <option value="reciente">🕒 Recientes</option>
+              <option value="antiguo">🕘 Antiguos</option>
+              <option value="nombre">🔤 Por nombre</option>
+              <option value="tiempo">⏱️ Más rápidos</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="btn-limpiar" type="button" hidden>✕ Quitar filtros</button>
+          </div>
+
           <div id="lista" class="stack"><p class="muted">Cargando…</p></div>
+          <div class="paginacion" id="paginacion" hidden>
+            <button class="btn btn-ghost btn-sm" id="pag-antes" type="button">‹ Anterior</button>
+            <span class="muted" id="pag-txt"></span>
+            <button class="btn btn-ghost btn-sm" id="pag-sigue" type="button">Siguiente ›</button>
+          </div>
         </div>
       </div>
     </div>
@@ -66,6 +98,11 @@
 
     const al = document.getElementById('alerta');
     let PLATOS = [];
+    // Cuantos platos entran en una pagina. 12 llena la pantalla sin obligar a bajar mucho, y
+    // deja la paginacion en 6 paginas para una biblioteca de ~70 platos.
+    const POR_PAGINA = 12;
+    let PAGINA = 1;
+    let META = { total: 0, paginas: 1, resumen: { total: 0, mios: 0, ia: 0, en_plan: 0, sin_usar: 0 } };
     let LIMITE = { max: null, usados: 0, ilimitado: true, restantes: null };
     let MOMENTOS = [];
     let DIFICULTADES = [];
@@ -135,37 +172,89 @@
         </div>`;
     }
 
+    // Que filtros hay puestos ahora mismo (el buscador cuenta como uno).
+    function filtrosPuestos() {
+      return ['buscar', 'filtro-momento', 'filtro-origen', 'filtro-uso', 'filtro-dificultad']
+        .some((id) => document.getElementById(id).value.trim());
+    }
+
     function pintar() {
       const cont = document.getElementById('lista');
-      document.getElementById('cont').textContent = PLATOS.length ? `· ${PLATOS.length}` : '';
+      const desde = (PAGINA - 1) * POR_PAGINA + 1;
+      const hasta = desde + PLATOS.length - 1;
+      // "1-12 de 28" y no solo "28": con paginacion, un contador que no dice CUALES estas viendo
+      // hace pensar que la pagina 2 son otros 12 platos ademas de los 28.
+      document.getElementById('cont').textContent = META.total
+        ? (META.total > PLATOS.length ? `· ${desde}-${hasta} de ${META.total}` : `· ${META.total}`)
+        : '';
+      document.getElementById('btn-limpiar').hidden = !filtrosPuestos();
       pintarPill();
+      pintarPaginacion();
 
       if (!PLATOS.length) {
-        cont.innerHTML = `<p class="muted">
-          Todavía no guardas ningún plato. Crea uno con “+ Nuevo plato”, o guarda los que te
-          gusten del <a href="/plan.html" style="color:var(--primary);font-weight:600">plan de comidas</a>.
-        </p>`;
+        // Sin platos y sin resultados NO son lo mismo: al segundo se le ofrece quitar los
+        // filtros, no crear un plato que ya podria tener.
+        cont.innerHTML = filtrosPuestos()
+          ? `<p class="muted">Ningún plato de tu biblioteca coincide con lo que buscas.
+               <button class="btn btn-ghost btn-sm" type="button" data-limpiar>Quitar los filtros</button></p>`
+          : `<p class="muted">
+              Todavía no guardas ningún plato. Crea uno con “+ Nuevo plato”, o guarda los que te
+              gusten del <a href="/plan.html" style="color:var(--primary);font-weight:600">plan de comidas</a>.
+            </p>`;
         return;
       }
       cont.innerHTML = PLATOS.map(tarjeta).join('');
     }
 
+    function pintarPaginacion() {
+      const caja = document.getElementById('paginacion');
+      caja.hidden = META.paginas <= 1;
+      if (caja.hidden) return;
+      document.getElementById('pag-txt').textContent = `Página ${PAGINA} de ${META.paginas}`;
+      document.getElementById('pag-antes').disabled = PAGINA <= 1;
+      document.getElementById('pag-sigue').disabled = PAGINA >= META.paginas;
+    }
+
+    // Los conteos de la biblioteca entera van en las propias opciones: asi se sabe que hay
+    // detras de cada filtro sin tener que probarlos uno por uno.
+    function etiquetarFiltros() {
+      const r = META.resumen || {};
+      const poner = (sel, valor, txt) => {
+        const o = document.querySelector(`#${sel} option[value="${valor}"]`);
+        if (o) o.textContent = txt;
+      };
+      poner('filtro-origen', 'mio', `✍️ Míos (${r.mios || 0})`);
+      poner('filtro-origen', 'ia', `✨ De la IA (${r.ia || 0})`);
+      poner('filtro-uso', 'en_plan', `📅 Programados (${r.en_plan || 0})`);
+      poner('filtro-uso', 'sin_usar', `💤 Sin usar (${r.sin_usar || 0})`);
+    }
+
     async function cargar() {
-      const q = document.getElementById('buscar').value.trim();
-      const momento = document.getElementById('filtro-momento').value;
       const params = new URLSearchParams();
-      if (q) params.set('q', q);
-      if (momento) params.set('momento', momento);
+      const val = (id) => document.getElementById(id).value.trim();
+      if (val('buscar')) params.set('q', val('buscar'));
+      if (val('filtro-momento')) params.set('momento', val('filtro-momento'));
+      if (val('filtro-origen')) params.set('origen', val('filtro-origen'));
+      if (val('filtro-uso')) params.set('uso', val('filtro-uso'));
+      if (val('filtro-dificultad')) params.set('dificultad', val('filtro-dificultad'));
+      params.set('orden', val('filtro-orden') || 'reciente');
+      params.set('por_pagina', POR_PAGINA);
+      params.set('pagina', PAGINA);
 
       try {
-        const r = await api(`/api/platos${params.toString() ? '?' + params : ''}`);
+        const r = await api(`/api/platos?${params}`);
         PLATOS = r.platos;
+        // El servidor topa la pagina contra el total: al filtrar estando en la 4 quedarian 2, y
+        // hay que quedarse con la que de verdad se devolvio o los botones irian a otra parte.
+        PAGINA = r.pagina || 1;
+        META = { total: r.total ?? r.platos.length, paginas: r.paginas || 1, resumen: r.resumen || META.resumen };
+        etiquetarFiltros();
         LIMITE = r.limite;
         if (!MOMENTOS.length) {
           MOMENTOS = r.momentos;
           DIFICULTADES = r.dificultades;
           document.getElementById('filtro-momento').innerHTML =
-            '<option value="">Todos los momentos</option>' +
+            '<option value="">🍽️ Momento</option>' +
             MOMENTOS.map((m) => `<option value="${m}">${MOMENTO_INFO[m].ic} ${MOMENTO_INFO[m].txt}</option>`).join('');
         }
         pintar();
@@ -175,12 +264,36 @@
       }
     }
 
+    // Cualquier filtro devuelve a la pagina 1: seguir en la 3 despues de filtrar deja al usuario
+    // mirando una lista vacia aunque haya resultados.
+    function desdeElPrincipio() { PAGINA = 1; cargar(); }
+
     let debounce;
-    document.getElementById('buscar').oninput = () => { clearTimeout(debounce); debounce = setTimeout(cargar, 250); };
-    document.getElementById('filtro-momento').onchange = cargar;
+    document.getElementById('buscar').oninput = () => { clearTimeout(debounce); debounce = setTimeout(desdeElPrincipio, 250); };
+    for (const id of ['filtro-momento', 'filtro-origen', 'filtro-uso', 'filtro-dificultad', 'filtro-orden']) {
+      document.getElementById(id).onchange = desdeElPrincipio;
+    }
+
+    function limpiarFiltros() {
+      for (const id of ['buscar', 'filtro-momento', 'filtro-origen', 'filtro-uso', 'filtro-dificultad']) {
+        document.getElementById(id).value = '';
+      }
+      desdeElPrincipio();
+    }
+    document.getElementById('btn-limpiar').onclick = limpiarFiltros;
+
+    function irAPagina(n) {
+      PAGINA = Math.min(META.paginas, Math.max(1, n));
+      // scrollIntoView no existe en jsdom (donde corren los smokes) y su ausencia no debe tumbar
+      // la navegacion: subir al principio de la lista es una cortesia, no la funcion.
+      cargar().then(() => document.getElementById('lista').scrollIntoView?.({ behavior: 'smooth', block: 'start' }));
+    }
+    document.getElementById('pag-antes').onclick = () => irAPagina(PAGINA - 1);
+    document.getElementById('pag-sigue').onclick = () => irAPagina(PAGINA + 1);
 
     // ===== Acciones de cada tarjeta =====
     document.getElementById('lista').addEventListener('click', async (e) => {
+      if (e.target.closest('[data-limpiar]')) return limpiarFiltros();
       const ver = e.target.closest('[data-ver]');
       const editar = e.target.closest('[data-editar]');
       const borrar = e.target.closest('[data-borrar]');
