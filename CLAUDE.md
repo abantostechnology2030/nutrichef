@@ -107,6 +107,7 @@ src/
     analisis.routes.js   # escaner: /texto (cache-first), /imagen (2 fotos), /historial, DELETE
     hogar.routes.js      # hogar + CRUD de integrantes + interruptor de la despensa
     despensa.routes.js   # inventario (alta inmediata) + /compra (snapshot por periodo) + /compras (historial, con borrado)
+    compras.routes.js    # "Mis compras": precios, presupuesto, gasto e historico
     plan.routes.js       # calendario 7x3 + /generar (POR DIA) + /verificar + /detallar + /copiar + /faltantes y /necesidad
     platos.routes.js     # biblioteca: CRUD de platos manuales + guardar/quitar (tope platos_max)
     pagos.routes.js      # info del paywall (incl. yape_qr) + comprobante Yape + /historial
@@ -121,6 +122,7 @@ public/
   app.html               # ESCANER de productos (semaforo)
   hogar.html             # familia, condiciones medicas, alergias, region
   despensa.html          # ver la despensa (buscar) + registrar compra (agregar producto + marcar comprados)
+  compras.html           # MIS COMPRAS: lista para el super (cantidad, precio, check), PDF e historico
   plan.html              # CALENDARIO 7x3 + boton "Generar dia" con IA en cada dia
   platos.html            # "Mis platos": la biblioteca (crear/editar/borrar recetas)
   mi-plan.html           # "Mi suscripcion": planes y pago Yape
@@ -811,6 +813,22 @@ Botón **"✨ Generar la semana"** que pregunta **días** (L–D) y **comidas** 
 - **`info.recomendaciones`** son avisos POR INTEGRANTE (con su nombre) y van **arriba y en su propia caja**: en un hogar con diabetes o hipertensión es lo más importante de esa pantalla, y entre los números no se leen.
 - **Sodio y sal se pintan en ámbar sobre el 20% del VD y en rojo sobre el 40%.** El resto no cambia de color: destacar todo es no destacar nada.
 - **Los platos viejos siguen funcionando:** `nutrientes` es opcional y, si no está, se muestran las etiquetas `alto/medio/bajo` de antes. El techo de tokens por casilla subió de **1600 a 2000** por estos campos.
+
+### Mis compras: gasto, precios y presupuesto (2026-08-25)
+Pagina propia (compras.html + compras.routes.js). Es OTRA forma de registrar la compra, la que se usa **de pie en el supermercado**: se marca producto por producto, con cantidad y precio.
+
+- **Convive con "Registrar compra" de la despensa**, que es un checklist rapido de lo que trajiste. Esta sirve para otra cosa: **llevar la cuenta del gasto**.
+- **Se asocia a la despensa** (lo marcado entra al inventario) **pero el registro se guarda siempre**, tenga el usuario la despensa activa o no: llevar la cuenta de lo que gasta no deberia depender de si lleva inventario. Por eso "Mis compras" tampoco desaparece del menu.
+- **La lista sale de `/api/plan/necesidad`**, no de `/faltantes`: en el supermercado uno decide sobre la lista COMPLETA, reponga o no. Arrancan marcados los que faltan (o todos, si no hay despensa).
+- **El precio es opcional.** Un texto que no sea numero se guarda como *sin precio*, **no como 0**: un 0 falso ensuciaria el total y el usuario creeria que gasto menos. Por eso el historial avisa cuando hay comprados sin precio — un total bajo puede significar "gaste poco" o "no anote".
+- **El total se SUMA de los items, no se guarda.** Los items se pueden corregir despues y un total guardado se quedaria viejo sin que nadie lo note.
+- **`compras.presupuesto`**: lo que pensaba gastar esa semana. La barra de totales va **pegada arriba** (sticky) porque es el numero que se mira empujando el carrito, y se pinta en verde mientras quede y en rojo al pasarse.
+- **PDF** con el logo, la fecha, el **resumen de platos a preparar** (le da sentido a la lista) y una casilla `[ ]` por producto con su cantidad y un espacio para el precio: se imprime o se mira sin conexion, asi que tiene que servir en papel.
+
+### Todo plato generado se guarda en la biblioteca (2026-08-25)
+`crearPlato()` nace con **`guardado = 1`** tambien para las casillas del calendario. Antes nacia suelto y `limpiarPlatoHuerfano()` lo borraba al sacarlo del plan: un plato bueno se perdia salvo que el usuario se acordara de pulsar la estrella.
+
+⚠️ **Y por eso `platos_max` dejo de contarlos.** `guardadosDe()` cuenta solo `origen = 'manual'`. Si contara los generados, un usuario Free (5) se quedaria sin poder crear nada tras generar dos dias, y el tope dejaria de medir lo que pretende medir. Lo que produce la IA ya esta limitado por `generaciones_max`.
 
 ### Fase 6 — admin
 Backend listo (catálogo de ingredientes + costo sumando `analisis` UNION `generaciones`). Falta pulir la UI: mostrar el desglose de generaciones por tipo (menu/dia/plato/detalle/verificar) y el aviso de crédito.

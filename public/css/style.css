@@ -776,3 +776,51 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .chip-check input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
 .chip-check:hover { border-color: var(--primary); }
 .chip-check:has(input:checked) { background: var(--green-soft); border-color: var(--primary); }
+
+/* ===== Mis compras: la lista que se marca en el supermercado ===== */
+/* Barra de totales pegada arriba: es el numero que se mira empujando el carrito, y con la
+   lista larga se perderia al hacer scroll. */
+.totales-barra {
+  position: sticky; top: 0; z-index: 5;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  background: var(--white); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; margin-top: 12px;
+}
+.totales-barra > div { display: flex; flex-direction: column; min-width: 0; }
+.totales-barra .muted { font-size: 11px; }
+.totales-barra b { font-size: 15px; line-height: 1.2; }
+.totales-barra .dif-ok b, .dif-ok b { color: var(--green); }
+.totales-barra .dif-mal b, .dif-mal b { color: var(--danger); }
+
+.compra-fila {
+  display: grid; grid-template-columns: 1fr 110px 120px auto; gap: 8px; align-items: center;
+  border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: var(--white);
+}
+.compra-fila.marcada { background: var(--green-soft); border-color: #bfe6cd; }
+.compra-check { display: flex; align-items: center; gap: 8px; cursor: pointer; min-width: 0; }
+.compra-check input { width: 22px; height: 22px; flex-shrink: 0; accent-color: var(--primary); cursor: pointer; }
+.compra-ic { font-size: 20px; line-height: 1; flex-shrink: 0; }
+.compra-nombre { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.compra-cant { padding: 6px 9px !important; font-size: 12.5px !important; }
+.compra-precio { display: flex; align-items: center; gap: 4px; font-size: 12.5px; }
+.compra-precio input { padding: 6px 9px !important; font-size: 12.5px !important; width: 100%; }
+
+@media (max-width: 760px) {
+  /* En el telefono la fila pasa a dos lineas: nombre arriba, cantidad y precio abajo. En una
+     sola linea los campos quedaban en 40px y no se podia escribir. */
+  .compra-fila { grid-template-columns: 1fr auto; grid-template-areas: "check quitar" "cant precio"; }
+  .compra-check { grid-area: check; }
+  .compra-cant { grid-area: cant; }
+  .compra-precio { grid-area: precio; }
+  .compra-fila > .btn-danger { grid-area: quitar; }
+  .totales-barra { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* En movil los 4 campos de la compra (semana, hasta, fecha, presupuesto) se apilaban uno por
+   fila y empujaban la lista fuera de la pantalla: hay que hacer mucho scroll antes de poder
+   marcar nada. De dos en dos se llega a la lista de inmediato. */
+@media (max-width: 760px) {
+  .campos-compra { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .campos-compra .field { margin: 0; min-width: 0; }
+  .campos-compra .input { width: 100% !important; }
+}

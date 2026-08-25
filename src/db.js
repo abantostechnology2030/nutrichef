@@ -282,6 +282,11 @@ for (const [col, tipo] of [
 if (!db.prepare('PRAGMA table_info(compras)').all().some((c) => c.name === 'fecha')) {
   db.exec('ALTER TABLE compras ADD COLUMN fecha TEXT');
 }
+// presupuesto: cuanto pensaba gastar el usuario esa semana (soles). Sirve para compararlo con
+// lo que gasto de verdad, que es la suma de los precios de sus items. NULL = no lo fijo.
+if (!db.prepare('PRAGMA table_info(compras)').all().some((c) => c.name === 'presupuesto')) {
+  db.exec('ALTER TABLE compras ADD COLUMN presupuesto REAL');
+}
 
 // ===== DESPENSA (inventario por PORCENTAJE de lo que queda) =====
 // porcentaje = 0..100 de lo que le queda de ese producto. Es la FUENTE DE VERDAD y la

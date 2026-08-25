@@ -390,7 +390,21 @@ router.get('/faltantes', (req, res) => {
 router.get('/necesidad', (req, res) => {
   const v = ventanaPedida(req.usuario.id, req.query || {});
   if (!v) return res.status(404).json({ error: 'Compra no encontrada.' });
-  res.json({ ...v, ...consolidarPlan(req.usuario.id, v.inicio, v.fin, { soloFaltantes: false }) });
+  // Los NOMBRES de los platos de esa ventana. Van en la misma respuesta porque quien pide la
+  // lista de compras casi siempre quiere saber para que es: el PDF los imprime como "platos a
+  // preparar", y pedirlos en otra llamada seria una peticion mas para el mismo momento.
+  const platos = db.prepare(
+    `SELECT DISTINCT p.nombre, pc.semana, pc.dia
+     FROM plan_comidas pc JOIN platos p ON p.id = pc.plato_id
+     WHERE pc.usuario_id = ?`
+  ).all(req.usuario.id)
+    .filter((r) => fechaCasilla(r.semana, r.dia) >= v.inicio && fechaCasilla(r.semana, r.dia) <= v.fin)
+    .map((r) => r.nombre);
+  res.json({
+    ...v,
+    ...consolidarPlan(req.usuario.id, v.inicio, v.fin, { soloFaltantes: false }),
+    platos_semana: [...new Set(platos)],
+  });
 });
 
 // ===== Aporte nutricional (platos.info) =====
@@ -818,7 +832,10 @@ router.post('/generar', requiereHogar, async (req, res) => {
       const idx = platoDe(i, c, usados);
       if (idx === -1) return;
       usados.add(idx);
-      const platoId = crearPlato(usuario.id, platos[idx], c.momento, ctx.hogar.comensales, ctx.hogar.region);
+      // guardado=1: TODO plato generado entra en "Mis platos" para poder reutilizarlo. Antes
+      // nacia suelto y se borraba al salir del calendario (limpiarPlatoHuerfano), asi que un
+      // plato bueno se perdia salvo que el usuario se acordara de pulsar la estrella.
+      const platoId = crearPlato(usuario.id, platos[idx], c.momento, ctx.hogar.comensales, ctx.hogar.region, 'ia', 1);
       if (!platoId) return; // casilla que la IA no devolvio: se deja como estaba, no se rompe el resto
       ponerEnCasilla(usuario.id, semana, c.dia, c.momento, platoId, ctx.hogar.comensales);
       n++;
@@ -1059,7 +1076,7 @@ router.post('/verificar', requiereHogar, async (req, res) => {
       const platoId = crearPlato(
         usuario.id,
         { ...p, nombre: p?.nombre || c.nombre },
-        c.momento, ctx.hogar.comensales, ctx.hogar.region, 'propuesto'
+        c.momento, ctx.hogar.comensales, ctx.hogar.region, 'propuesto', 1
       );
       if (!platoId) return;
       ponerEnCasilla(usuario.id, semana, c.dia, c.momento, platoId, ctx.hogar.comensales);

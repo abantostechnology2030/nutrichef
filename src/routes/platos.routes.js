@@ -23,9 +23,16 @@ const DIFICULTADES = ['facil', 'media', 'dificil'];
 const normMomento = (v) => (MOMENTOS.includes(String(v || '').toLowerCase()) ? String(v).toLowerCase() : null);
 const normDificultad = (v) => (DIFICULTADES.includes(String(v || '').toLowerCase()) ? String(v).toLowerCase() : null);
 
-// Cuantos platos tiene el usuario en su biblioteca (lo que cuenta contra platos_max).
+// Cuantos platos CREO EL USUARIO (lo unico que cuenta contra platos_max).
+//
+// Desde 2026-08-25 todo plato generado por la IA queda guardado en la biblioteca para poder
+// reutilizarlo. Si esos contaran contra el tope, un usuario Free (5) se quedaria sin poder
+// crear nada en cuanto generara dos dias, y el tope dejaria de medir lo que pretende medir.
+//
+// Lo que la IA produce ya esta limitado por otro lado: generaciones_max por semana. El tope de
+// la biblioteca mide lo que el usuario escribe o guarda a mano.
 const guardadosDe = (usuarioId) =>
-  db.prepare('SELECT COUNT(*) c FROM platos WHERE usuario_id = ? AND guardado = 1').get(usuarioId).c;
+  db.prepare("SELECT COUNT(*) c FROM platos WHERE usuario_id = ? AND guardado = 1 AND origen = 'manual'").get(usuarioId).c;
 
 // Estado del tope de la biblioteca, en la forma que espera el front. Se calcula AQUI y no en
 // cada ruta: el GET y la ruta de generar deben devolver exactamente el mismo objeto.

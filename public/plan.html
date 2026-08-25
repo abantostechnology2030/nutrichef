@@ -58,6 +58,8 @@
                    13/07 y las barras te hablaban del 27/07. -->
               <button class="btn btn-ghost btn-sm" id="btn-despensa"
                 title="Abre tu despensa con lo que se lleva la semana que estás viendo">🧺 Ver mi despensa</button>
+              <button class="btn btn-ghost btn-sm" id="btn-compras"
+                title="Arma la lista de esta semana, marcala en el supermercado y anota precios">🧾 Compras de la semana</button>
               <button class="btn btn-ghost btn-sm" id="btn-copiar">📋 Copiar otra semana</button>
             </div>
           </div>
@@ -964,6 +966,12 @@
     }
     document.getElementById('btn-despensa').onclick = () => {
       location.href = `/despensa.html?inicio=${semana}&fin=${sumar(semana, 6)}`;
+    };
+
+    // Lleva a "Mis compras" con LA SEMANA QUE SE ESTA VIENDO, igual que el boton de la
+    // despensa: la lista se arma de los platos de esa semana, no de la semana actual.
+    document.getElementById('btn-compras').onclick = () => {
+      location.href = `/compras.html?inicio=${semana}&fin=${sumar(semana, 6)}`;
     };
 
     // ===== Copiar semana =====

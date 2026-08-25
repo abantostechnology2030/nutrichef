@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NutriChefIA — Mis compras</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" type="image/png" href="/img/favicon.png?v=2" />
+  <link rel="apple-touch-icon" href="/img/favicon.png?v=2" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#124819" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="overlay"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="hamb">☰</button>
+        <h2>Mis compras</h2>
+        <div class="spacer"></div>
+        <span class="analisis-pill" id="pill-compras">…</span>
+      </header>
+
+      <div class="content stack">
+        <div class="scan-tabs" style="max-width:520px">
+          <button id="t-lista" class="active">🛒 Lista de compra</button>
+          <button id="t-historial">📊 Historial y gastos</button>
+        </div>
+
+        <!-- ===== LISTA: se marca en el supermercado ===== -->
+        <div id="panel-lista" class="stack">
+          <div id="alerta-lista" class="alert"></div>
+
+          <div class="card card-verde">
+            <h3 style="margin-bottom:4px">🛒 Compra de la semana</h3>
+            <p class="muted" style="font-size:13px;margin-bottom:12px">
+              La lista sale de los platos que tienes programados. Ve marcando lo que compras y,
+              si quieres, anota el precio para llevar la cuenta.
+            </p>
+
+            <div class="row campos-compra" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+              <div class="field" style="margin:0"><label>Semana</label>
+                <input id="c-inicio" type="date" class="input" style="width:auto" /></div>
+              <div class="field" style="margin:0"><label>Hasta</label>
+                <input id="c-fin" type="date" class="input" style="width:auto" /></div>
+              <div class="field" style="margin:0"><label>Fecha de compra</label>
+                <input id="c-fecha" type="date" class="input" style="width:auto" /></div>
+              <div class="field" style="margin:0"><label>Presupuesto semanal (S/)</label>
+                <input id="c-presupuesto" type="number" step="0.10" min="0" placeholder="Ej: 250" class="input" style="width:auto" /></div>
+            </div>
+
+            <!-- El resumen del gasto va ARRIBA y fijo: es el numero por el que se mira esta
+                 pantalla mientras se empuja el carrito. -->
+            <div class="totales-barra" id="totales">
+              <div><span class="muted">Marcados</span><b id="t-marcados">0</b></div>
+              <div><span class="muted">Gastado</span><b id="t-gastado">S/ 0.00</b></div>
+              <div><span class="muted">Presupuesto</span><b id="t-presu">—</b></div>
+              <div id="t-dif-caja"><span class="muted">Diferencia</span><b id="t-dif">—</b></div>
+            </div>
+
+            <div class="row" style="gap:8px;flex-wrap:wrap;margin:12px 0">
+              <button class="btn btn-ghost btn-sm" id="btn-todos" type="button">Marcar todos</button>
+              <button class="btn btn-ghost btn-sm" id="btn-ninguno" type="button">Desmarcar todos</button>
+              <button class="btn btn-ghost btn-sm" id="btn-agregar" type="button">+ Agregar producto</button>
+              <button class="btn btn-ghost btn-sm" id="btn-pdf" type="button">⬇ Descargar PDF</button>
+            </div>
+
+            <div id="lista-productos" class="stack" style="gap:10px"><p class="muted">Cargando…</p></div>
+
+            <div class="row" style="justify-content:flex-end;margin-top:16px">
+              <button class="btn" id="btn-guardar" type="button">Guardar esta compra</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== HISTORIAL ===== -->
+        <div id="panel-historial" class="stack hidden">
+          <div id="alerta-hist" class="alert"></div>
+          <div class="grid grid-3" id="resumen-hist"></div>
+          <div class="card">
+            <h3 style="margin-bottom:12px">Compras anteriores</h3>
+            <div id="lista-historial" class="stack"><p class="muted">Cargando…</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <img class="mascota" src="/img/mascota-despensa.png" alt="" aria-hidden="true" />
+
+  <script src="/js/api.js"></script>
+  <script>
+    const U = exigirSesion();
+    document.getElementById('sidebar').innerHTML = pintarSidebar('compras');
+    activarMenuMovil();
+    const alLista = document.getElementById('alerta-lista');
+    const alHist = document.getElementById('alerta-hist');
+
+    let ITEMS = [];      // [{nombre, categoria, cantidad, precio, comprado}]
+    let PLATOS = [];     // resumen de los platos de la semana (para el PDF)
+    let EDITANDO = null; // id de la compra que se esta corrigiendo, o null si es nueva
+
+    const hoyPeru = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+    const sumarDias = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    const lunesDe = (iso) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+    const soles = (n) => 'S/ ' + (Number(n) || 0).toFixed(2);
+    const fmtFecha = (iso) => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
+
+    // ===== Tabs =====
+    function verTab(cual) {
+      document.getElementById('t-lista').classList.toggle('active', cual === 'lista');
+      document.getElementById('t-historial').classList.toggle('active', cual === 'historial');
+      document.getElementById('panel-lista').classList.toggle('hidden', cual !== 'lista');
+      document.getElementById('panel-historial').classList.toggle('hidden', cual !== 'historial');
+      if (cual === 'historial') cargarHistorial();
+    }
+    document.getElementById('t-lista').onclick = () => verTab('lista');
+    document.getElementById('t-historial').onclick = () => verTab('historial');
+
+    // ===== La lista =====
+    // Sale de GET /api/plan/necesidad: TODO lo que piden los platos de esa semana, con su
+    // cantidad sumada. No de /faltantes, que omite lo que ya tienes — y en el supermercado
+    // uno decide sobre la lista completa, reponga o no.
+    async function cargarLista() {
+      const inicio = document.getElementById('c-inicio').value;
+      const fin = document.getElementById('c-fin').value;
+      if (!inicio || !fin) return;
+      const cont = document.getElementById('lista-productos');
+      cont.innerHTML = '<p class="muted">Cargando…</p>';
+      try {
+        const d = await api(`/api/plan/necesidad?inicio=${inicio}&fin=${fin}`);
+        ITEMS = (d.items || []).map((i) => ({
+          nombre: i.nombre,
+          categoria: i.categoria,
+          cantidad: i.medida || '',
+          precio: '',
+          // Arrancan MARCADOS los que te faltan y desmarcado lo que ya tienes: es lo que de
+          // verdad vas a comprar. Con la despensa apagada no hay "falta", así que van todos.
+          comprado: U.despensa_activa ? !!i.falta : true,
+        }));
+        PLATOS = d.platos_semana || [];
+        pintarLista();
+      } catch (err) {
+        cont.innerHTML = '';
+        alerta(alLista, err.error || 'No pudimos armar la lista de esta semana.');
+      }
+    }
+
+    function pintarLista() {
+      const cont = document.getElementById('lista-productos');
+      if (!ITEMS.length) {
+        cont.innerHTML = '<p class="muted">No hay productos. Programa platos en tu plan de comidas, o agrega productos a mano.</p>';
+        totalizar();
+        return;
+      }
+      const porCat = {};
+      ITEMS.forEach((it, i) => { (porCat[it.categoria] ||= []).push({ ...it, i }); });
+      cont.innerHTML = Object.keys(porCat).map((cat) => `
+        <div>
+          <div style="margin-bottom:6px">${chipCategoria(cat)}</div>
+          <div class="stack" style="gap:6px">
+            ${porCat[cat].map((it) => `
+              <div class="compra-fila ${it.comprado ? 'marcada' : ''}">
+                <label class="compra-check">
+                  <input type="checkbox" data-check="${it.i}" ${it.comprado ? 'checked' : ''} />
+                  <span class="compra-ic">${iconoIngrediente(it.nombre, it.categoria)}</span>
+                  <span class="compra-nombre">${esc(it.nombre)}</span>
+                </label>
+                <input class="input compra-cant" data-cant="${it.i}" value="${esc(it.cantidad)}" placeholder="cantidad" />
+                <div class="compra-precio">
+                  <span>S/</span>
+                  <input class="input" type="number" step="0.10" min="0" data-precio="${it.i}" value="${it.precio}" placeholder="0.00" />
+                </div>
+                <button class="btn btn-danger btn-sm" data-quitar="${it.i}" title="Quitar de la lista">✕</button>
+              </div>`).join('')}
+          </div>
+        </div>`).join('');
+      totalizar();
+    }
+
+    function totalizar() {
+      const marcados = ITEMS.filter((i) => i.comprado);
+      const gastado = marcados.reduce((n, i) => n + (parseFloat(i.precio) || 0), 0);
+      const presu = parseFloat(document.getElementById('c-presupuesto').value);
+      document.getElementById('t-marcados').textContent = `${marcados.length} de ${ITEMS.length}`;
+      document.getElementById('t-gastado').textContent = soles(gastado);
+      document.getElementById('t-presu').textContent = Number.isFinite(presu) ? soles(presu) : '—';
+      const caja = document.getElementById('t-dif-caja');
+      const el = document.getElementById('t-dif');
+      if (!Number.isFinite(presu)) {
+        el.textContent = '—';
+        caja.className = '';
+      } else {
+        const dif = presu - gastado;
+        // Verde mientras quede presupuesto, rojo al pasarse. Es el dato por el que se mira
+        // esta pantalla en la cola de la caja.
+        el.textContent = (dif >= 0 ? 'Te queda ' : 'Te pasaste ') + soles(Math.abs(dif));
+        caja.className = dif >= 0 ? 'dif-ok' : 'dif-mal';
+      }
+    }
+
+    document.getElementById('lista-productos').addEventListener('input', (e) => {
+      const t = e.target;
+      if (t.dataset.precio !== undefined) { ITEMS[t.dataset.precio].precio = t.value; totalizar(); }
+      if (t.dataset.cant !== undefined) ITEMS[t.dataset.cant].cantidad = t.value;
+    });
+    document.getElementById('lista-productos').addEventListener('change', (e) => {
+      const t = e.target;
+      if (t.dataset.check !== undefined) {
+        ITEMS[t.dataset.check].comprado = t.checked;
+        t.closest('.compra-fila').classList.toggle('marcada', t.checked);
+        totalizar();
+      }
+    });
+    document.getElementById('lista-productos').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-quitar]');
+      if (!b) return;
+      ITEMS.splice(Number(b.dataset.quitar), 1);
+      pintarLista();
+    });
+    document.getElementById('c-presupuesto').oninput = totalizar;
+
+    document.getElementById('btn-todos').onclick = () => { ITEMS.forEach((i) => { i.comprado = true; }); pintarLista(); };
+    document.getElementById('btn-ninguno').onclick = () => { ITEMS.forEach((i) => { i.comprado = false; }); pintarLista(); };
+
+    document.getElementById('btn-agregar').onclick = async () => {
+      const nombre = await pedirTexto('Agregar producto', 'Nombre del producto', 'Ej: Papel toalla');
+      if (!nombre) return;
+      ITEMS.push({ nombre, categoria: 'otro', cantidad: '', precio: '', comprado: true });
+      pintarLista();
+    };
+
+    // Pedir un texto sin usar prompt(): el nativo no se puede estilar y en móvil sale fatal.
+    function pedirTexto(titulo, etiqueta, placeholder) {
+      return new Promise((resolve) => {
+        const back = document.createElement('div');
+        back.className = 'modal-back show';
+        back.innerHTML = `<div class="modal" role="dialog" style="max-width:420px;text-align:left">
+          <h3>${titulo}</h3>
+          <div class="modal-body"><div class="field"><label>${etiqueta}</label>
+            <input id="pt-valor" placeholder="${placeholder}" autocomplete="off" /></div></div>
+          <div class="row" style="justify-content:flex-end;gap:8px">
+            <button class="btn btn-ghost btn-sm" data-no>Cancelar</button>
+            <button class="btn btn-sm" data-si>Agregar</button>
+          </div>
+        </div>`;
+        document.body.appendChild(back);
+        const input = back.querySelector('#pt-valor');
+        setTimeout(() => input.focus(), 50);
+        const cerrar = (v) => { back.remove(); resolve(v); };
+        back.querySelector('[data-no]').onclick = () => cerrar(null);
+        back.querySelector('[data-si]').onclick = () => cerrar(input.value.trim() || null);
+        input.onkeydown = (e) => { if (e.key === 'Enter') cerrar(input.value.trim() || null); };
+        back.onclick = (e) => { if (e.target === back) cerrar(null); };
+      });
+    }
+
+    // ===== Guardar =====
+    document.getElementById('btn-guardar').onclick = async () => {
+      limpiarAlerta(alLista);
+      if (!ITEMS.some((i) => i.comprado)) { alerta(alLista, 'Marca al menos un producto que hayas comprado.'); return; }
+      const btn = document.getElementById('btn-guardar');
+      btn.disabled = true;
+      const cuerpo = {
+        periodo_inicio: document.getElementById('c-inicio').value,
+        periodo_fin: document.getElementById('c-fin').value,
+        fecha: document.getElementById('c-fecha').value,
+        presupuesto: document.getElementById('c-presupuesto').value,
+        items: ITEMS,
+      };
+      try {
+        const d = EDITANDO
+          ? await api(`/api/compras/${EDITANDO}`, { method: 'PATCH', body: cuerpo })
+          : await api('/api/compras', { method: 'POST', body: cuerpo });
+        EDITANDO = null;
+        alerta(alLista, d.mensaje, 'ok');
+        cargarHistorial();
+      } catch (err) { alerta(alLista, err.error || 'No pudimos guardar la compra.'); }
+      finally { btn.disabled = false; }
+    };
+
+    // ===== Historial =====
+    async function cargarHistorial() {
+      const cont = document.getElementById('lista-historial');
+      try {
+        const d = await api('/api/compras');
+        const r = d.resumen;
+        document.getElementById('resumen-hist').innerHTML = `
+          <div class="stat-card tono-verde"><span class="stat-ic">🧾</span><b class="stat-valor">${r.total_compras}</b><span class="stat-txt">Compras registradas</span></div>
+          <div class="stat-card tono-rojo"><span class="stat-ic">💸</span><b class="stat-valor">${soles(r.gastado_total)}</b><span class="stat-txt">Gastado en total</span></div>
+          <div class="stat-card tono-azul"><span class="stat-ic">🎯</span><b class="stat-valor">${soles(r.presupuestado_total)}</b><span class="stat-txt">Presupuestado</span></div>`;
+
+        document.getElementById('pill-compras').innerHTML = `💸 ${soles(r.gastado_total)} en total`;
+
+        cont.innerHTML = d.compras.length
+          ? d.compras.map((c) => {
+              const dif = c.diferencia;
+              const badge = dif == null ? ''
+                : `<span class="tag ${dif >= 0 ? 'tag-ok' : 'tag-falta'}">${dif >= 0 ? 'ahorró' : 'se pasó'} ${soles(Math.abs(dif))}</span>`;
+              return `<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px">
+                <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center">
+                  <b>${fmtFecha(c.fecha)}</b>
+                  <span class="muted" style="font-size:12.5px">semana ${fmtFecha(c.periodo_inicio)} – ${fmtFecha(c.periodo_fin)}</span>
+                  <span class="row" style="gap:6px">${badge}
+                    <span class="tag">${c.total_comprados} producto(s)</span>
+                    <b>${soles(c.gastado)}</b></span>
+                </div>
+                ${c.presupuesto != null ? `<p class="muted" style="font-size:12px;margin-top:4px">Presupuesto: ${soles(c.presupuesto)}</p>` : ''}
+                ${c.con_precio < c.total_comprados
+                  ? `<p class="muted" style="font-size:11.5px;margin-top:4px">⚠️ ${c.total_comprados - c.con_precio} producto(s) sin precio: el total es parcial.</p>` : ''}
+                <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+                  <button class="btn btn-ghost btn-sm" data-detalle="${c.id}">Ver detalle</button>
+                  <button class="btn btn-danger btn-sm" data-borrar="${c.id}">Quitar</button>
+                </div>
+                <div class="hidden" id="det-${c.id}" style="margin-top:10px">
+                  ${c.items.map((i) => `<div class="row" style="justify-content:space-between;font-size:12.5px;padding:3px 0;border-top:1px solid var(--bg)">
+                    <span>${i.comprado ? '✅' : '⬜'} ${esc(i.nombre)} ${i.cantidad ? `<span class="muted">· ${esc(i.cantidad)}</span>` : ''}</span>
+                    <span>${i.precio != null ? soles(i.precio) : '<span class="muted">sin precio</span>'}</span>
+                  </div>`).join('')}
+                </div>
+              </div>`;
+            }).join('')
+          : '<p class="muted">Aún no registras compras.</p>';
+      } catch (err) { cont.innerHTML = ''; alerta(alHist, err.error || 'No pudimos cargar el historial.'); }
+    }
+
+    document.getElementById('lista-historial').addEventListener('click', async (e) => {
+      const det = e.target.closest('[data-detalle]');
+      if (det) { document.getElementById('det-' + det.dataset.detalle).classList.toggle('hidden'); return; }
+      const bor = e.target.closest('[data-borrar]');
+      if (!bor) return;
+      const ok = await confirmar(
+        '<p>Se borra el registro de esa compra y su detalle de gastos.</p><p><b>Tu despensa no cambia.</b></p>',
+        { titulo: '¿Quitar esta compra?', ok: 'Sí, quitar', peligro: true });
+      if (!ok) return;
+      try { await api(`/api/compras/${bor.dataset.borrar}`, { method: 'DELETE' }); cargarHistorial(); }
+      catch (err) { alerta(alHist, err.error || 'No pudimos quitarla.'); }
+    });
+
+    // ===== PDF =====
+    // jsPDF se carga BAJO DEMANDA: es pesado y toca <canvas> al evaluarse (rompe el smoke).
+    function cargarJsPDF() {
+      return new Promise((resolve, reject) => {
+        if (window.jspdf && window.jspdf.jsPDF) return resolve();
+        const s = document.createElement('script');
+        s.src = '/js/vendor/jspdf.umd.min.js';
+        s.onload = resolve; s.onerror = () => reject(new Error('no se pudo cargar jsPDF'));
+        document.head.appendChild(s);
+      });
+    }
+    // El logo va como data URL: jsPDF no puede pedir un archivo por su cuenta.
+    async function logoDataURL() {
+      try {
+        const blob = await (await fetch('/img/logo.png?v=2')).blob();
+        return await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
+      } catch { return null; }
+    }
+
+    document.getElementById('btn-pdf').onclick = async () => {
+      limpiarAlerta(alLista);
+      try {
+        await cargarJsPDF();
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+        const W = doc.internal.pageSize.getWidth();
+        const M = 40;
+        let y = M;
+
+        const logo = await logoDataURL();
+        if (logo) { try { doc.addImage(logo, 'PNG', M, y, 90, 34); } catch { /* si falla, se sigue sin logo */ } }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+        doc.text('Lista de compras', logo ? M + 104 : M, y + 22);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(110);
+        doc.text(`Semana ${fmtFecha(document.getElementById('c-inicio').value)} - ${fmtFecha(document.getElementById('c-fin').value)}`
+          + `   |   Impreso el ${fmtFecha(hoyPeru())}`, logo ? M + 104 : M, y + 36);
+        doc.setTextColor(30);
+        y += 58;
+
+        const presu = parseFloat(document.getElementById('c-presupuesto').value);
+        if (Number.isFinite(presu)) {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+          doc.text(`Presupuesto de la semana: S/ ${presu.toFixed(2)}`, M, y); y += 20;
+        }
+
+        // Resumen de los platos que se van a preparar: le da sentido a la lista (por que
+        // estoy comprando esto) y sirve de recordatorio en el mercado.
+        if (PLATOS.length) {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+          doc.text('Platos a preparar', M, y); y += 6;
+          doc.setDrawColor(210); doc.line(M, y, W - M, y); y += 14;
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+          for (const linea of doc.splitTextToSize(PLATOS.join('  ·  '), W - M * 2)) {
+            doc.text(linea, M, y); y += 13;
+          }
+          y += 10;
+        }
+
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text('Productos', M, y); y += 6;
+        doc.setDrawColor(210); doc.line(M, y, W - M, y); y += 16;
+
+        const porCat = {};
+        ITEMS.forEach((it) => { (porCat[it.categoria] ||= []).push(it); });
+        for (const cat of Object.keys(porCat)) {
+          if (y > 760) { doc.addPage(); y = M; }
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(90);
+          doc.text((CAT_INFO[cat]?.txt || cat).toUpperCase(), M, y); y += 14;
+          doc.setTextColor(30); doc.setFont('helvetica', 'normal');
+          for (const it of porCat[cat]) {
+            if (y > 780) { doc.addPage(); y = M; }
+            // Casilla [ ] para marcar a mano: el PDF se imprime o se mira en el celular sin
+            // conexion, asi que tiene que servir en papel.
+            doc.text(`[ ]  ${it.nombre}`, M + 4, y);
+            if (it.cantidad) {
+              doc.setFont('helvetica', 'bold');
+              doc.text(String(it.cantidad), M + 260, y);
+              doc.setFont('helvetica', 'normal');
+            }
+            doc.setTextColor(150); doc.text('S/ __________', W - M - 90, y); doc.setTextColor(30);
+            y += 17;
+          }
+          y += 6;
+        }
+
+        doc.setDrawColor(210); doc.line(M, y, W - M, y); y += 16;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text('TOTAL  S/ ______________', W - M - 190, y);
+
+        doc.save(`compras-${document.getElementById('c-inicio').value}.pdf`);
+      } catch (err) {
+        alerta(alLista, 'No pudimos generar el PDF.');
+      }
+    };
+
+    // ===== Carga inicial =====
+    (function init() {
+      const q = new URLSearchParams(location.search);
+      const ok = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+      // Se puede llegar desde el plan con ?inicio=&fin= (el boton "Compras de la semana").
+      const inicio = ok(q.get('inicio')) ? q.get('inicio') : lunesDe(hoyPeru());
+      const fin = ok(q.get('fin')) ? q.get('fin') : sumarDias(inicio, 6);
+      document.getElementById('c-inicio').value = inicio;
+      document.getElementById('c-fin').value = fin;
+      document.getElementById('c-fecha').value = hoyPeru();
+      document.getElementById('c-inicio').onchange = cargarLista;
+      document.getElementById('c-fin').onchange = cargarLista;
+      cargarLista();
+      cargarHistorial();
+    })();
+  </script>
+</body>
+</html>

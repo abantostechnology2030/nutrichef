@@ -27,6 +27,7 @@ app.use('/api/inicio', require('./routes/inicio.routes'));  // dashboard de bien
 app.use('/api/analisis', require('./routes/analisis.routes')); // escaner de productos
 app.use('/api/hogar', require('./routes/hogar.routes'));       // familia, condiciones, region
 app.use('/api/despensa', require('./routes/despensa.routes')); // inventario + compra semanal
+app.use('/api/compras', require('./routes/compras.routes'));   // 'Mis compras': gasto, precios e historico
 app.use('/api/plan', require('./routes/plan.routes'));         // calendario 7x3 + generacion IA
 app.use('/api/platos', require('./routes/platos.routes'));     // biblioteca del usuario (guardado = 1)
 app.use('/api/pagos', require('./routes/pagos.routes'));
