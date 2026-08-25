@@ -735,7 +735,7 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   background: var(--white); border-left: 4px solid var(--secondary);
   border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 12.5px;
 }
-.nutri-recos b { font-size: 13px; display: block; margin-bottom: 4px; color: var(--secondary); }
+.nutri-recos > b { font-size: 13px; display: block; margin-bottom: 4px; color: var(--secondary); }
 .nutri-recos ul { margin: 0; padding-left: 18px; }
 .nutri-recos li { margin-bottom: 3px; line-height: 1.45; }
 
@@ -750,6 +750,7 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .nutri-fila + .nutri-fila { border-top: 1px solid var(--bg); }
 .nutri-txt { min-width: 0; }
 .nutri-val { font-weight: 700; text-align: right; white-space: nowrap; }
+.nutri-uni { font-weight: 600; font-size: 11px; color: var(--muted); }
 .nutri-barra { height: 8px; border-radius: 999px; background: var(--bg); overflow: hidden; }
 .nutri-barra i { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
 .nutri-barra i.barra-media { background: var(--amber); }
@@ -764,8 +765,18 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   text-align: left; cursor: pointer; min-height: 32px; display: flex; align-items: center;
   gap: 4px; flex-wrap: wrap;
 }
-.nutri-info:hover .nutri-ic, .nutri-info:focus-visible .nutri-ic { color: var(--primary); }
-.nutri-ic { color: var(--muted); font-size: 12px; }
+/* Insignia redonda naranja en vez del caracter ⓘ (gris y diminuto: no se veia que fuera
+   pulsable). El naranja de la marca no aparece en ninguna otra parte de esta tabla. */
+.nutri-ic {
+  flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--secondary); color: #fff;
+  font-size: 12px; font-weight: 800; font-style: italic; line-height: 18px; text-align: center;
+  box-shadow: 0 1px 4px rgba(234, 107, 2, .35);
+}
+.nutri-info:hover .nutri-ic, .nutri-info:focus-visible .nutri-ic {
+  background: var(--primary); box-shadow: 0 1px 6px rgba(18, 72, 25, .35); transform: scale(1.08);
+}
+.nutri-ic { transition: background .15s, transform .15s; }
 
 /* El dato grande dentro del modal de explicacion. */
 .nutri-dato {

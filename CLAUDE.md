@@ -900,8 +900,15 @@ de la familia le importa (por su nombre)** y de donde sale el numero.
   moderado, >=20 alto.
 - Las condiciones se emparejan **sin tildes y por substring** contra el texto libre que escribio
   el usuario (`hipertension`, `presion alta`…): la lista de condiciones **no es cerrada**.
-- **La etiqueta entera es el area de toque** (32px de alto), no solo el icono ⓘ: en el telefono
+- **La etiqueta entera es el area de toque** (32px de alto), no solo la insignia: en el telefono
   un icono de 14px no se acierta.
+- **La marca es una insignia redonda NARANJA con una `i`**, no el caracter `ⓘ`: en gris y a 12px
+  no se distinguia de la letra de al lado y nadie adivinaba que era pulsable. El naranja de la
+  marca no aparece en ninguna otra parte de esa tabla.
+- **La unidad vive en la columna del VALOR** ("60 g"), no pegada al nombre ("Carbohidratos (g)"):
+  con el nombre largo, la insignia se caia sola a una segunda linea y descuadraba la fila.
+- ⚠️ `.nutri-recos b` era `display: block` y partia en dos el nombre del integrante dentro de
+  cada `<li>` ("Rosa" / ": es EL numero…"). Va acotado al hijo directo: `.nutri-recos > b`.
 
 ### "Mis compras": todo desmarcado y subtotal por pasillo (2026-08-25)
 - 🔴 **TODO arranca DESMARCADO.** Esta lista se marca **en el supermercado**, producto por

@@ -214,8 +214,8 @@
             <div class="nutri-fila">
               <button type="button" class="nutri-txt nutri-info" data-nutri="${f.clave}"
                 data-v="${f.v}" data-uni="${f.uni}" data-vd="${f.vd == null ? '' : f.vd}"
-                title="¿Qué significa este número?">${f.txt} <span class="muted">(${f.uni})</span> <span class="nutri-ic">ⓘ</span></button>
-              <span class="nutri-val">${fmtNum(f.v)}</span>
+                title="¿Qué significa este número?">${f.txt} <span class="nutri-ic" aria-hidden="true">i</span></button>
+              <span class="nutri-val">${fmtNum(f.v)} <span class="nutri-uni">${f.uni}</span></span>
               <span class="nutri-barra"><i style="width:${Math.max(2, Math.min(100, f.vd ?? 0))}%" class="${tonoNutri(f.clave, f.vd)}"></i></span>
               <span class="nutri-vd">${f.vd == null ? '' : f.vd + '%'}</span>
             </div>`).join('')}</div>`
@@ -361,12 +361,12 @@
     function lecturaVD(vd, masEsMejor) {
       if (vd == null || !Number.isFinite(vd)) return null;
       if (vd < 5) return masEsMejor
-        ? { txt: 'Aporte bajo', det: 'este plato casi no lo aporta; búscalo en otra comida del día.', tono: 'ambar' }
-        : { txt: 'Aporte bajo', det: 'una cantidad pequeña dentro de todo el día.', tono: 'verde' };
-      if (vd < 20) return { txt: 'Aporte moderado', det: 'una parte razonable de lo del día.', tono: 'verde' };
+        ? { txt: 'Aporte bajo', det: 'Este plato casi no lo aporta; búscalo en otra comida del día.', tono: 'ambar' }
+        : { txt: 'Aporte bajo', det: 'Una cantidad pequeña dentro de todo el día.', tono: 'verde' };
+      if (vd < 20) return { txt: 'Aporte moderado', det: 'Una parte razonable de lo del día.', tono: 'verde' };
       return masEsMejor
-        ? { txt: 'Aporte alto', det: 'con una porción cubres buena parte de lo del día. Buena noticia.', tono: 'verde' }
-        : { txt: 'Aporte alto', det: 'una sola porción se lleva buena parte de lo de todo el día. Conviene no repetirlo en la cena.', tono: 'ambar' };
+        ? { txt: 'Aporte alto', det: 'Con una porción cubres buena parte de lo del día. Buena noticia.', tono: 'verde' }
+        : { txt: 'Aporte alto', det: 'Una sola porción se lleva buena parte de lo de todo el día. Conviene no repetirlo en la cena.', tono: 'ambar' };
     }
 
     // Modal de un nutriente. No usa IA: se arma con la guia de arriba + las condiciones del hogar.
