@@ -827,9 +827,9 @@ Pagina propia (compras.html + compras.routes.js). Es OTRA forma de registrar la 
 
 **Detalles de la lista (2026-08-25):**
 - La cabecera dice **"Cantidad segun tu plan"**: las cantidades no las inventa nadie, son la suma de lo que piden los platos programados de esa semana, y decirlo evita que parezcan arbitrarias.
-- Cada producto muestra **para que plato es** ("para Aji de gallina +3"), con un modal si son varios. Sale de , que  ya acumula: es la pregunta que uno se hace en el mercado (*"¿y esto para que era?"*) y la respuesta ya estaba en los datos.
+- Cada producto muestra **para qué plato es** ("para Ají de gallina +3"), con un modal si son varios. Sale de `platos[]`, que `consolidarPlan()` acumula junto a las cantidades: es la pregunta que uno se hace en el mercado (*"¿y esto para qué era?"*) y la respuesta ya estaba en los datos, sin pedir nada más.
 - **Acordeon por categoria.** Con 35 productos una lista plana obliga a un scroll larguisimo en el telefono. La cabecera de cada pasillo dice cuantos llevas marcados de ese pasillo.
-  - ⚠️ El estado de abierto/cerrado vive en  (un Set), **no en el DOM**: la lista se repinta entera al marcar, y sin eso el acordeon se cerraria en cada clic. Por lo mismo, el contador del pasillo se actualiza **a mano** al marcar en vez de repintar.
+  - ⚠️ El estado de abierto/cerrado vive en `ABIERTAS` (un `Set`), **no en el DOM**: la lista se repinta entera al marcar, y sin eso el acordeón se cerraría en cada clic. Por lo mismo, el contador del pasillo se actualiza **a mano** al marcar, en vez de repintar.
 - ** esta separada de la descarga** para poder comprobar que el documento se genera sin depender de que el navegador permita bajarlo (que es justo lo que una prueba automatica NO puede medir: en headless ni siquiera una descarga trivial de control llega a disco). Verificado: 2 paginas, 349 KB, cabecera PDF valida.
 - Tras generar, se ofrece ademas un **enlace visible al PDF**:  dispara una descarga que algunos navegadores (sobre todo en movil) no muestran de forma evidente o bloquean por venir de codigo asincrono.
 
