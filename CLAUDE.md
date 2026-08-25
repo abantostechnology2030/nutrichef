@@ -838,7 +838,7 @@ Pagina propia (compras.html + compras.routes.js). Es OTRA forma de registrar la 
 
 **Los que ya existian se migraron** (`config.platos_a_biblioteca`): 51 platos del calendario de produccion tenian `guardado = 0` y no aparecian en "Mis platos" — completarles la receta actualizaba la fila, pero esa fila nunca se listaba. La migracion sube **solo los que estan en un plan**: uno con `guardado = 0` que ya no esta en ningun calendario es basura que `limpiarPlatoHuerfano` no alcanzo a borrar, y revivirlo seria peor que dejarlo.
 
-**Y  los deja en la biblioteca** al completarles la receta, dentro de la misma transaccion: es donde el usuario espera encontrarlos despues de habersela pedido a la IA.
+**Y `POST /api/plan/detallar` los deja en la biblioteca** al completarles la receta, dentro de la misma transacción que escribe los pasos: es donde el usuario espera encontrarlos después de habérsela pedido a la IA.
 
 ⚠️ **Y por eso `platos_max` dejo de contarlos.** `guardadosDe()` cuenta solo `origen = 'manual'`. Si contara los generados, un usuario Free (5) se quedaria sin poder crear nada tras generar dos dias, y el tope dejaria de medir lo que pretende medir. Lo que produce la IA ya esta limitado por `generaciones_max`.
 
