@@ -761,8 +761,8 @@ offset del día vía `DIA_NUM`). Une las dos fuentes:
 
 ### Tres bugs de la despensa opcional y del generar semana (2026-08-25)
 Reportados en produccion y corregidos:
-- 🔴 **Generar estaba BLOQUEADO para quien no usa despensa.**  devolvia 409 *"Tu despensa esta vacia"* aunque el modulo estuviera apagado. Quien decidio no llevar inventario no podia generar NADA. Ahora ese 409 solo aplica si .
-- **** en : esa funcion no existia (la forma del limite se armaba en linea dentro del GET). Se extrajo a  y la usan los dos sitios, para que el front reciba siempre el mismo objeto. Sintoma: la generacion desde "Mis platos" se quedaba colgada.
+- 🔴 **Generar estaba BLOQUEADO para quien no usa despensa.** `POST /api/plan/generar` devolvía 409 *"Tu despensa está vacía"* aunque el módulo estuviera apagado. Quien decidió no llevar inventario **no podía generar NADA**. Ahora ese 409 solo aplica si `ctx.despensaActiva`.
+- **`limiteDe is not defined`** en `POST /api/platos/generar`: esa función no existía (la forma del límite se armaba en línea dentro del GET). Se extrajo a `limiteDe()` y la usan los dos sitios, para que el front reciba siempre el mismo objeto. Síntoma: generar un plato con IA desde "Mis platos" se quedaba colgado.
 - **Un dia que fallaba tumbaba la semana entera.** La IA devuelve JSON malformado a ratos (visto: *"Expected ',' or ']' at position 1615"*), y el bucle paraba en el primero, dejando los otros seis dias sin intentar. Ahora **continua** y nombra al final los dias que no se pudieron. Solo se para de verdad **si se acaba el cupo**: los intentos siguientes fallarian igual y solo harian esperar.
 
 > **Por que la semana salio "solo con almuerzos":** los 16 platos guardados del usuario eran TODOS de almuerzo, asi que la biblioteca solo pudo cubrir esa fila; desayuno y cena tocaban a la IA, y la primera llamada fallo. Los dos problemas a la vez. Un plato **sin momento** encaja en cualquiera — vale la pena decirselo al usuario al crear platos.
