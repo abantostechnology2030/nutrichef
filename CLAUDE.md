@@ -759,6 +759,22 @@ offset del día vía `DIA_NUM`). Une las dos fuentes:
 - **El rango de fechas se compara en hora de PERÚ** (`date(creado_en, '-5 hours')`). Sin el desfase, todo lo hecho entre las 19:00 y la medianoche caería en el día siguiente y los totales no cuadrarían con lo que ve el usuario. Una fecha con formato inválido **se ignora** en vez de romper la consulta.
 - ⚠️ **En la columna de llamadas NO va el símbolo ∞.** Las llamadas *hechas* son siempre un número; lo que sí puede ser ilimitado es el **tope del plan**, y eso vive en la columna de *escaneos restantes* (que dice "ilimitados", no ∞).
 
+### La biblioteca va SIEMPRE primero (2026-08-25)
+`Proponer`, `Generar día` y `cambiar este plato` hacen lo mismo: **buscan en "Mis platos" y solo llaman a la IA por lo que no encuentren**. Si el usuario ya curó un plato que encaja, usarlo es mejor que inventar otro — es suyo, ya le gustó, y no cuesta una generación.
+- El frontend llama a `POST /api/plan/desde-biblioteca` (sin IA ni cupo) y solo pasa a `/generar` los `faltan` que devuelve.
+- **`reemplazar: true`** solo cuando la casilla ya tiene plato ("cámbiamelo por otro"): en ese caso el plato actual queda excluido de los candidatos, o devolvería el mismo.
+- Si `/desde-biblioteca` falla, **no se corta el flujo**: se sigue con la IA, que es el camino de siempre.
+
+**Se retiró "✍️ Ya sé qué cocinar" del calendario** (y con él `verificarPlato()`, 57 líneas que quedaban muertas): esa forma de crear vive ahora en *Mis platos*, que es donde el plato queda **guardado para reutilizarlo**. En la casilla quedan dos vías: *Proponer* y *Mis platos*.
+
+**No repetir es una regla dura del prompt**, con énfasis en días seguidos y en que cambiar solo el nombre no vale ("pollo al horno" y "pollo asado" son el mismo plato). Al elegir de la biblioteca se excluyen los platos que ya están esa semana.
+
+### Lo que depende de la despensa desaparece si está apagada (2026-08-25)
+En cada casilla del plan, con `despensa_activa = 0` **no se pintan**:
+- El tag **"✓ tengo todo" / "🛒 falta N"**: compara contra el inventario, y sin inventario no significa nada.
+- El botón **"○ marcar como cocinado"**: su único efecto es descontar stock.
+- El bloque de **cobertura** del modal "Ver".
+
 ### Tres vías para crear un plato en la biblioteca (2026-08-25)
 `+ Nuevo plato` ya no abre el formulario: pregunta **cómo** quieres crearlo. Son las mismas tres del calendario a propósito — el usuario ya las conoce de ahí:
 1. **A mano** (lo de siempre, sin IA).

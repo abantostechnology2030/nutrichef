@@ -155,7 +155,12 @@ Sin estas dos etiquetas no sabemos en que casilla va cada plato y se descarta el
 Responde UNICAMENTE con un objeto JSON limpio:
 {"platos":[{"dia":<0-6, 0=domingo>,"momento":"desayuno|almuerzo|cena", ...campos del plato...}, ...]}
 
-Devuelve exactamente una entrada por cada casilla pedida, EN EL MISMO ORDEN en que se te pidieron. Los platos nuevos deben ser DISTINTOS a los que ya tiene esa semana (evita repetir) y distintos a los que se te pidan evitar.`;
+Devuelve exactamente una entrada por cada casilla pedida, EN EL MISMO ORDEN en que se te pidieron.
+
+NO REPETIR es una regla dura, no una preferencia:
+- Ningun plato nuevo puede ser igual a uno que ya tiene esa semana, ni a los que se te pidan evitar.
+- MENOS AUN en dias seguidos: nadie quiere el mismo almuerzo lunes y martes. Si dos casillas pedidas son del mismo momento, que sean platos claramente distintos entre si.
+- Tampoco vale cambiar solo el nombre: "pollo al horno" y "pollo asado" cuentan como el mismo plato. Cambia la proteina, el metodo de coccion o el tipo de plato.`;
 
 // Backfill de platos ya existentes: les completa la receta (pasos) y/o el aporte
 // nutricional (info) que les falte. NO propone platos nuevos ni los cambia. Por eso no

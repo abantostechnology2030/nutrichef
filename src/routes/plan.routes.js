@@ -658,13 +658,29 @@ function ingredientesComprometidos(items, excluir = []) {
 router.post('/desde-biblioteca', (req, res) => {
   const usuario = req.usuario;
   const semana = lunesDe(req.body?.semana);
-  const dias = (Array.isArray(req.body?.dias) ? req.body.dias : [])
-    .map((d) => parseInt(d, 10)).filter((d) => d >= 0 && d <= 6);
-  const momentos = (Array.isArray(req.body?.momentos) ? req.body.momentos : [])
-    .map((m) => String(m)).filter((m) => MOMENTOS.includes(m));
-  if (!dias.length || !momentos.length) {
-    return res.status(400).json({ error: 'Elige al menos un dia y un momento.' });
+  // Dos formas de decir QUE casillas: el producto dias x momentos (generar la semana) o una
+  // lista concreta (un dia suelto, una casilla). La segunda es mas precisa y la usan los
+  // botones "Proponer" y "Generar dia", que no siempre piden un rectangulo completo.
+  const pedidas = [];
+  if (Array.isArray(req.body?.casillas)) {
+    for (const c of req.body.casillas) {
+      const dia = parseInt(c?.dia, 10);
+      const momento = String(c?.momento || '');
+      if (dia >= 0 && dia <= 6 && MOMENTOS.includes(momento)) pedidas.push({ dia, momento });
+    }
+  } else {
+    const dias = (Array.isArray(req.body?.dias) ? req.body.dias : [])
+      .map((d) => parseInt(d, 10)).filter((d) => d >= 0 && d <= 6);
+    const momentos = (Array.isArray(req.body?.momentos) ? req.body.momentos : [])
+      .map((m) => String(m)).filter((m) => MOMENTOS.includes(m));
+    for (const dia of dias) for (const momento of momentos) pedidas.push({ dia, momento });
   }
+  if (!pedidas.length) return res.status(400).json({ error: 'Elige al menos un dia y un momento.' });
+
+  // reemplazar=true solo lo usa "cambiar este plato por otro", donde el usuario PIDIO cambiarlo.
+  // Por defecto es false y no se pisa nada: ver la nota de arriba sobre por que se elimino la
+  // ruta vieja de generar la semana.
+  const reemplazar = !!req.body?.reemplazar;
 
   if (semanaBloqueada(usuario.id, semana, usuario.semanas_max)) {
     return res.status(403).json({
@@ -692,16 +708,20 @@ router.post('/desde-biblioteca', (req, res) => {
 
   let puestos = 0;
   const faltan = [];
-  for (const dia of dias) {
-    for (const momento of momentos) {
-      if (ocupadas.has(dia + '|' + momento)) continue;
-      const cand = biblioteca.find((p) => !yaUsados.has(p.id) && (!p.momento || p.momento === momento));
-      if (!cand) { faltan.push({ dia, momento }); continue; }
-      ponerEnCasilla(usuario.id, semana, dia, momento, cand.id, hogar.comensales || null);
-      yaUsados.add(cand.id);
-      ocupadas.add(dia + '|' + momento);
-      puestos++;
-    }
+  for (const { dia, momento } of pedidas) {
+    if (ocupadas.has(dia + '|' + momento) && !reemplazar) continue;
+    // El plato que ocupa la casilla ahora mismo NO puede ser el candidato: "cambiamelo por
+    // otro" no puede devolver el mismo.
+    const actual = db.prepare('SELECT plato_id FROM plan_comidas WHERE usuario_id = ? AND semana = ? AND dia = ? AND momento = ?')
+      .get(usuario.id, semana, dia, momento);
+    const cand = biblioteca.find((p) => !yaUsados.has(p.id)
+      && p.id !== (actual && actual.plato_id)
+      && (!p.momento || p.momento === momento));
+    if (!cand) { faltan.push({ dia, momento }); continue; }
+    ponerEnCasilla(usuario.id, semana, dia, momento, cand.id, hogar.comensales || null);
+    yaUsados.add(cand.id);
+    ocupadas.add(dia + '|' + momento);
+    puestos++;
   }
 
   res.json({
