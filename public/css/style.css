@@ -14,10 +14,13 @@
   --secondary: #ea6b02;        /* naranja (acento secundario: foco de inputs) */
   --secondary-soft: #ffe7cf;   /* naranja claro */
   --logo-green: #538e18;       /* verde de "IA" en el logo */
-  /* Fondo del globo de la mascota: el NARANJA del logotipo ("Chef"). Es #ea6b02 llevado un par
-     de pasos mas hondo porque con el naranja tal cual la letra blanca se queda en 3,2:1 de
-     contraste y AA pide 4,5; asi llega a 4,6:1 y a simple vista es el mismo naranja. */
-  --globo-naranja: #c05704;
+  /* El globo de la mascota: fondo AMARILLO con borde NARANJA y letra oscura. El amarillo es el
+     mismo de la llamada a la accion y el naranja es el de la marca ("Chef"), asi que el globo
+     se lee como parte del sistema y no como un color suelto. Con letra oscura el contraste es
+     de 13:1, muy por encima de lo que pide AA — que es justo lo que no conseguia el fondo
+     naranja con letra blanca (3,2:1) del que viene. */
+  --globo-fondo: #ffd34d;
+  --globo-borde: #ea6b02;
   /* Amarillo de llamada a la accion (hoy: "Compras de la semana"). Lleva texto OSCURO, no
      blanco: sobre un amarillo el blanco se queda en 1,8:1 de contraste y no se lee; con el
      verde oscuro de la marca llega a 10:1. */
@@ -472,26 +475,33 @@ tbody tr:hover { background: var(--bg); }
    esquina del globo, que es mas alto y lo dejaria flotando en medio de la pantalla. */
 .mascota-fig { position: relative; }
 
-/* El globo: verde de marca con letra blanca, "como si estuviera hablando". Se pulsa para
-   cerrarlo (y se reabre tocando al chef): la explicacion se lee una vez y luego estorba.
-   Va en el NARANJA del logotipo (--globo-naranja): el verde oscuro con el que nacio pesaba
-   demasiado sobre el fondo claro y se leia como un cartel de aviso, y el verde claro se
-   confundia con la cabecera de la seccion, que es del mismo verde. El naranja es el otro color
-   de la marca ("Chef") y no lo usa nada mas en esa esquina de la pantalla. */
+/* El globo, "como si estuviera hablando". Se pulsa para cerrarlo (y se reabre tocando al chef):
+   la explicacion se lee una vez y luego estorba. */
 .mascota-globo {
-  position: relative; max-width: 240px; margin-bottom: 11px; padding: 11px 14px;
-  background: var(--globo-naranja); color: #fff; border-radius: 14px;
+  position: relative; max-width: 240px; margin-bottom: 13px; padding: 11px 14px;
+  background: var(--globo-fondo); color: var(--ink); border: 2px solid var(--globo-borde);
+  border-radius: 14px;
   font-size: 13px; line-height: 1.45; font-weight: 600; letter-spacing: .1px;
   box-shadow: var(--shadow); cursor: pointer; user-select: none;
   animation: pop .18s ease;
 }
-.mascota-globo b { display: block; font-size: 11.5px; opacity: .82; font-weight: 800;
+.mascota-globo b { display: block; font-size: 11.5px; opacity: .72; font-weight: 800;
   text-transform: uppercase; letter-spacing: .6px; margin-bottom: 3px; }
-/* La colita, apuntando hacia abajo al chef. */
+/* La colita, apuntando hacia abajo al chef. Son DOS triangulos superpuestos: el naranja hace de
+   borde y el amarillo le tapa el interior. Con uno solo, la colita saldria sin el borde que
+   lleva el resto del globo y se veria como un pico pegado. */
+.mascota-globo::before, .mascota-globo::after {
+  content: ''; position: absolute; width: 0; height: 0;
+}
+.mascota-globo::before {
+  right: 28px; bottom: -12px;
+  border-left: 11px solid transparent; border-right: 11px solid transparent;
+  border-top: 12px solid var(--globo-borde);
+}
 .mascota-globo::after {
-  content: ''; position: absolute; right: 30px; bottom: -8px; width: 0; height: 0;
+  right: 30px; bottom: -8px;
   border-left: 9px solid transparent; border-right: 9px solid transparent;
-  border-top: 9px solid var(--globo-naranja);
+  border-top: 9px solid var(--globo-fondo);
 }
 .mascota-globo.hidden { display: none; }
 

@@ -1233,11 +1233,15 @@ un amarillo el blanco se queda en 1,8:1 de contraste y no se lee. El icono es un
 barra **ocupa la linea entera**, asi que `.barra-acciones` necesita `flex: 1 1 auto` — sin eso
 el separador no tiene espacio libre en el que expandirse y el boton se queda pegado al resto.
 
-**4. El globo de la mascota pasa a NARANJA** (`--globo-naranja: #c05704`). El verde claro se
-confundia con la cabecera de la seccion, que es del mismo verde; el naranja es el otro color de
-la marca ("Chef") y no lo usa nada mas en esa esquina. Es `#ea6b02` llevado un par de pasos mas
-hondo: con el naranja del logo tal cual, la letra blanca se queda en **3,2:1** de contraste y AA
-pide 4,5; asi llega a **4,6:1**.
+**4. El globo de la mascota: fondo AMARILLO, borde NARANJA y letra oscura**
+(`--globo-fondo: #ffd34d` + `--globo-borde: #ea6b02`). Paso por los tres verdes de la marca y
+ninguno servia: el oscuro pesaba como un cartel de aviso sobre el fondo claro y el claro se
+confundia con la cabecera de la seccion, que es del mismo verde. El amarillo es el mismo de
+"Compras de la semana" y el borde es el naranja del logotipo, asi que el globo se lee como parte
+del sistema. De paso resuelve el contraste: con letra oscura llega a **13:1**, mientras que
+cualquier fondo naranja con letra blanca se queda por debajo del 4,5 que pide AA.
+- La **colita son DOS triangulos superpuestos**: el naranja hace de borde y el amarillo le tapa
+  el interior. Con uno solo, la colita saldria sin el borde que lleva el resto del globo.
 
 ### Una sola cabecera para todas las secciones (2026-08-25)
 Cada pagina abria distinto: unas con una tarjeta verde, otras con el titulo suelto, otras con el
