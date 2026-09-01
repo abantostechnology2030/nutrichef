@@ -318,6 +318,309 @@ function iconoPlato(nombre, momento) {
   return ICONO_MOMENTO[momento] || '\u{1F37D}️';
 }
 
+// ===== APORTE NUTRICIONAL DEL PLATO (platos.info) =====
+//
+// Vive aqui y no en plan.html porque lo pintan DOS pantallas sobre la MISMA fila de la BD: el
+// calendario y "Mis Recetas". Con una copia en cada una, completar un plato desde el plan
+// (POST /api/plan/detallar escribe en `platos`) dejaba a la biblioteca mostrando la version
+// vieja del mismo plato — que es justo lo que se reporto.
+// ===== Aporte nutricional (plato.info) =====
+// El semaforo usa las mismas clases del escaner. Ojo: la BD dice "ambar" y la clase
+// del CSS se llama "amarillo" (viene del escaner) — de ahi el mapeo.
+const SEM_CLASE = { verde: 'sem-verde-bn', ambar: 'sem-amarillo-bn', rojo: 'sem-rojo-bn' };
+const SEM_TXT = { verde: 'Saludable', ambar: 'Ocasional', rojo: 'No le conviene' };
+const MACRO_TXT = { alto: 'alto', medio: 'medio', bajo: 'bajo' };
+
+// Tag compacto para la casilla: punto de color + kcal. Si la IA no dio semaforo pero
+// si calorias (o al reves), se pinta lo que haya en vez de no pintar nada.
+function tagNutri(info) {
+  if (!info) return '';
+  const clase = SEM_CLASE[info.semaforo] || '';
+  const kcal = info.calorias ? `${info.calorias} kcal` : (SEM_TXT[info.semaforo] || '');
+  if (!clase && !kcal) return '';
+  const titulo = [SEM_TXT[info.semaforo], info.resumen].filter(Boolean).join(' · ');
+  return `<span class="tag ${clase}" title="${esc(titulo)}">${clase ? '<span class="sem-dot"></span>' : ''}${esc(kcal)}</span>`;
+}
+
+// Bloque completo para el modal: semaforo + macros + micronutrientes + resumen.
+// Si el plato aun no tiene info (lo genero un menu viejo), invita a analizarlo.
+function bloqueNutri(info) {
+  cargarIntegrantes();
+  if (!info) {
+    return `<div class="reco-foto" style="margin-top:12px">
+      🥗 Este plato todavía no tiene su información nutricional.
+      La completas desde <b>Plan de comidas</b>, con el botón <b>“🍳 Completar recetas”</b>.
+    </div>`;
+  }
+  const macro = (etiqueta, nivel) =>
+    nivel ? `<span class="tag">${etiqueta}: ${MACRO_TXT[nivel] || nivel}</span>` : '';
+  const macros = [
+    macro('Carbohidratos', info.carbohidratos),
+    macro('Proteínas', info.proteinas),
+    macro('Grasas', info.grasas),
+  ].filter(Boolean).join('');
+
+  const clase = SEM_CLASE[info.semaforo] || '';
+  const banner = info.semaforo
+    ? `<div class="sem-banner ${clase}" style="margin-bottom:10px">
+         <span class="sem-dot"></span>
+         <span>${SEM_TXT[info.semaforo]}${info.calorias ? ` · ~${info.calorias} kcal por porción` : ''}</span>
+       </div>`
+    : (info.calorias ? `<p style="font-size:13px;margin-bottom:10px"><b>~${info.calorias} kcal</b> por porción</p>` : '');
+
+  // Barras horizontales con el % del valor diario. La barra mide el %VD (no el valor
+  // absoluto): son unidades distintas —gramos, miligramos— y pintarlas en la misma escala
+  // haria que 581 mg de sodio se viera 20 veces mas "grande" que 29 g de proteina.
+  // Se topa en 100 para que un nutriente pasado de rosca no rompa la fila, pero el numero
+  // real se sigue mostrando al lado.
+  const NUTRI_TXT = {
+    carbohidratos: ['Carbohidratos', 'g'], proteinas: ['Proteína', 'g'], grasas: ['Grasas', 'g'],
+    fibra: ['Fibra', 'g'], hierro: ['Hierro', 'mg'], sodio: ['Sodio', 'mg'], sal: ['Eq. de sal', 'g'],
+  };
+  // Sodio y sal en exceso importan mas que el resto en un hogar con hipertension: por
+  // encima del 20% del valor diario se pintan en ambar y por encima del 40% en rojo.
+  const tonoNutri = (clave, vd) => {
+    if (vd == null) return '';
+    if ((clave === 'sodio' || clave === 'sal') && vd >= 40) return ' barra-alta';
+    if ((clave === 'sodio' || clave === 'sal') && vd >= 20) return ' barra-media';
+    return '';
+  };
+  const fmtNum = (n) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+
+  const filas = [];
+  if (info.calorias) {
+    filas.push({ txt: 'Energía', uni: 'kcal', v: info.calorias, vd: info.calorias_vd, clave: 'energia' });
+  }
+  for (const [clave, [txt, uni]] of Object.entries(NUTRI_TXT)) {
+    const n = info.nutrientes && info.nutrientes[clave];
+    if (n) filas.push({ txt, uni, v: n.v, vd: n.vd, clave });
+  }
+  // Cada fila es pulsable y explica ESE nutriente: que es, que significa su numero y a
+  // quien de la familia le importa. La etiqueta entera es el boton (no solo el icono) para
+  // que se vea que hay algo que tocar y para que el area de toque sirva en el telefono.
+  const tabla = filas.length
+    ? `<div class="nutri-tabla">${filas.map((f) => `
+        <div class="nutri-fila">
+          <button type="button" class="nutri-txt nutri-info" data-nutri="${f.clave}"
+            data-v="${f.v}" data-uni="${f.uni}" data-vd="${f.vd == null ? '' : f.vd}"
+            title="¿Qué significa este número?">${f.txt} <span class="nutri-ic" aria-hidden="true">i</span></button>
+          <span class="nutri-val">${fmtNum(f.v)} <span class="nutri-uni">${f.uni}</span></span>
+          <span class="nutri-barra"><i style="width:${Math.max(2, Math.min(100, f.vd ?? 0))}%" class="${tonoNutri(f.clave, f.vd)}"></i></span>
+          <span class="nutri-vd">${f.vd == null ? '' : f.vd + '%'}</span>
+        </div>`).join('')}</div>`
+    : '';
+
+  // Los platos generados antes de este formato no traen numeros: se sigue mostrando lo que
+  // si tienen (las etiquetas alto/medio/bajo) en vez de dejar el bloque vacio.
+  const sinNumeros = !filas.length && macros;
+
+  // Las recomendaciones por integrante van PRIMERO y en su propia caja: en un hogar con
+  // diabetes o hipertension es lo mas importante de esta pantalla, y perdidas entre los
+  // numeros no se leen.
+  const recos = (info.recomendaciones || []).length
+    ? `<div class="nutri-recos">
+         <b>👨‍👩‍👧 Para tu familia</b>
+         <ul>${info.recomendaciones.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+       </div>`
+    : '';
+
+  return `<div class="nutri-caja">
+    <div class="nutri-cab">
+      <b>🥗 Aporte nutricional</b>
+      <span class="muted">por porción</span>
+    </div>
+    ${banner}
+    ${recos}
+    ${tabla}
+    ${sinNumeros ? `<div class="row" style="gap:5px;flex-wrap:wrap;margin:8px 0">${macros}</div>` : ''}
+    ${info.destacados?.length
+      ? `<p style="font-size:12.5px;margin:10px 0 0">✨ <b>Aporta:</b> ${info.destacados.map(esc).join(', ')}</p>`
+      : ''}
+    ${info.resumen ? `<p class="muted" style="font-size:12.5px;margin-top:6px">${esc(info.resumen)}</p>` : ''}
+    <p class="muted" style="font-size:11.5px;margin-top:10px">
+      👆 Toca cualquier nutriente para saber qué es y qué significa su número.<br />
+      🥗 Estimación orientativa por porción; el % es sobre un valor diario de referencia de
+      2000 kcal. No reemplaza la consulta con un nutricionista.
+    </p>
+  </div>`;
+}
+
+// ===== Que significa cada nutriente =====
+//
+// Se explica AQUI, en el navegador, y no se le pide a la IA: es lo mismo para todos los
+// platos, asi que pedirlo seria pagar una y otra vez por el mismo texto (y arriesgar que
+// salga distinto en cada plato). Lo unico que cambia por hogar son las condiciones medicas,
+// y esas ya las tenemos.
+//
+// "mas es mejor" (fibra, hierro, proteina) vs. "cuidar el exceso" (sodio, grasas...): sin
+// esa distincion, un 30% de fibra y un 30% de sodio se leerian igual, y no son lo mismo.
+const NUTRI_GUIA = {
+  energia: {
+    ic: '🔥', nombre: 'Energía (calorías)', masEsMejor: false,
+    que: 'Es el combustible que le da al cuerpo una porción de este plato. Una persona adulta necesita alrededor de 2000 calorías al día repartidas entre todas sus comidas.',
+    exceso: 'Comer más calorías de las que se gastan es lo que hace subir de peso.',
+    ojo: [
+      { claves: ['diabetes'], txt: 'con diabetes conviene mantener porciones parejas entre un día y otro, para que el azúcar no suba y baje de golpe' },
+      { claves: ['sobrepeso', 'obesidad'], txt: 'si se está bajando de peso, este es el número que más conviene mirar' },
+    ],
+  },
+  carbohidratos: {
+    ic: '🍚', nombre: 'Carbohidratos', masEsMejor: false,
+    que: 'Son el arroz, la papa, el camote, los fideos, el pan y los azúcares. Es de donde el cuerpo saca la energía del día a día.',
+    exceso: 'Dentro del cuerpo se convierten en glucosa, o sea azúcar en la sangre. Cuanto más grande la porción, más sube.',
+    ojo: [
+      { claves: ['diabetes'], txt: 'es EL número a vigilar: mide la porción y acompáñalos con verduras y proteína, que hacen que el azúcar entre más despacio' },
+      { claves: ['sobrepeso', 'obesidad'], txt: 'suelen ser la parte más fácil de recortar del plato' },
+    ],
+  },
+  proteinas: {
+    ic: '🍗', nombre: 'Proteínas', masEsMejor: true,
+    que: 'Vienen de la carne, el pescado, el huevo, la leche y las menestras. Sirven para mantener y reparar los músculos y para las defensas.',
+    exceso: '',
+    ojo: [
+      { claves: ['anemia'], txt: 'las carnes y la sangrecita aportan proteína y hierro a la vez' },
+      { claves: ['renal', 'riñon', 'rinon'], txt: 'con problemas del riñón el exceso de proteína sí importa: consúltalo con su médico' },
+    ],
+  },
+  grasas: {
+    ic: '🫗', nombre: 'Grasas', masEsMejor: false,
+    que: 'Son el aceite, la mantequilla, las frituras y la grasa propia de las carnes. Dan energía y ayudan a aprovechar algunas vitaminas.',
+    exceso: 'De más suben el colesterol y cargan el corazón. No es lo mismo el aceite de oliva o la palta que la fritura.',
+    ojo: [
+      { claves: ['colesterol'], txt: 'es el número que le pidieron cuidar' },
+      { claves: ['hipertension', 'presion alta', 'corazon'], txt: 'la grasa y el sodio juntos son los que más cargan al corazón' },
+      { claves: ['sobrepeso', 'obesidad'], txt: 'es lo que más calorías aporta por bocado' },
+    ],
+  },
+  fibra: {
+    ic: '🥬', nombre: 'Fibra', masEsMejor: true,
+    que: 'Está en las verduras, las frutas con cáscara, las menestras y los granos integrales. El cuerpo no la digiere, y por eso ayuda a ir al baño con regularidad.',
+    exceso: '',
+    ojo: [
+      { claves: ['diabetes'], txt: 'es una buena aliada: hace que el azúcar del plato entre más lento a la sangre' },
+      { claves: ['estreñimiento', 'estrenimiento', 'colon'], txt: 'es justo lo que le hace falta, y acompañada de bastante agua' },
+    ],
+  },
+  hierro: {
+    ic: '🩸', nombre: 'Hierro', masEsMejor: true,
+    que: 'Está en la sangrecita, el hígado, las carnes rojas y las menestras. Es lo que lleva el oxígeno por la sangre.',
+    exceso: 'Cuando falta aparece la anemia: cansancio, sueño y falta de concentración. Acompañarlo con limón o fruta cítrica ayuda a aprovecharlo mejor.',
+    ojo: [
+      { claves: ['anemia'], txt: 'es EL número a vigilar en esta familia' },
+      { claves: ['embarazo', 'gestante'], txt: 'en el embarazo hace falta bastante más de lo normal' },
+    ],
+  },
+  sodio: {
+    ic: '🧂', nombre: 'Sodio', masEsMejor: false,
+    que: 'Viene sobre todo de la sal, pero también del cubito, la sillao, los embutidos y las conservas. El cuerpo lo necesita en poca cantidad.',
+    exceso: 'De más hace retener líquidos y sube la presión arterial.',
+    ojo: [
+      { claves: ['hipertension', 'presion alta'], txt: 'es EL número a vigilar: cambia el cubito y la sillao por ajo, cebolla, culantro y limón' },
+      { claves: ['renal', 'riñon', 'rinon', 'corazon'], txt: 'con problemas de riñón o del corazón hay que bajarlo aún más' },
+    ],
+  },
+  sal: {
+    ic: '🥄', nombre: 'Equivalente en sal', masEsMejor: false,
+    que: 'Es el mismo sodio de la fila anterior, pero contado como sal de mesa, que es como uno la ve en la cocina. Una cucharadita rasa son unos 5 gramos.',
+    exceso: 'La recomendación general es no pasar de una cucharadita de sal en TODO el día, sumando lo que ya traen los alimentos.',
+    ojo: [
+      { claves: ['hipertension', 'presion alta'], txt: 'de aquí sale la indicación de "baja la sal" que le dieron' },
+    ],
+  },
+};
+
+// Los integrantes del hogar, para poder decir A QUIEN le importa cada nutriente por su
+// nombre. Se pide una vez y en segundo plano: si falla, las explicaciones siguen saliendo
+// (sin la parte de la familia), que es mejor que no explicar nada.
+// Se pide PEREZOSAMENTE, la primera vez que se pinta un aporte nutricional: api.js se carga en
+// todas las paginas y pedirlo al arrancar seria una peticion de mas en las que no muestran
+// ningun plato (y un 403 seguro en las cuentas sin planificador). Cuando el usuario toque un
+// nutriente ya habra llegado.
+let INTEGRANTES = [];
+let _integrantes = null;   // la peticion en vuelo, para no dispararla dos veces
+function cargarIntegrantes() {
+  if (!Sesion.token) return Promise.resolve();
+  if (!_integrantes) {
+    _integrantes = api('/api/hogar')
+      .then((h) => { INTEGRANTES = h.integrantes || []; })
+      .catch(() => { /* sin la parte de la familia, pero la explicacion sale igual */ });
+  }
+  return _integrantes;
+}
+
+const sinTildes = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+// Quien de la familia tiene alguna de esas condiciones.
+function quienesTienen(claves) {
+  return INTEGRANTES.filter((i) => (i.condiciones || []).some((c) => {
+    const t = sinTildes(c);
+    return claves.some((k) => t.includes(sinTildes(k)));
+  })).map((i) => i.nombre);
+}
+
+// La regla del 5 y el 20 (la que usan las tablas nutricionales): por debajo del 5% del
+// valor diario el aporte es bajo; del 20% para arriba es alto. Sirve para los dos sentidos,
+// solo cambia si eso es una buena o una mala noticia.
+function lecturaVD(vd, masEsMejor) {
+  if (vd == null || !Number.isFinite(vd)) return null;
+  if (vd < 5) return masEsMejor
+    ? { txt: 'Aporte bajo', det: 'Este plato casi no lo aporta; búscalo en otra comida del día.', tono: 'ambar' }
+    : { txt: 'Aporte bajo', det: 'Una cantidad pequeña dentro de todo el día.', tono: 'verde' };
+  if (vd < 20) return { txt: 'Aporte moderado', det: 'Una parte razonable de lo del día.', tono: 'verde' };
+  return masEsMejor
+    ? { txt: 'Aporte alto', det: 'Con una porción cubres buena parte de lo del día. Buena noticia.', tono: 'verde' }
+    : { txt: 'Aporte alto', det: 'Una sola porción se lleva buena parte de lo de todo el día. Conviene no repetirlo en la cena.', tono: 'ambar' };
+}
+
+// Modal de un nutriente. No usa IA: se arma con la guia de arriba + las condiciones del hogar.
+async function explicarNutriente(clave, valor, unidad, vd) {
+  const g = NUTRI_GUIA[clave];
+  if (!g) return;
+  await cargarIntegrantes();   // sin esto, un clic muy rapido salia sin nombrar a la familia
+  const lec = lecturaVD(vd, g.masEsMejor);
+  const avisos = (g.ojo || [])
+    .map((o) => ({ nombres: quienesTienen(o.claves), txt: o.txt }))
+    .filter((o) => o.nombres.length);
+
+  const back = document.createElement('div');
+  back.className = 'modal-back show';
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="max-width:480px;text-align:left">
+    <h3>${g.ic} ${esc(g.nombre)}</h3>
+    <div class="modal-body">
+      <div class="nutri-dato">
+        <b>${esc(String(valor))} ${esc(unidad)}</b> por porción
+        ${vd !== '' && vd != null ? `<span class="nutri-dato-vd">${vd}% de lo del día</span>` : ''}
+      </div>
+      ${lec ? `<p class="nutri-lectura ${lec.tono}"><b>${lec.txt}.</b> ${lec.det}</p>` : ''}
+      <p style="font-size:13px;line-height:1.6;margin-bottom:10px"><b>¿Qué es?</b> ${esc(g.que)}</p>
+      ${g.exceso ? `<p style="font-size:13px;line-height:1.6;margin-bottom:10px">${esc(g.exceso)}</p>` : ''}
+      ${avisos.length ? `<div class="nutri-recos" style="margin:12px 0">
+          <b>👨‍👩‍👧 En tu familia</b>
+          <ul>${avisos.map((a) => `<li><b>${a.nombres.map(esc).join(' y ')}</b>: ${esc(a.txt)}.</li>`).join('')}</ul>
+        </div>` : ''}
+      <p class="muted" style="font-size:11.5px;line-height:1.55;margin-top:12px">
+        De dónde sale el número: lo estima la IA a partir de los ingredientes del plato y del
+        número de porciones. Es una orientación, no un análisis de laboratorio, y no reemplaza
+        lo que le indique su médico o nutricionista.
+      </p>
+    </div>
+    <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" type="button" data-cerrar>Entendido</button></div>
+  </div>`;
+  document.body.appendChild(back);
+  const cerrar = () => back.remove();
+  back.querySelector('[data-cerrar]').onclick = cerrar;
+  back.onclick = (e) => { if (e.target === back) cerrar(); };
+}
+
+// Delegado en el documento: el bloque nutricional vive dentro de un modal que se crea y se
+// destruye, asi que enganchar el listener a ese modal obligaria a repetirlo en cada sitio
+// que lo abre.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-nutri]');
+  if (!b) return;
+  explicarNutriente(b.dataset.nutri, b.dataset.v, b.dataset.uni,
+    b.dataset.vd === '' ? null : Number(b.dataset.vd));
+});
+
 // ===== Mascota: el chef ACOMPANA Y EXPLICA. Se puede arrastrar y cerrar =====
 //
 // Portado de NutriIA como adorno, hoy hace un trabajo: en cada pantalla saca un GLOBO DE
@@ -450,9 +753,14 @@ function _guardarPrefsMascota(p) {
   // que no todo el mundo encuentra. En escritorio solo aparece cuando el chef esta escondido:
   // con el a la vista, su X esta al alcance del raton y un boton fijo seria ruido.
   //
-  // 🔴 VA EN LA BARRA SUPERIOR, que es `position: sticky`: siempre esta a la vista y **no tapa
-  // nada**. Flotando sobre el contenido (que fue la primera version) se comia justo los botones
-  // de abajo de la pantalla, que es donde estan las acciones principales del plan.
+  // 🔴 DONDE VIVE, segun el tamano de la pantalla:
+  //   - ESCRITORIO: dentro de la barra superior (que es `position: sticky`), con su etiqueta.
+  //     Flotando sobre el contenido se comia los botones del final de la pagina, que es donde
+  //     estan las acciones del plan.
+  //   - MOVIL: el CSS lo saca de la barra (`position: fixed`) y lo deja REDONDO ABAJO A LA
+  //     DERECHA, que es donde se busca con el pulgar y donde ya esta el chef. Van apilados: el
+  //     boton pegado a la barra inferior y el chef encima.
+  // Es un solo elemento en el DOM: dos botones para lo mismo se acaban contradiciendo.
   const volver = document.createElement('button');
   volver.className = 'mascota-volver';
   volver.type = 'button';

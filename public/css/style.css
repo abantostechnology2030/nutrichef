@@ -14,9 +14,10 @@
   --secondary: #ea6b02;        /* naranja (acento secundario: foco de inputs) */
   --secondary-soft: #ffe7cf;   /* naranja claro */
   --logo-green: #538e18;       /* verde de "IA" en el logo */
-  /* Verde del globo de la mascota: el claro del logo, apenas mas hondo para que la letra blanca
-     llegue a 4,8:1 de contraste (con #538e18 tal cual se queda en 4,0 y AA pide 4,5). */
-  --globo-verde: #4a8016;
+  /* Fondo del globo de la mascota: el NARANJA del logotipo ("Chef"). Es #ea6b02 llevado un par
+     de pasos mas hondo porque con el naranja tal cual la letra blanca se queda en 3,2:1 de
+     contraste y AA pide 4,5; asi llega a 4,6:1 y a simple vista es el mismo naranja. */
+  --globo-naranja: #c05704;
   --ink: #1b2a1d;              /* texto principal (verde muy oscuro) */
   --muted: #5c6b5e;            /* texto secundario */
   --line: #dfe9dd;             /* borde verde suave */
@@ -293,6 +294,10 @@ tbody tr:hover { background: var(--bg); }
   display: flex; flex-direction: column; gap: 6px; min-height: 118px; }
 .casilla.vacia { border-style: dashed; align-items: center; justify-content: center; text-align: center; }
 .casilla.cocinado { background: var(--green-soft); border-color: #bfe6cd; }
+/* El boton de "cocinado" encendido: verde lleno, para que de un vistazo se distinga de las otras
+   acciones de la casilla (que son todas fantasma) y se vea cuales del dia ya se cocinaron. */
+.btn.cocinado-on { background: var(--green); color: #fff; border-color: var(--green); }
+.btn.cocinado-on:hover { background: #128a3e; }
 .casilla-momento { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .casilla-plato { font-weight: 700; font-size: 13.5px; line-height: 1.3; }
 .casilla-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto; }
@@ -464,12 +469,13 @@ tbody tr:hover { background: var(--bg); }
 
 /* El globo: verde de marca con letra blanca, "como si estuviera hablando". Se pulsa para
    cerrarlo (y se reabre tocando al chef): la explicacion se lee una vez y luego estorba.
-   Va en el VERDE CLARO del logotipo (--globo-verde), no en --primary: el verde oscuro pesaba
-   demasiado sobre el fondo claro de la app y se leia mas como un cartel de aviso que como
-   alguien hablando. Con letra blanca da 4,8:1 de contraste, por encima del 4,5 que pide AA. */
+   Va en el NARANJA del logotipo (--globo-naranja): el verde oscuro con el que nacio pesaba
+   demasiado sobre el fondo claro y se leia como un cartel de aviso, y el verde claro se
+   confundia con la cabecera de la seccion, que es del mismo verde. El naranja es el otro color
+   de la marca ("Chef") y no lo usa nada mas en esa esquina de la pantalla. */
 .mascota-globo {
   position: relative; max-width: 240px; margin-bottom: 11px; padding: 11px 14px;
-  background: var(--globo-verde); color: #fff; border-radius: 14px;
+  background: var(--globo-naranja); color: #fff; border-radius: 14px;
   font-size: 13px; line-height: 1.45; font-weight: 600; letter-spacing: .1px;
   box-shadow: var(--shadow); cursor: pointer; user-select: none;
   animation: pop .18s ease;
@@ -480,7 +486,7 @@ tbody tr:hover { background: var(--bg); }
 .mascota-globo::after {
   content: ''; position: absolute; right: 30px; bottom: -8px; width: 0; height: 0;
   border-left: 9px solid transparent; border-right: 9px solid transparent;
-  border-top: 9px solid var(--globo-verde);
+  border-top: 9px solid var(--globo-naranja);
 }
 .mascota-globo.hidden { display: none; }
 
@@ -516,10 +522,19 @@ tbody tr:hover { background: var(--bg); }
   /* En movil SI se pinta (antes se escondia del todo). Sube por encima de la barra inferior,
      que mide 76px, o se quedaria pegada a los iconos de navegacion. El globo se estrecha para
      no tocar el borde izquierdo de la pantalla. */
-  .mascota-caja { right: 8px; bottom: 88px; }
-  /* Siempre visible: aqui es un interruptor, no un "traelo de vuelta". 32px de alto es lo que
-     hace falta para acertarle con el dedo. El texto se esconde si la barra va justa. */
-  .mascota-volver { display: inline-flex; padding: 8px 12px; min-height: 32px; }
+  /* EN MOVIL EL INTERRUPTOR SALE DE LA BARRA y se vuelve un boton redondo fijo abajo a la
+     derecha, que es donde se busca con el pulgar. Al ser `fixed` deja de ocupar sitio en la
+     barra superior, que en 390px ya iba justa con el titulo y la pastilla de la seccion.
+     El chef sube por encima de el (bottom mayor) para no taparlo: los dos viven en la misma
+     esquina, apilados, no encima uno del otro. */
+  .mascota-caja { right: 8px; bottom: 146px; }
+  .mascota-volver {
+    display: inline-flex; position: fixed; right: 8px; bottom: 88px; z-index: 8;
+    width: 46px; height: 46px; padding: 0; border-radius: 50%; justify-content: center;
+    box-shadow: var(--shadow);
+  }
+  .mascota-volver .mv-txt { display: none; }   /* redondo: solo el chef, con su title */
+  .mascota-volver .mv-ic { height: 30px; margin: 0; }
   .mascota-globo { max-width: min(240px, calc(100vw - 90px)); }
   /* Con el dedo, 26px no se aciertan: la X crece al minimo que mide "npm run movil". */
   .mascota-cerrar { width: 32px; height: 32px; top: -8px; right: -8px; font-size: 18px; }
@@ -820,12 +835,7 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 @media (max-width: 760px) {
   /* 1. El titulo se partia en dos lineas ("Mi / despensa") porque la pildora de la derecha se
         llevaba media barra. Se reducen los dos: cabe en una linea y sigue leyendose. */
-  /* La barra puede envolver: con el titulo, la pastilla del plan y el interruptor del
-     asistente, en 390px no caben en una linea y el ultimo se salia de la pantalla (medido:
-     desborde horizontal en todas las paginas). Envolviendo, baja a un segundo renglon. */
-  .topbar { padding: 12px 16px; flex-wrap: wrap; row-gap: 8px; }
-  .topbar h2 { flex: 1 1 auto; min-width: 0; }
-  .topbar .spacer { display: none; }
+  .topbar { padding: 12px 16px; }
   .topbar h2 { font-size: 19px; }
   .analisis-pill { font-size: 11.5px; padding: 5px 10px; }
 
@@ -1142,6 +1152,11 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 }
 @media (max-width: 760px) { .cabecera-cols { display: none; } }
 
+/* La barra de acciones CRECE hasta ocupar la linea entera. Sin esto, el .separador-acciones no
+   tiene espacio libre en el que expandirse y "Compras de la semana" se quedaba pegado al resto
+   de botones en vez de irse a la derecha, que es donde tiene que estar. */
+.barra-acciones { flex: 1 1 auto; }
+
 /* "Copiar datos de otra semana" se separa del resto de acciones: las demas actuan sobre ESTA
    semana y esta TRAE datos de otra. Con el mismo aspecto que las demas parecia una mas. */
 .separador-acciones { flex: 1 1 auto; min-width: 0; }
@@ -1149,11 +1164,20 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   background: var(--secondary); color: #fff; border-color: var(--secondary);
 }
 .btn-copiar:hover { filter: brightness(.93); }
+
+/* "Compras de la semana" es lo que el usuario va a buscar DESPUES de programar (se lleva el
+   plan al mercado), asi que sale del monton de botones fantasma: va a la derecha, en verde
+   lleno y un punto mas grande que el resto de la barra. */
+.btn-compras-semana {
+  font-size: 14.5px; padding: 12px 22px; box-shadow: var(--shadow-sm);
+}
 @media (max-width: 760px) {
   /* En movil no hay sitio para empujarlo a la derecha: se le da la fila entera, que ademas lo
      separa visualmente igual de bien. */
   .separador-acciones { display: none; }
   .barra-acciones .btn-copiar { flex: 1 1 100%; }
+  /* En movil tampoco compite: fila entera, igual que "copiar". */
+  .barra-acciones .btn-compras-semana { flex: 1 1 100%; }
 }
 
 /* Los tres pasos del plan de comidas. Van en su propia tarjeta AMARILLA y arriba del todo:

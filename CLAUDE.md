@@ -1170,18 +1170,23 @@ logotipo, letra blanca) con **una frase** que dice para que sirve la seccion en 
   MedicaIA. **En movil esta SIEMPRE** y enciende o apaga al chef; **en escritorio solo aparece
   cuando esta apagado** (`.activo`), porque con el chef a la vista su propia ✕ ya esta al alcance
   del raton.
-  - 🔴 **Va en la barra superior, que es `position: sticky`, y no flotando sobre el contenido.**
-    La primera version era una pastilla fija abajo a la izquierda y **se comia los botones del
-    final de la pantalla** — justo donde estan "Generar la semana" y "Copiar datos de otra
-    semana". Un control que tapa acciones es peor que no tenerlo.
+  - 🔴 **Donde vive depende del tamano de la pantalla, pero es UN SOLO elemento en el DOM**
+    (dos botones para lo mismo se acaban contradiciendo): en **escritorio**, dentro de la barra
+    superior, que es `position: sticky`; en **movil**, el CSS lo saca de la barra
+    (`position: fixed`) y lo deja **redondo abajo a la derecha**, que es donde se busca con el
+    pulgar y donde ya vive el chef — van **apilados**, el boton pegado a la barra inferior
+    (`bottom: 88px`) y el chef encima (`bottom: 146px`).
+    Una version intermedia lo puso flotando **abajo a la izquierda** y **se comia los botones
+    del final de la pagina** — justo "Generar la semana" y "Copiar datos de otra semana". Un
+    control que tapa acciones es peor que no tenerlo.
   - **La etiqueta NO cambia de texto al pulsarla** ("Asistente" siempre): lo que cambia es el
     color (verde = encendido, blanco/gris = apagado) y el `title`. Un boton que salta de
     "Ocultar asistente" a "Mostrar asistente" cambia de ancho y mueve la barra entera en cada
     toque.
-  - ⚠️ **La barra superior ENVUELVE en movil** (`flex-wrap: wrap` + `.spacer` oculto): con el
-    titulo, la pastilla de la seccion y este boton, en 390px no caben en una linea y el ultimo se
-    salia de la pantalla (medido: desborde horizontal en las diez paginas). Envolviendo, baja a un
-    segundo renglon.
+  - ⚠️ **Por eso en movil es `fixed` y no un boton mas de la barra**: con el titulo, la
+    pastilla de la seccion y este boton, en 390px no caben en una linea y el ultimo **se salia de
+    la pantalla** (medido: desborde horizontal en las diez paginas). Al sacarlo del flujo, la
+    barra vuelve a caber sin tocarla.
   - **El icono del boton es el PROPIO dibujo del chef**, no el emoji 👨‍🍳: esa es una secuencia
     ZWJ que en Windows 10 sale como un monigote, y ademas el dibujo dice exactamente que enciende.
 - **El mismo chef, en pequeno y FIJO, en la cabecera de cada seccion** (`.hero-mascota`, al lado
@@ -1190,6 +1195,46 @@ logotipo, letra blanca) con **una frase** que dice para que sirve la seccion en 
   Tambien se inyecta desde `api.js` y usa `MASCOTA_IMG`, para que no pueda haber una cabecera con
   el chef de otra seccion. Va anclado **por altura** (74px / 60px en movil) por la misma razon que
   el grande, y con margenes negativos para no estirar la cabecera.
+
+### Cuatro arreglos del plan y del recetario (2026-09-01)
+
+**1. "Marcar como cocinado" va SIEMPRE, con o sin despensa.** Estaba atado a
+`despensa_activa` porque su unico efecto era descontar stock. Ya no: el **analisis de consumo
+tiene un filtro "solo lo que marque como cocinado"**, y sin ese boton ese filtro **no podia dar
+ningun resultado** a quien no lleva inventario. Marcar es tambien llevar la cuenta de lo que de
+verdad se comio. El boton pasa a ser una **olla** (`🍲`, con `✓` y verde lleno cuando esta
+marcado) en vez de un `○` gris que no decia de que iba. El backend ya aguantaba: con la despensa
+apagada `indiceDespensa()` devuelve `[]` y no hay nada que descontar.
+
+**2. El aporte nutricional se pinta desde `api.js`, no desde `plan.html`.** Reportado: completar
+un plato desde el plan no se veia en "Mis Recetas". El dato **si se guardaba** (`/detallar`
+escribe en `platos`, que es **la misma fila** que lista la biblioteca); lo que pasaba es que
+**"Mis Recetas" nunca habia pintado `info`** — solo ingredientes, pasos y nota. Ahora
+`tagNutri`, `bloqueNutri`, `NUTRI_GUIA` y `explicarNutriente` viven en `api.js` y los usan las
+dos pantallas: con una copia en cada una, el mismo plato acabaria contando dos historias.
+- ⚠️ **`NIVEL_TXT` paso a llamarse `MACRO_TXT`**: `despensa.html` ya declaraba ese nombre para
+  otra cosa (el stock poco/normal/bastante) y, al subir el bloque a `api.js`, la pagina reventaba
+  entera con *"Identifier 'NIVEL_TXT' has already been declared"*. Lo caza `npm run smoke`.
+- **Los integrantes se piden PEREZOSAMENTE** (la primera vez que se pinta un aporte), no al
+  cargar `api.js`: si no, seria una peticion de mas en todas las pantallas que no muestran ningun
+  plato. Y `explicarNutriente` **espera** esa peticion: pintando el modal con la lista aun vacia
+  se perdia justo la parte que nombra a quien de la familia le importa ese nutriente — un fallo
+  intermitente que solo salia si se tocaba muy rapido.
+- El aviso de "todavia no tiene su informacion" **nombra la pantalla, no un boton**: decia *"usa
+  Analizar nutricion arriba"*, y en "Mis Recetas" ese boton no existe (y en el plan se llama
+  "🍳 Completar recetas" desde hace meses).
+
+**3. "Compras de la semana" va a la DERECHA y destacado.** Es lo que se busca *despues* de
+programar (te llevas el plan al mercado) y entre seis botones fantasma del mismo tamano no se
+encontraba. Ojo con el detalle que lo hacia fallar: el `.separador-acciones` solo empuja si la
+barra **ocupa la linea entera**, asi que `.barra-acciones` necesita `flex: 1 1 auto` — sin eso
+el separador no tiene espacio libre en el que expandirse y el boton se queda pegado al resto.
+
+**4. El globo de la mascota pasa a NARANJA** (`--globo-naranja: #c05704`). El verde claro se
+confundia con la cabecera de la seccion, que es del mismo verde; el naranja es el otro color de
+la marca ("Chef") y no lo usa nada mas en esa esquina. Es `#ea6b02` llevado un par de pasos mas
+hondo: con el naranja del logo tal cual, la letra blanca se queda en **3,2:1** de contraste y AA
+pide 4,5; asi llega a **4,6:1**.
 
 ### Una sola cabecera para todas las secciones (2026-08-25)
 Cada pagina abria distinto: unas con una tarjeta verde, otras con el titulo suelto, otras con el
