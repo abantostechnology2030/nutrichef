@@ -1129,9 +1129,27 @@ logotipo, letra blanca) con **una frase** que dice para que sirve la seccion en 
   (`MASCOTA_IMG` + `MASCOTA_MENSAJE`), asi que no puede haber una pantalla sin chef ni dos
   mensajes distintos de la misma seccion. Una ruta sin entrada en la tabla cae al chef de casa y
   se queda **sin globo**: mejor callado que soltando una obviedad.
-- **El tamano es UNO SOLO** (104px de ancho) en todas las pantallas y en todos los anchos de
-  ventana. Antes eran 128px en PC y 84px en movil, o sea que el chef cambiaba de talla al girar
-  el telefono. **No le pongas un ancho distinto en un media query.**
+- 🔴 **El tamano es UNO SOLO, y se fija la ALTURA (150px), no el ancho.** Los dibujos **no
+  tienen la misma proporcion** (van de 238x455 a 296x361), asi que con un ancho comun cada uno
+  salia de una altura distinta: el del recetario se veia claramente mas pequeno que el resto, y
+  asi lo reporto el usuario (2026-09-01). Todos son la misma figura de cuerpo entero, asi que lo
+  que tiene que coincidir es lo que mide el chef de la cabeza a los pies. Antes de esto eran
+  128px en PC y 84px en movil, o sea que ademas cambiaba de talla al girar el telefono.
+  **No le pongas una altura distinta en un media query.**
+- **Nueve dibujos, y los archivos se llaman por lo que el chef LLEVA EN LA MANO** (`-bolsa`,
+  `-libro`, `-canasta`, `-cuchara`, `-checklist`, `-brazos`, `-festejo`, `-saluda`, `-olla`),
+  no por la seccion donde salen. La seccion la decide `MASCOTA_IMG` y cambia; el dibujo no. Con
+  nombres de seccion, mover el chef de la bolsa de "plan" a "compras" dejaba un
+  `mascota-plan.png` saliendo en Mis compras. Los originales con su fondo blanco estan en
+  `archivos/` y se recortan con `node scripts/recortar-fondo.js`.
+- **`mascota-olla.png` existe y NO se usa**: es media figura sobre una cocina, asi que al lado
+  de los demas (todos de cuerpo entero) se ve de otro tamano aunque mida igual de alto. Se
+  conserva por si hace falta en otro sitio.
+- **El globo va en `--globo-verde` (#4a8016), el verde CLARO del logotipo.** Nacio en
+  `--primary` (#124819) y pesaba demasiado sobre el fondo claro de la app: se leia mas como un
+  cartel de aviso que como alguien hablando. Es un pelin mas hondo que `--logo-green` a
+  proposito: con el verde del logo tal cual, la letra blanca se queda en **4,0:1** de contraste
+  y AA pide 4,5; asi llega a **4,8:1** y a simple vista es el mismo verde.
 - **En movil YA SE PINTA.** Estaba en `display:none` a ≤760px desde el 2026-08-23, por una razon
   real (tapa la esquina inferior derecha y se come el toque de lo que hay debajo); el usuario
   pidio explicitamente tenerlo en todas las ventanas, asi que la salida es **arrastrarlo** o

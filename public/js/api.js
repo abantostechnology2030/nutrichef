@@ -335,13 +335,29 @@ function iconoPlato(nombre, momento) {
 // quiere mover. Guardarlo en el servidor obligaria a sincronizar algo que no lo necesita.
 const MASCOTA_KEY = 'nutrichefia_mascota';
 
-// Que chef sale en cada pantalla. El de casa es el respaldo: una seccion nueva nunca se queda
-// sin mascota por olvidarse de esta tabla.
+// QUE CHEF SALE EN CADA PANTALLA.
+//
+// Los archivos se llaman por lo que el chef LLEVA EN LA MANO (bolsa, libro, canasta...), no por
+// la seccion en la que salen: la seccion se decide aqui y cambia, el dibujo no. Con nombres de
+// seccion, mover el chef de la bolsa de "plan" a "compras" dejaba un mascota-plan.png saliendo
+// en Mis compras, que es peor que no tener convencion.
+//
+// Sin entrada en esta tabla se cae al que saluda: una seccion nueva nunca se queda sin chef.
+// mascota-olla.png existe y NO se usa: es media figura sobre una cocina, asi que al lado de los
+// demas (todos de cuerpo entero) se ve de otro tamano aunque midan igual. Se conserva por si
+// hace falta en otro sitio.
 const MASCOTA_IMG = {
-  plan: 'mascota-plan.png',
-  despensa: 'mascota-despensa.png',
-  compras: 'mascota-despensa.png',
-  platos: 'mascota-platos.png',
+  inicio: 'mascota-saluda.png',      // te recibe, con el dedo en alto
+  hogar: 'mascota-saluda.png',       // "cuentame quienes viven en casa"
+  app: 'mascota-brazos.png',         // de brazos cruzados: "a ver, dejame verlo"
+  soporte: 'mascota-brazos.png',     // "te escucho"
+  plan: 'mascota-cuchara.png',       // cuchara de palo: lo que se va a cocinar
+  despensa: 'mascota-canasta.png',   // canasta de verduras: lo que hay en casa
+  compras: 'mascota-bolsa.png',      // bolsa del mercado: lo que traes
+  platos: 'mascota-libro.png',       // el recetario
+  analisis: 'mascota-checklist.png', // el informe de lo que se comio
+  admin: 'mascota-checklist.png',    // el panel de control
+  'mi-plan': 'mascota-festejo.png',  // celebrando: es la pantalla de pasar a Premium
 };
 
 // Lo que dice el chef en cada seccion: UNA frase, sin tecnicismos, contando que se hace ahi.
@@ -381,7 +397,7 @@ function _guardarPrefsMascota(p) {
     img.alt = '';
     document.body.appendChild(img);
   }
-  img.src = '/img/' + (MASCOTA_IMG[ruta] || 'mascota-home.png');
+  img.src = '/img/' + (MASCOTA_IMG[ruta] || 'mascota-saluda.png');
   img.setAttribute('aria-hidden', 'true');
 
   // Se envuelve en una caja para poder colgarle el globo y el boton de cerrar.

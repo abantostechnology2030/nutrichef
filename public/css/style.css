@@ -14,6 +14,9 @@
   --secondary: #ea6b02;        /* naranja (acento secundario: foco de inputs) */
   --secondary-soft: #ffe7cf;   /* naranja claro */
   --logo-green: #538e18;       /* verde de "IA" en el logo */
+  /* Verde del globo de la mascota: el claro del logo, apenas mas hondo para que la letra blanca
+     llegue a 4,8:1 de contraste (con #538e18 tal cual se queda en 4,0 y AA pide 4,5). */
+  --globo-verde: #4a8016;
   --ink: #1b2a1d;              /* texto principal (verde muy oscuro) */
   --muted: #5c6b5e;            /* texto secundario */
   --line: #dfe9dd;             /* borde verde suave */
@@ -442,11 +445,14 @@ tbody tr:hover { background: var(--bg); }
   position: fixed; right: 14px; bottom: 74px; z-index: 6; touch-action: none;
   display: flex; flex-direction: column; align-items: flex-end;
 }
-/* EL TAMANO ES UNO SOLO, EN TODAS LAS PANTALLAS Y EN TODOS LOS TAMANOS DE VENTANA. Antes eran
-   128px en PC y 84px en movil (y en movil directamente no se pintaba), asi que el chef cambiaba
-   de talla al girar el telefono. No pongas un ancho distinto en un media query. */
+/* EL TAMANO ES UNO SOLO, EN TODAS LAS PANTALLAS Y EN TODOS LOS TAMANOS DE VENTANA.
+   🔴 SE FIJA LA ALTURA, NO EL ANCHO. Los dibujos del chef NO tienen la misma proporcion (van de
+   238x455 a 296x361), asi que con un ancho comun cada uno salia de una altura distinta: el del
+   recetario se veia claramente mas pequeno que el resto. Todos son la misma figura de cuerpo
+   entero, asi que lo que tiene que coincidir es lo que mide el chef de la cabeza a los pies.
+   No le pongas una altura distinta en un media query. */
 .mascota-caja .mascota {
-  position: static; width: 104px; height: auto; display: block;
+  position: static; height: 150px; width: auto; display: block;
   pointer-events: auto; cursor: grab; user-select: none; -webkit-user-drag: none;
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .22));
 }
@@ -457,10 +463,13 @@ tbody tr:hover { background: var(--bg); }
 .mascota-fig { position: relative; }
 
 /* El globo: verde de marca con letra blanca, "como si estuviera hablando". Se pulsa para
-   cerrarlo (y se reabre tocando al chef): la explicacion se lee una vez y luego estorba. */
+   cerrarlo (y se reabre tocando al chef): la explicacion se lee una vez y luego estorba.
+   Va en el VERDE CLARO del logotipo (--globo-verde), no en --primary: el verde oscuro pesaba
+   demasiado sobre el fondo claro de la app y se leia mas como un cartel de aviso que como
+   alguien hablando. Con letra blanca da 4,8:1 de contraste, por encima del 4,5 que pide AA. */
 .mascota-globo {
   position: relative; max-width: 240px; margin-bottom: 11px; padding: 11px 14px;
-  background: var(--primary); color: #fff; border-radius: 14px;
+  background: var(--globo-verde); color: #fff; border-radius: 14px;
   font-size: 13px; line-height: 1.45; font-weight: 600; letter-spacing: .1px;
   box-shadow: var(--shadow); cursor: pointer; user-select: none;
   animation: pop .18s ease;
@@ -471,7 +480,7 @@ tbody tr:hover { background: var(--bg); }
 .mascota-globo::after {
   content: ''; position: absolute; right: 30px; bottom: -8px; width: 0; height: 0;
   border-left: 9px solid transparent; border-right: 9px solid transparent;
-  border-top: 9px solid var(--primary);
+  border-top: 9px solid var(--globo-verde);
 }
 .mascota-globo.hidden { display: none; }
 
