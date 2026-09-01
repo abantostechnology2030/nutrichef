@@ -491,19 +491,35 @@ tbody tr:hover { background: var(--bg); }
   display: grid; place-items: center; padding: 0; font-family: inherit;
 }
 .mascota-cerrar:hover { background: var(--primary-soft); color: var(--primary); }
+/* El interruptor del asistente, dentro de la barra superior (que es sticky, asi que esta
+   siempre a mano y NO tapa contenido: flotando sobre la pagina se comia los botones de abajo).
+   EN MOVIL se pinta SIEMPRE; en escritorio solo cuando el chef esta escondido (.activo), porque
+   con el a la vista su propia X esta al alcance del raton.
+   La etiqueta no cambia de texto al pulsarla: lo que cambia es el COLOR (verde = encendido,
+   gris = apagado). Un boton que salta de "Ocultar asistente" a "Mostrar asistente" cambia de
+   ancho y mueve la barra entera cada vez que se toca. */
 .mascota-volver {
-  position: fixed; right: 14px; bottom: 74px; z-index: 6; border: 1px solid var(--line);
-  background: #fff; border-radius: 999px; padding: 7px 13px; font-size: 12.5px;
-  font-weight: 700; color: var(--muted); cursor: pointer; box-shadow: var(--shadow-sm);
-  font-family: inherit;
+  border: 1px solid var(--line); background: var(--primary-soft); border-radius: 999px;
+  padding: 7px 13px; font-size: 12.5px; font-weight: 700; color: var(--primary);
+  cursor: pointer; font-family: inherit; display: none; align-items: center; gap: 6px;
+  flex-shrink: 0; line-height: 1;
 }
-.mascota-volver:hover { color: var(--ink); }
-.mascota-caja.hidden, .mascota-volver.hidden { display: none; }
+/* El icono es el propio chef de la seccion, no un emoji: el de cocinero es una secuencia ZWJ
+   que en Windows 10 sale como un monigote, y el dibujo dice mejor que nada que se enciende. */
+.mascota-volver .mv-ic { height: 22px; width: auto; display: block; margin: -4px 0; }
+.mascota-volver.apagado { background: var(--white); color: var(--muted); }
+.mascota-volver.apagado .mv-ic { filter: grayscale(1); opacity: .65; }
+.mascota-volver.activo { display: inline-flex; }
+.mascota-volver:hover { border-color: var(--primary); }
+.mascota-caja.hidden { display: none; }
 @media (max-width: 760px) {
   /* En movil SI se pinta (antes se escondia del todo). Sube por encima de la barra inferior,
      que mide 76px, o se quedaria pegada a los iconos de navegacion. El globo se estrecha para
      no tocar el borde izquierdo de la pantalla. */
-  .mascota-caja, .mascota-volver { right: 8px; bottom: 88px; }
+  .mascota-caja { right: 8px; bottom: 88px; }
+  /* Siempre visible: aqui es un interruptor, no un "traelo de vuelta". 32px de alto es lo que
+     hace falta para acertarle con el dedo. El texto se esconde si la barra va justa. */
+  .mascota-volver { display: inline-flex; padding: 8px 12px; min-height: 32px; }
   .mascota-globo { max-width: min(240px, calc(100vw - 90px)); }
   /* Con el dedo, 26px no se aciertan: la X crece al minimo que mide "npm run movil". */
   .mascota-cerrar { width: 32px; height: 32px; top: -8px; right: -8px; font-size: 18px; }
@@ -634,6 +650,17 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   display: grid; place-items: center; font-size: 30px; line-height: 1;
   background: rgba(255, 255, 255, .17); border: 1px solid rgba(255, 255, 255, .28);
 }
+/* El mismo chef de la seccion, en pequeno y fijo, al lado de la pastilla del icono. Va anclado
+   por ALTURA y no por ancho, por lo mismo que el asistente flotante: los dibujos no comparten
+   proporcion (de 238x455 a 296x361) y con un ancho comun cada uno saldria de otro tamano.
+   Los margenes negativos evitan que estire la cabecera: el chef asoma sobre el borde. */
+.hero-mascota { height: 74px; width: auto; flex-shrink: 0; display: block; margin: -12px 0 -14px;
+  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, .28)); }
+/* En el saludo de inicio el chef sustituye al emoji. margin-left:auto lo mantiene a la derecha
+   tambien cuando la fila envuelve en movil: si no, cae debajo del texto y pegado al margen
+   izquierdo, como si fuera parte del parrafo. */
+.hero-saludo .hero-chef { display: flex; align-items: flex-end; margin-left: auto; }
+
 .hero-seccion .hero-acciones { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
 .hero-seccion .hero-acciones .btn {
   background: rgba(255, 255, 255, .16); color: #fff; border: 1px solid rgba(255, 255, 255, .35);
@@ -649,6 +676,7 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
   .hero-seccion { gap: 12px; }
   .hero-seccion h2 { font-size: 19px; }
   .hero-ic { width: 48px; height: 48px; font-size: 25px; border-radius: 15px; }
+  .hero-mascota { height: 60px; margin: -10px 0 -12px; }
   .hero-seccion .hero-acciones { margin-left: 0; flex: 1 1 100%; }
   .hero-seccion .hero-acciones .btn { flex: 1 1 auto; }
   .mini-stats { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
@@ -792,7 +820,12 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 @media (max-width: 760px) {
   /* 1. El titulo se partia en dos lineas ("Mi / despensa") porque la pildora de la derecha se
         llevaba media barra. Se reducen los dos: cabe en una linea y sigue leyendose. */
-  .topbar { padding: 12px 16px; }
+  /* La barra puede envolver: con el titulo, la pastilla del plan y el interruptor del
+     asistente, en 390px no caben en una linea y el ultimo se salia de la pantalla (medido:
+     desborde horizontal en todas las paginas). Envolviendo, baja a un segundo renglon. */
+  .topbar { padding: 12px 16px; flex-wrap: wrap; row-gap: 8px; }
+  .topbar h2 { flex: 1 1 auto; min-width: 0; }
+  .topbar .spacer { display: none; }
   .topbar h2 { font-size: 19px; }
   .analisis-pill { font-size: 11.5px; padding: 5px 10px; }
 

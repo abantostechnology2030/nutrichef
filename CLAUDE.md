@@ -1165,6 +1165,32 @@ logotipo, letra blanca) con **una frase** que dice para que sirve la seccion en 
 - La ✕ mide **32px en movil** (26 en PC): `npm run movil` la cazo en cuanto el chef dejo de
   esconderse, porque con el dedo 26px no se aciertan.
 
+#### El interruptor "Asistente" y el chef de la cabecera (2026-09-01)
+- **Boton `Asistente` en la BARRA SUPERIOR** (`.mascota-volver`), como el "Mostrar asistente" de
+  MedicaIA. **En movil esta SIEMPRE** y enciende o apaga al chef; **en escritorio solo aparece
+  cuando esta apagado** (`.activo`), porque con el chef a la vista su propia ✕ ya esta al alcance
+  del raton.
+  - 🔴 **Va en la barra superior, que es `position: sticky`, y no flotando sobre el contenido.**
+    La primera version era una pastilla fija abajo a la izquierda y **se comia los botones del
+    final de la pantalla** — justo donde estan "Generar la semana" y "Copiar datos de otra
+    semana". Un control que tapa acciones es peor que no tenerlo.
+  - **La etiqueta NO cambia de texto al pulsarla** ("Asistente" siempre): lo que cambia es el
+    color (verde = encendido, blanco/gris = apagado) y el `title`. Un boton que salta de
+    "Ocultar asistente" a "Mostrar asistente" cambia de ancho y mueve la barra entera en cada
+    toque.
+  - ⚠️ **La barra superior ENVUELVE en movil** (`flex-wrap: wrap` + `.spacer` oculto): con el
+    titulo, la pastilla de la seccion y este boton, en 390px no caben en una linea y el ultimo se
+    salia de la pantalla (medido: desborde horizontal en las diez paginas). Envolviendo, baja a un
+    segundo renglon.
+  - **El icono del boton es el PROPIO dibujo del chef**, no el emoji 👨‍🍳: esa es una secuencia
+    ZWJ que en Windows 10 sale como un monigote, y ademas el dibujo dice exactamente que enciende.
+- **El mismo chef, en pequeno y FIJO, en la cabecera de cada seccion** (`.hero-mascota`, al lado
+  de la pastilla del icono; en `inicio` sustituye al emoji de `.hero-chef`). El flotante se puede
+  cerrar o arrastrar; **este se queda siempre**, asi que la seccion nunca pierde su personaje.
+  Tambien se inyecta desde `api.js` y usa `MASCOTA_IMG`, para que no pueda haber una cabecera con
+  el chef de otra seccion. Va anclado **por altura** (74px / 60px en movil) por la misma razon que
+  el grande, y con margenes negativos para no estirar la cabecera.
+
 ### Una sola cabecera para todas las secciones (2026-08-25)
 Cada pagina abria distinto: unas con una tarjeta verde, otras con el titulo suelto, otras con el
 formulario a pelo. **Ahora las diez abren con `.hero-seccion`**: el mismo degradado de marca del

@@ -400,6 +400,22 @@ function _guardarPrefsMascota(p) {
   img.src = '/img/' + (MASCOTA_IMG[ruta] || 'mascota-saluda.png');
   img.setAttribute('aria-hidden', 'true');
 
+  // EL MISMO CHEF, EN PEQUENO Y FIJO, EN LA CABECERA DE LA SECCION. El flotante se puede
+  // cerrar o arrastrar; este se queda siempre, asi que la seccion nunca pierde su personaje.
+  // Se inyecta aqui y no en los nueve HTML por lo mismo que la mascota: una sola tabla decide
+  // que dibujo le toca a cada pantalla, y no puede haber una cabecera con el chef de otra.
+  const heroIc = document.querySelector('.hero-seccion .hero-ic');
+  const heroChef = document.querySelector('.hero-saludo .hero-chef'); // el saludo de inicio
+  if (heroIc || heroChef) {
+    const mini = document.createElement('img');
+    mini.className = 'hero-mascota';
+    mini.src = img.src;
+    mini.alt = '';
+    mini.setAttribute('aria-hidden', 'true');
+    if (heroIc) heroIc.insertAdjacentElement('afterend', mini);
+    else { heroChef.textContent = ''; heroChef.appendChild(mini); }  // sustituye al emoji
+  }
+
   // Se envuelve en una caja para poder colgarle el globo y el boton de cerrar.
   const caja = document.createElement('div');
   caja.className = 'mascota-caja';
@@ -424,16 +440,25 @@ function _guardarPrefsMascota(p) {
   const cerrar = document.createElement('button');
   cerrar.className = 'mascota-cerrar';
   cerrar.type = 'button';
-  cerrar.title = 'Ocultar el chef';
-  cerrar.setAttribute('aria-label', 'Ocultar el chef');
+  cerrar.title = 'Ocultar el asistente';
+  cerrar.setAttribute('aria-label', 'Ocultar el asistente');
   cerrar.textContent = '×';
   figura.appendChild(cerrar);
 
+  // EL INTERRUPTOR DEL ASISTENTE (como en MedicaIA). En movil esta SIEMPRE, porque es la
+  // pantalla donde el chef estorba y la unica forma de quitarlo era una X pegada a su cabeza
+  // que no todo el mundo encuentra. En escritorio solo aparece cuando el chef esta escondido:
+  // con el a la vista, su X esta al alcance del raton y un boton fijo seria ruido.
+  //
+  // 🔴 VA EN LA BARRA SUPERIOR, que es `position: sticky`: siempre esta a la vista y **no tapa
+  // nada**. Flotando sobre el contenido (que fue la primera version) se comia justo los botones
+  // de abajo de la pantalla, que es donde estan las acciones principales del plan.
   const volver = document.createElement('button');
-  volver.className = 'mascota-volver hidden';
+  volver.className = 'mascota-volver';
   volver.type = 'button';
-  volver.textContent = '\u{1F468}‍\u{1F373} Mostrar chef';
-  document.body.appendChild(volver);
+  const barra = document.querySelector('.topbar');
+  if (barra) barra.appendChild(volver);
+  else document.body.appendChild(volver);  // sin barra: flota, como respaldo
 
   const prefs = _leerPrefsMascota();
 
@@ -452,7 +477,13 @@ function _guardarPrefsMascota(p) {
   }
   function aplicarVisibilidad(oculta) {
     caja.classList.toggle('hidden', oculta);
-    volver.classList.toggle('hidden', !oculta);
+    volver.classList.toggle('activo', oculta);  // en escritorio solo se ve si el chef no esta
+    volver.classList.toggle('apagado', oculta);
+    volver.innerHTML = '<img class="mv-ic" src="' + img.src + '" alt="" aria-hidden="true">'
+      + '<span class="mv-txt">Asistente</span>';
+    volver.title = oculta ? 'Mostrar el asistente' : 'Ocultar el asistente';
+    volver.setAttribute('aria-label', volver.title);
+    volver.setAttribute('aria-pressed', String(!oculta));
   }
   // EL GLOBO ARRANCA ABIERTO: es la explicacion de la seccion, y quien entra por primera vez no
   // tiene forma de saber que el chef habla si se le toca. Solo se calla si el usuario lo cerro.
@@ -468,7 +499,11 @@ function _guardarPrefsMascota(p) {
   aplicarGlobo(!!prefs.callado);
 
   cerrar.onclick = () => { aplicarVisibilidad(true); _guardarPrefsMascota({ oculta: true }); };
-  volver.onclick = () => { aplicarVisibilidad(false); _guardarPrefsMascota({ oculta: false }); };
+  volver.onclick = () => {
+    const oculta = !caja.classList.contains('hidden');
+    aplicarVisibilidad(oculta);
+    _guardarPrefsMascota({ oculta });
+  };
   globo.onclick = () => { aplicarGlobo(true); _guardarPrefsMascota({ callado: true }); };
 
   // Arrastre con pointer events: sirve igual para raton y para dedo, sin duplicar handlers.
