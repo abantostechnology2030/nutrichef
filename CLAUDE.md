@@ -545,7 +545,7 @@ Se abre pulsando el nombre en el sidebar y permite cambiar nombre, email, **foto
 jsdom **no calcula layout** (los rect dan cero y los media queries no se evaluan contra un ancho real), asi que los smokes no pueden decir si algo *se ve* bien. `pruebas/revisar-movil.js` abre las paginas en **Chrome headless por CDP** con viewport de telefono (390x844, touch) y mide lo que de verdad rompe: desborde horizontal, elementos fuera del ancho, areas de toque menores de 32px, texto por debajo de 11,5px y si el `.main` reserva el alto de la barra inferior. Deja capturas PNG que se pueden mirar.
 - **Hallazgos reales de la primera pasada** (todos corregidos): la **mascota tapaba botones** en movil (el Quitar de cada producto y las acciones de cada casilla), los botones de la casilla median **23px de alto**, el slider de stock **18px**, y **7 de los 81 emojis** del mapa de iconos **no tenian glifo en Windows 10** y salian como cuadro vacio.
 - ⚠️ **Los emojis nuevos (Unicode 13-15) no estan en todos los sistemas.** El de las legumbres (🫘) lo usaban **19 ingredientes**: toda la categoria salia con un rectangulo. Antes de meter un emoji al mapa, pasa el detector: dibuja cada uno en un canvas y lo compara con el tofu de un codepoint sin asignar. Un icono que no existe es **peor** que no poner icono.
-- **La mascota se oculta en móvil** (`display:none` a ≤760px). Es fija y decorativa, y en 390px se comía la esquina inferior derecha; además, al necesitar `pointer-events:auto` para poder arrastrarla, **se comía el toque** de lo que tapaba. En escritorio sigue igual.
+- ~~La mascota se oculta en móvil~~ — **revertido el 2026-09-01**: el usuario la quiere en todas las pantallas. Sigue siendo cierto que en 390px se come la esquina inferior derecha y que, al necesitar `pointer-events:auto` para arrastrarla, **se come el toque** de lo que tapa; lo que cambió es que ahora se puede **mover** o **cerrar** con su ✕, y esa es la salida. Ver "La mascota habla".
 - Las areas de toque se agrandan **solo en movil**: en escritorio, con raton, lo compacto esta bien y caben mas platos en pantalla.
 
 ## Convenciones
@@ -563,7 +563,7 @@ jsdom **no calcula layout** (los rect dan cero y los media queries no se evaluan
 - **Avatar de los integrantes (2026-08-21):** `integrantes.avatar` es un **emoji** (TEXT, migración idempotente en `db.js`), elegido de `AVATARES` con el picker de `hogar.html` y pintado grande con `.avatar-fam` junto al nombre. Es emoji y no foto **a propósito**: sin subida de archivos, sin almacenamiento y sin moderación de imágenes.
   - El tope es de **8 caracteres, no 1-2**: un emoji compuesto (una familia, un tono de piel) son varios puntos de código unidos con ZWJ, y cortarlo por la mitad deja un símbolo roto.
   - Las filas creadas antes de la columna tienen `NULL` y el default se aplica **al leerlas** (`integrantesDe`), no rellenando la tabla: no se reescriben datos que el usuario no ha tocado.
-- **Mascota arrastrable y ocultable (2026-08-21, portado de NutriIA):** `api.js` envuelve `img.mascota` en `.mascota-caja`, le añade el botón de cerrar y el arrastre con **pointer events** (vale igual para ratón y dedo). La preferencia (posición y si está oculta) va a `localStorage` — **por dispositivo, no por cuenta**: donde estorba es en el teléfono, y guardarlo en el servidor obligaría a sincronizar algo que no lo necesita.
+- **Mascota arrastrable, ocultable y PARLANTE (2026-08-21, ampliada el 2026-09-01):** `api.js` envuelve `img.mascota` en `.mascota-caja`, le añade el botón de cerrar y el arrastre con **pointer events** (vale igual para ratón y dedo). La preferencia (posición y si está oculta) va a `localStorage` — **por dispositivo, no por cuenta**: donde estorba es en el teléfono, y guardarlo en el servidor obligaría a sincronizar algo que no lo necesita.
   - `touch-action: none` en `.mascota-caja` es **imprescindible**: sin eso el navegador del móvil interpreta el arrastre como scroll y la mascota no se mueve.
 - **Modal de espera de la IA (`modalCargando()` en `api.js`, 2026-08-21):** generar un día lo abre a pantalla completa con el chef animado, el título grande, una barra indeterminada, **mensajes que rotan** cada 3,5 s y los segundos transcurridos.
   - El aviso vivía en la etiqueta del botón, que mide 11px y solo cabe `✨…`: el usuario se quedaba esperando sin señales claras y creía que la app se había colgado (ya pasó una vez).
@@ -1118,6 +1118,34 @@ de rotulo es cambiar el motor por pintar la puerta.
   siempre ya activado: se leia como un adorno. Ahora dice **"★ Está en Mis Recetas"** /
   **"☆ Guardar en Mis Recetas"**, con un `title` que explica que guardarlo permite reutilizarlo
   **sin gastar otra generacion**, y el aviso al pulsarlo dice la consecuencia.
+
+### La mascota habla: un globo por seccion (2026-09-01)
+El chef dejo de ser un adorno. En **cada** pantalla saca un **globo de dialogo** (fondo verde del
+logotipo, letra blanca) con **una frase** que dice para que sirve la seccion en la que estas.
+
+- 🔴 **Se pinta desde `api.js`, no desde cada HTML.** Antes cada pagina llevaba su propio
+  `<img class="mascota">` y **cuatro no lo llevaban** (Mi hogar, Mi suscripcion, Soporte y el
+  panel admin): el chef desaparecia justo al entrar ahi. Ahora hay **una tabla por ruta**
+  (`MASCOTA_IMG` + `MASCOTA_MENSAJE`), asi que no puede haber una pantalla sin chef ni dos
+  mensajes distintos de la misma seccion. Una ruta sin entrada en la tabla cae al chef de casa y
+  se queda **sin globo**: mejor callado que soltando una obviedad.
+- **El tamano es UNO SOLO** (104px de ancho) en todas las pantallas y en todos los anchos de
+  ventana. Antes eran 128px en PC y 84px en movil, o sea que el chef cambiaba de talla al girar
+  el telefono. **No le pongas un ancho distinto en un media query.**
+- **En movil YA SE PINTA.** Estaba en `display:none` a ≤760px desde el 2026-08-23, por una razon
+  real (tapa la esquina inferior derecha y se come el toque de lo que hay debajo); el usuario
+  pidio explicitamente tenerlo en todas las ventanas, asi que la salida es **arrastrarlo** o
+  **cerrarlo con la ✕**, no esconderlo de oficio. Sube a `bottom: 88px` para no pisar la barra
+  inferior, que mide 76px.
+- **El globo arranca ABIERTO** (lo pidio el usuario) y se calla tocandolo; tocando al chef vuelve
+  a hablar. La preferencia (`callado`) va al mismo `localStorage` que la posicion y el ocultar:
+  **por dispositivo**, como el resto.
+- ⚠️ **Un TOQUE no es un ARRASTRE.** El mismo gesto sirve para las dos cosas, asi que `soltar()`
+  mira si el puntero se movio mas de 4px: sin ese umbral, un dedo (que nunca se queda del todo
+  quieto) no podria nunca abrir el globo, y con umbral 0 cualquier arrastre acabaria ademas
+  callando al chef.
+- La ✕ mide **32px en movil** (26 en PC): `npm run movil` la cazo en cuanto el chef dejo de
+  esconderse, porque con el dedo 26px no se aciertan.
 
 ### Una sola cabecera para todas las secciones (2026-08-25)
 Cada pagina abria distinto: unas con una tarjeta verde, otras con el titulo suelto, otras con el

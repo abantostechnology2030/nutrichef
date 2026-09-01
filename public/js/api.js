@@ -318,28 +318,92 @@ function iconoPlato(nombre, momento) {
   return ICONO_MOMENTO[momento] || '\u{1F37D}️';
 }
 
-// ===== Mascota: se puede ARRASTRAR y CERRAR; la decision se recuerda por dispositivo =====
+// ===== Mascota: el chef ACOMPANA Y EXPLICA. Se puede arrastrar y cerrar =====
 //
-// Portado de NutriIA. El chef es simpatico pero tapa contenido en pantallas chicas, y antes no
-// habia forma de quitarlo: era `pointer-events:none`, decorativo y fijo abajo a la derecha.
+// Portado de NutriIA como adorno, hoy hace un trabajo: en cada pantalla saca un GLOBO DE
+// DIALOGO (verde del logo, letra blanca) que dice en una frase para que sirve la seccion en la
+// que esta el usuario. Es la ayuda mas barata que hay: no ocupa sitio en el layout, esta en
+// todas las pantallas y se puede callar de un toque.
 //
-// La preferencia (posicion y si esta oculta) vive en localStorage, o sea POR DISPOSITIVO y no
-// por cuenta: donde estorba es en el telefono, y ahi es donde se quiere mover. Guardarlo en el
-// servidor obligaria a sincronizar algo que no lo necesita.
+// SE PINTA DESDE AQUI, no desde cada HTML. Antes cada pagina llevaba su <img class="mascota">
+// y cuatro no lo llevaban, asi que el chef desaparecia al entrar en Mi hogar, Mi suscripcion,
+// Soporte o el panel admin. Con una sola tabla por ruta no puede haber una pantalla sin chef,
+// ni dos mensajes distintos para la misma seccion.
+//
+// La preferencia (posicion, si esta oculta y si el globo esta callado) vive en localStorage,
+// o sea POR DISPOSITIVO y no por cuenta: donde estorba es en el telefono, y ahi es donde se
+// quiere mover. Guardarlo en el servidor obligaria a sincronizar algo que no lo necesita.
 const MASCOTA_KEY = 'nutrichefia_mascota';
+
+// Que chef sale en cada pantalla. El de casa es el respaldo: una seccion nueva nunca se queda
+// sin mascota por olvidarse de esta tabla.
+const MASCOTA_IMG = {
+  plan: 'mascota-plan.png',
+  despensa: 'mascota-despensa.png',
+  compras: 'mascota-despensa.png',
+  platos: 'mascota-platos.png',
+};
+
+// Lo que dice el chef en cada seccion: UNA frase, sin tecnicismos, contando que se hace ahi.
+// Sin mensaje no hay globo (mejor callado que decir una obviedad).
+const MASCOTA_MENSAJE = {
+  inicio: ['Inicio', 'Aquí ves de un vistazo lo que toca comer hoy, cómo va tu semana y cuánto has usado la app. Toca una tarjeta para ir a esa sección.'],
+  app: ['Analizar producto', 'Sácale una foto a un producto o escribe su nombre y te digo con un semáforo si le conviene a tu familia.'],
+  plan: ['Plan de comidas', 'Tu calendario de la semana: desayuno, almuerzo y cena. Pulsa "Generar" y te propongo platos con lo que ya tienes en casa.'],
+  despensa: ['Mi despensa', 'Aquí llevas lo que hay en tu cocina y registras la compra del periodo. Las barras te dicen si te alcanza hasta la próxima compra.'],
+  compras: ['Mis compras', 'Tu lista para el mercado: marca lo que echas al carro, anota el precio y mira cuánto llevas gastado.'],
+  platos: ['Mis Recetas', 'Tu recetario. Guarda los platos que te gustaron y reutilízalos en el calendario sin gastar una generación.'],
+  analisis: ['Análisis', 'Mira hacia atrás: qué comió tu familia en un periodo y qué dice eso de su alimentación.'],
+  hogar: ['Mi hogar', 'Cuéntame quiénes viven en casa, sus condiciones médicas y sus alergias. Con eso adapto cada plato que te propongo.'],
+  'mi-plan': ['Mi suscripción', 'Aquí ves tu plan actual, lo que incluye y cómo pasarte a Premium pagando con Yape.'],
+  soporte: ['Soporte', 'Si algo no funciona o se te ocurre una mejora, escríbenos por aquí.'],
+  admin: ['Panel admin', 'Desde aquí se manejan los planes, los pagos por Yape, los usuarios y la configuración de la IA.'],
+};
+
+function _rutaMascota() {
+  const p = location.pathname.replace(/^\//, '').replace(/\.html$/, '');
+  return p || 'inicio';
+}
 function _leerPrefsMascota() { try { return JSON.parse(localStorage.getItem(MASCOTA_KEY)) || {}; } catch { return {}; } }
 function _guardarPrefsMascota(p) {
   try { localStorage.setItem(MASCOTA_KEY, JSON.stringify({ ..._leerPrefsMascota(), ...p })); } catch { /* modo privado */ }
 }
 (function mascotaMovible() {
-  const img = document.querySelector('img.mascota');
-  if (!img) return;
+  // El login/registro no la lleva: no hay ninguna opcion que explicar todavia.
+  if (!document.querySelector('.main')) return;
 
-  // Se envuelve en una caja para poder colgarle el boton de cerrar.
+  const ruta = _rutaMascota();
+  // La imagen puede venir del HTML o crearse aqui; al final hay una sola, dentro de la caja.
+  let img = document.querySelector('img.mascota');
+  if (!img) {
+    img = document.createElement('img');
+    img.className = 'mascota';
+    img.alt = '';
+    document.body.appendChild(img);
+  }
+  img.src = '/img/' + (MASCOTA_IMG[ruta] || 'mascota-home.png');
+  img.setAttribute('aria-hidden', 'true');
+
+  // Se envuelve en una caja para poder colgarle el globo y el boton de cerrar.
   const caja = document.createElement('div');
   caja.className = 'mascota-caja';
   img.parentNode.insertBefore(caja, img);
-  caja.appendChild(img);
+
+  const msj = MASCOTA_MENSAJE[ruta];
+  const globo = document.createElement('div');
+  globo.className = 'mascota-globo';
+  globo.title = 'Toca para callar al chef';
+  if (msj) {
+    globo.innerHTML = '<b>' + esc(msj[0]) + '</b>' + esc(msj[1]);
+    caja.appendChild(globo);
+  }
+
+  // La figura agrupa la imagen y su boton de cerrar, para que la X quede pegada al chef y no
+  // a la esquina del globo, que es mas alto.
+  const figura = document.createElement('div');
+  figura.className = 'mascota-fig';
+  caja.appendChild(figura);
+  figura.appendChild(img);
 
   const cerrar = document.createElement('button');
   cerrar.className = 'mascota-cerrar';
@@ -347,7 +411,7 @@ function _guardarPrefsMascota(p) {
   cerrar.title = 'Ocultar el chef';
   cerrar.setAttribute('aria-label', 'Ocultar el chef');
   cerrar.textContent = '×';
-  caja.appendChild(cerrar);
+  figura.appendChild(cerrar);
 
   const volver = document.createElement('button');
   volver.className = 'mascota-volver hidden';
@@ -374,17 +438,26 @@ function _guardarPrefsMascota(p) {
     caja.classList.toggle('hidden', oculta);
     volver.classList.toggle('hidden', !oculta);
   }
+  // EL GLOBO ARRANCA ABIERTO: es la explicacion de la seccion, y quien entra por primera vez no
+  // tiene forma de saber que el chef habla si se le toca. Solo se calla si el usuario lo cerro.
+  function aplicarGlobo(callado) {
+    globo.classList.toggle('hidden', !!callado || !msj);
+    img.title = callado && msj ? 'Toca al chef para que te explique esta sección' : 'Arrástrame';
+  }
 
   if (typeof prefs.x === 'number' && typeof prefs.y === 'number') {
     requestAnimationFrame(() => ubicar(prefs.x, prefs.y));
   }
   aplicarVisibilidad(!!prefs.oculta);
+  aplicarGlobo(!!prefs.callado);
 
   cerrar.onclick = () => { aplicarVisibilidad(true); _guardarPrefsMascota({ oculta: true }); };
   volver.onclick = () => { aplicarVisibilidad(false); _guardarPrefsMascota({ oculta: false }); };
+  globo.onclick = () => { aplicarGlobo(true); _guardarPrefsMascota({ callado: true }); };
 
   // Arrastre con pointer events: sirve igual para raton y para dedo, sin duplicar handlers.
   let arrastrando = false;
+  let movido = false;   // distingue un ARRASTRE de un TOQUE: el toque abre o calla el globo
   let dx = 0;
   let dy = 0;
   img.addEventListener('pointerdown', (e) => {
@@ -392,16 +465,29 @@ function _guardarPrefsMascota(p) {
     dx = e.clientX - r.left;
     dy = e.clientY - r.top;
     arrastrando = true;
+    movido = false;
     caja.classList.add('arrastrando');
     img.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
-  img.addEventListener('pointermove', (e) => { if (arrastrando) ubicar(e.clientX - dx, e.clientY - dy); });
+  img.addEventListener('pointermove', (e) => {
+    if (!arrastrando) return;
+    const r = caja.getBoundingClientRect();
+    // Umbral: un dedo nunca se queda del todo quieto, y sin el ningun toque contaria como tal.
+    if (Math.abs(e.clientX - dx - r.left) > 4 || Math.abs(e.clientY - dy - r.top) > 4) movido = true;
+    ubicar(e.clientX - dx, e.clientY - dy);
+  });
   const soltar = (e) => {
     if (!arrastrando) return;
     arrastrando = false;
     caja.classList.remove('arrastrando');
     try { img.releasePointerCapture(e.pointerId); } catch { /* ya se solto */ }
+    if (!movido) {   // fue un toque, no un arrastre: el chef vuelve a hablar (o se calla)
+      const callado = !globo.classList.contains('hidden');
+      aplicarGlobo(callado);
+      _guardarPrefsMascota({ callado });
+      return;
+    }
     const r = caja.getBoundingClientRect();
     _guardarPrefsMascota({ x: Math.round(r.left), y: Math.round(r.top) });
   };
