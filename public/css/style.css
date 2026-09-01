@@ -18,6 +18,11 @@
      de pasos mas hondo porque con el naranja tal cual la letra blanca se queda en 3,2:1 de
      contraste y AA pide 4,5; asi llega a 4,6:1 y a simple vista es el mismo naranja. */
   --globo-naranja: #c05704;
+  /* Amarillo de llamada a la accion (hoy: "Compras de la semana"). Lleva texto OSCURO, no
+     blanco: sobre un amarillo el blanco se queda en 1,8:1 de contraste y no se lee; con el
+     verde oscuro de la marca llega a 10:1. */
+  --amarillo: #f2b705;
+  --amarillo-hover: #dda404;
   --ink: #1b2a1d;              /* texto principal (verde muy oscuro) */
   --muted: #5c6b5e;            /* texto secundario */
   --line: #dfe9dd;             /* borde verde suave */
@@ -1166,11 +1171,14 @@ a.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .btn-copiar:hover { filter: brightness(.93); }
 
 /* "Compras de la semana" es lo que el usuario va a buscar DESPUES de programar (se lleva el
-   plan al mercado), asi que sale del monton de botones fantasma: va a la derecha, en verde
-   lleno y un punto mas grande que el resto de la barra. */
+   plan al mercado), asi que sale del monton de botones fantasma: va a la derecha, en AMARILLO
+   y mas grande que el resto de la barra. El amarillo no lo usa ningun otro boton de la app, asi
+   que no compite con el verde de "generar" ni con el naranja de "copiar". */
 .btn-compras-semana {
-  font-size: 14.5px; padding: 12px 22px; box-shadow: var(--shadow-sm);
+  background: var(--amarillo); color: var(--ink); border: none;
+  font-size: 16px; padding: 15px 26px; box-shadow: var(--shadow-sm);
 }
+.btn-compras-semana:hover { background: var(--amarillo-hover); color: var(--ink); }
 @media (max-width: 760px) {
   /* En movil no hay sitio para empujarlo a la derecha: se le da la fila entera, que ademas lo
      separa visualmente igual de bien. */

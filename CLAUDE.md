@@ -1224,9 +1224,12 @@ dos pantallas: con una copia en cada una, el mismo plato acabaria contando dos h
   Analizar nutricion arriba"*, y en "Mis Recetas" ese boton no existe (y en el plan se llama
   "🍳 Completar recetas" desde hace meses).
 
-**3. "Compras de la semana" va a la DERECHA y destacado.** Es lo que se busca *despues* de
-programar (te llevas el plan al mercado) y entre seis botones fantasma del mismo tamano no se
-encontraba. Ojo con el detalle que lo hacia fallar: el `.separador-acciones` solo empuja si la
+**3. "Compras de la semana" va a la DERECHA, en AMARILLO y mas grande.** Es lo que se busca
+*despues* de programar (te llevas el plan al mercado) y entre seis botones fantasma del mismo
+tamano no se encontraba. El amarillo (`--amarillo`) no lo usa ningun otro boton, asi que no
+compite con el verde de "generar" ni con el naranja de "copiar", y lleva **texto oscuro**: sobre
+un amarillo el blanco se queda en 1,8:1 de contraste y no se lee. El icono es un **carrito**
+(🛒), que es lo que se va a hacer con esa lista. Ojo con el detalle que lo hacia fallar: el `.separador-acciones` solo empuja si la
 barra **ocupa la linea entera**, asi que `.barra-acciones` necesita `flex: 1 1 auto` — sin eso
 el separador no tiene espacio libre en el que expandirse y el boton se queda pegado al resto.
 
