@@ -26,6 +26,8 @@
      verde oscuro de la marca llega a 10:1. */
   --amarillo: #f2b705;
   --amarillo-hover: #dda404;
+  --amarillo-borde: #d79f04;
+  --amarillo-palido: #fdeaa8;   /* el mismo amarillo, apagado: el interruptor del asistente */
   --ink: #1b2a1d;              /* texto principal (verde muy oscuro) */
   --muted: #5c6b5e;            /* texto secundario */
   --line: #dfe9dd;             /* borde verde suave */
@@ -181,10 +183,7 @@ h1, h2, h3, h4, .brand, .stat .num, .precio { font-family: var(--font-head); let
 
 .main { flex: 1; margin-left: var(--sidebar-w); display: flex; flex-direction: column; min-width: 0; }
 .topbar { background: var(--white); border-bottom: 1px solid var(--line); padding: 14px 28px;
-  display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 20;
-  /* Envuelve si hace falta: con el sidebar comiendose 256px, el titulo + la pastilla de la
-     seccion + el interruptor del asistente no siempre caben en una linea. */
-  flex-wrap: wrap; row-gap: 8px; }
+  display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 20; }
 .topbar h2 { font-size: 25px; font-weight: 800; }
 .topbar .spacer { flex: 1; }
 .hamb { display: none; background: none; border: none; font-size: 24px; cursor: pointer; color: var(--ink); }
@@ -458,7 +457,7 @@ tbody tr:hover { background: var(--bg); }
    imagen. touch-action:none es imprescindible: sin eso, en el telefono el navegador interpreta
    el arrastre como scroll y la mascota no se mueve. */
 .mascota-caja {
-  position: fixed; right: 14px; bottom: 74px; z-index: 6; touch-action: none;
+  position: fixed; right: 14px; bottom: 76px; z-index: 6; touch-action: none;
   display: flex; flex-direction: column; align-items: flex-end;
 }
 /* EL TAMANO ES UNO SOLO, EN TODAS LAS PANTALLAS Y EN TODOS LOS TAMANOS DE VENTANA.
@@ -515,25 +514,32 @@ tbody tr:hover { background: var(--bg); }
   display: grid; place-items: center; padding: 0; font-family: inherit;
 }
 .mascota-cerrar:hover { background: var(--primary-soft); color: var(--primary); }
-/* El interruptor del asistente, dentro de la barra superior (que es sticky, asi que esta
-   siempre a mano y NO tapa contenido: flotando sobre la pagina se comia los botones de abajo).
+/* El interruptor del asistente: FIJO ABAJO A LA DERECHA, en amarillo. Es el mismo sitio en
+   escritorio y en movil (en movil, redondo), asi que quien lo busca lo busca siempre en la
+   misma esquina — la del pulgar en el telefono y la del propio chef en las dos.
+   Vive apilado CON el chef, no encima: el boton pegado al borde de abajo y el chef por encima
+   (.mascota-caja tiene mas `bottom`). Estuvo dentro de la barra superior y se movio aqui a
+   peticion del usuario.
    ESTA SIEMPRE, tambien en escritorio: al principio solo salia con el chef escondido, y eso
    dejaba sin forma visible de apagarlo a quien no encontrara la X pegada a su cabeza.
-   La etiqueta no cambia de texto al pulsarla: lo que cambia es el COLOR (verde = encendido,
-   gris = apagado). Un boton que salta de "Ocultar asistente" a "Mostrar asistente" cambia de
-   ancho y mueve la barra entera cada vez que se toca. */
+   La etiqueta no cambia de texto al pulsarla: lo que cambia es el COLOR (amarillo lleno =
+   encendido, amarillo palido con el chef en gris = apagado) y el `title`. Un boton que salta de
+   "Ocultar asistente" a "Mostrar asistente" cambia de ancho y baila en cada clic. */
 .mascota-volver {
-  border: 1px solid var(--line); background: var(--primary-soft); border-radius: 999px;
-  padding: 7px 13px; font-size: 12.5px; font-weight: 700; color: var(--primary);
+  position: fixed; right: 14px; bottom: 18px; z-index: 7;
+  border: 1px solid var(--amarillo-borde); background: var(--amarillo); border-radius: 999px;
+  padding: 8px 14px; font-size: 12.5px; font-weight: 700; color: var(--ink);
   cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 6px;
-  flex-shrink: 0; line-height: 1;
+  flex-shrink: 0; line-height: 1; box-shadow: var(--shadow);
 }
 /* El icono es el propio chef de la seccion, no un emoji: el de cocinero es una secuencia ZWJ
    que en Windows 10 sale como un monigote, y el dibujo dice mejor que nada que se enciende. */
 .mascota-volver .mv-ic { height: 22px; width: auto; display: block; margin: -4px 0; }
-.mascota-volver.apagado { background: var(--white); color: var(--muted); }
+/* Apagado: sigue siendo amarillo (es su color), pero palido y con el chef en gris. Asi el
+   estado se ve de un vistazo sin que el boton cambie de color por completo. */
+.mascota-volver.apagado { background: var(--amarillo-palido); color: var(--muted); }
 .mascota-volver.apagado .mv-ic { filter: grayscale(1); opacity: .65; }
-.mascota-volver:hover { border-color: var(--primary); }
+.mascota-volver:hover { background: var(--amarillo-hover); color: var(--ink); }
 .mascota-caja.hidden { display: none; }
 @media (max-width: 760px) {
   /* En movil SI se pinta (antes se escondia del todo). Sube por encima de la barra inferior,
@@ -545,10 +551,10 @@ tbody tr:hover { background: var(--bg); }
      El chef sube por encima de el (bottom mayor) para no taparlo: los dos viven en la misma
      esquina, apilados, no encima uno del otro. */
   .mascota-caja { right: 8px; bottom: 146px; }
+  /* Misma esquina, pero REDONDO y por encima de la barra inferior (76px). */
   .mascota-volver {
-    display: inline-flex; position: fixed; right: 8px; bottom: 88px; z-index: 8;
+    right: 8px; bottom: 88px; z-index: 8;
     width: 46px; height: 46px; padding: 0; border-radius: 50%; justify-content: center;
-    box-shadow: var(--shadow);
   }
   .mascota-volver .mv-txt { display: none; }   /* redondo: solo el chef, con su title */
   .mascota-volver .mv-ic { height: 30px; margin: 0; }

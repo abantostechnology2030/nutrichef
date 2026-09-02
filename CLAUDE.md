@@ -1198,23 +1198,26 @@ logotipo, letra blanca) con **una frase** que dice para que sirve la seccion en 
   MedicaIA. **En movil esta SIEMPRE** y enciende o apaga al chef; **en escritorio solo aparece
   cuando esta apagado** (`.activo`), porque con el chef a la vista su propia ✕ ya esta al alcance
   del raton.
-  - 🔴 **Donde vive depende del tamano de la pantalla, pero es UN SOLO elemento en el DOM**
-    (dos botones para lo mismo se acaban contradiciendo): en **escritorio**, dentro de la barra
-    superior, que es `position: sticky`; en **movil**, el CSS lo saca de la barra
-    (`position: fixed`) y lo deja **redondo abajo a la derecha**, que es donde se busca con el
-    pulgar y donde ya vive el chef — van **apilados**, el boton pegado a la barra inferior
-    (`bottom: 88px`) y el chef encima (`bottom: 146px`).
-    Una version intermedia lo puso flotando **abajo a la izquierda** y **se comia los botones
-    del final de la pagina** — justo "Generar la semana" y "Copiar datos de otra semana". Un
-    control que tapa acciones es peor que no tenerlo.
+  - 🔴 **Va FIJO ABAJO A LA DERECHA, en amarillo, y apilado con el chef** (el boton pegado al
+    borde y el chef encima). Es la MISMA esquina en escritorio y en movil —donde esta el pulgar
+    en el telefono y donde ya vive el chef en los dos—, asi que se busca siempre en el mismo
+    sitio; en movil es redondo y sube a `bottom: 88px` para no pisar la barra inferior.
+    Cuelga del `<body>`, no de la barra: siendo `position: fixed` no gana nada por estar dentro
+    de ella y ahi ocupaba sitio en una linea que en 390px ya iba justa.
+    Paso por dos sitios antes: **abajo a la izquierda**, donde **se comia los botones del final
+    de la pagina** ("Generar la semana", "Copiar datos de otra semana") —un control que tapa
+    acciones es peor que no tenerlo—, y la **barra superior**, de donde lo bajo el usuario.
+  - **El amarillo es el de `--amarillo`**, el mismo de "Compras de la semana", con letra oscura.
+    Apagado no cambia de color: se queda en `--amarillo-palido` con el chef en gris, para que el
+    estado se vea sin que el boton se convierta en otra cosa.
   - **La etiqueta NO cambia de texto al pulsarla** ("Asistente" siempre): lo que cambia es el
     color (verde = encendido, blanco/gris = apagado) y el `title`. Un boton que salta de
     "Ocultar asistente" a "Mostrar asistente" cambia de ancho y mueve la barra entera en cada
     toque.
-  - ⚠️ **Por eso en movil es `fixed` y no un boton mas de la barra**: con el titulo, la
-    pastilla de la seccion y este boton, en 390px no caben en una linea y el ultimo **se salia de
-    la pantalla** (medido: desborde horizontal en las diez paginas). Al sacarlo del flujo, la
-    barra vuelve a caber sin tocarla.
+  - ⚠️ **Por eso es `fixed` y no un boton mas de la barra**: con el titulo, la pastilla de la
+    seccion y este boton, en 390px no caben en una linea y el ultimo **se salia de la pantalla**
+    (medido: desborde horizontal en las diez paginas). Fuera del flujo, la barra vuelve a caber
+    sin tocarla.
   - **El icono del boton es el PROPIO dibujo del chef**, no el emoji 👨‍🍳: esa es una secuencia
     ZWJ que en Windows 10 sale como un monigote, y ademas el dibujo dice exactamente que enciende.
 - **El mismo chef, en pequeno y FIJO, en la cabecera de cada seccion** (`.hero-mascota`, al lado

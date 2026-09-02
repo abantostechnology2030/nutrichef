@@ -756,21 +756,17 @@ function _guardarPrefsMascota(p) {
   // que no todo el mundo encuentra. En escritorio solo aparece cuando el chef esta escondido:
   // con el a la vista, su X esta al alcance del raton y un boton fijo seria ruido.
   //
-  // 🔴 DONDE VIVE, segun el tamano de la pantalla:
-  //   - ESCRITORIO: dentro de la barra superior (que es `position: sticky`), con su etiqueta.
-  //     Esta SIEMPRE: cuando solo salia con el chef escondido, no habia forma visible de
-  //     apagarlo salvo dar con la X pegada a su cabeza. Flotando sobre el contenido se comia
-  //     los botones del final de la pagina, que es donde estan las acciones del plan.
-  //   - MOVIL: el CSS lo saca de la barra (`position: fixed`) y lo deja REDONDO ABAJO A LA
-  //     DERECHA, que es donde se busca con el pulgar y donde ya esta el chef. Van apilados: el
-  //     boton pegado a la barra inferior y el chef encima.
-  // Es un solo elemento en el DOM: dos botones para lo mismo se acaban contradiciendo.
+  // 🔴 VA FIJO ABAJO A LA DERECHA, apilado con el chef (el boton pegado al borde, el chef
+  // encima). Es la misma esquina en escritorio y en movil —donde esta el pulgar y donde ya vive
+  // el chef— asi que se busca siempre en el mismo sitio. Estuvo un rato en la barra superior y
+  // se bajo aqui a peticion del usuario.
+  //
+  // Cuelga del <body> y no de la barra: al ser `position: fixed` no gana nada por estar dentro
+  // de ella, y ahi ocupaba sitio en una linea que en el telefono ya iba justa.
   const volver = document.createElement('button');
   volver.className = 'mascota-volver';
   volver.type = 'button';
-  const barra = document.querySelector('.topbar');
-  if (barra) barra.appendChild(volver);
-  else document.body.appendChild(volver);  // sin barra: flota, como respaldo
+  document.body.appendChild(volver);
 
   const prefs = _leerPrefsMascota();
 
