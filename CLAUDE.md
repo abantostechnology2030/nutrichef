@@ -1119,6 +1119,34 @@ de rotulo es cambiar el motor por pintar la puerta.
   **"☆ Guardar en Mis Recetas"**, con un `title` que explica que guardarlo permite reutilizarlo
   **sin gastar otra generacion**, y el aviso al pulsarlo dice la consecuencia.
 
+### 🔴 El pie de pagina del concurso (2026-09-01) — TEMPORAL, hay que revertirlo
+
+El pie de pagina (`pintarFooter()` en `api.js`, se inyecta en TODAS las paginas, login
+incluido) dice hoy **"CONCURSO CREA Y EMPRENDE 2026"**. Es un cambio **temporal** pedido por el
+usuario para el concurso: el de siempre vuelve despues.
+
+**El original, para copiarlo tal cual cuando toque volver:**
+
+```js
+  f.innerHTML = '<span class="marca">NutriChefIA</span> es un producto de ' +
+    '<a href="https://www.solucionesctec.com" target="_blank" rel="noopener">www.solucionesctec.com</a>' +
+    ' · Todos los derechos reservados 2026';
+```
+
+Se ve asi: **NutriChefIA** es un producto de [www.solucionesctec.com](https://www.solucionesctec.com)
+· Todos los derechos reservados 2026
+
+- **Queda guardado aqui y no en un comentario del codigo** porque un comentario con el HTML
+  viejo al lado del nuevo se acaba borrando "por limpiar", y entonces el enlace y el
+  "Todos los derechos reservados" habria que reescribirlos de memoria. `api.js` solo lleva una
+  nota que apunta a esta seccion.
+- **No hizo falta tocar el CSS**: `.site-footer` ya era `text-align: center`, asi que el texto
+  del concurso sale centrado sin cambiar nada. Al revertir tampoco hay que tocarlo.
+- ⚠️ **En movil el pie NO se ve dentro de la app** (`.main .site-footer { display: none }` a
+  ≤760px): quedaba justo debajo de la barra inferior, que es del mismo verde, y los dos se
+  fundian en una sola franja. Si el concurso exige que el rotulo se vea tambien en el telefono,
+  eso es un cambio aparte — hoy solo sale en escritorio y en el login.
+
 ### La mascota habla: un globo por seccion (2026-09-01)
 El chef dejo de ser un adorno. En **cada** pantalla saca un **globo de dialogo** (fondo verde del
 logotipo, letra blanca) con **una frase** que dice para que sirve la seccion en la que estas.

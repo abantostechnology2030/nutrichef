@@ -192,13 +192,16 @@ if ('serviceWorker' in navigator) {
 }
 
 // Pie de pagina global (se inyecta en todas las paginas que cargan este script).
+//
+// 🔴 ESTE TEXTO ES TEMPORAL (2026-09-01, por el concurso). El pie de siempre —el de
+// solucionesctec— esta guardado LETRA POR LETRA en CLAUDE.md, en "El pie de pagina del
+// concurso": cuando toque volver atras, se copia de ahi y se borra esta nota. No lo reescribas
+// de memoria; el enlace y el "Todos los derechos reservados" tienen que volver igual.
 (function pintarFooter() {
   if (document.querySelector('.site-footer')) return;
   const f = document.createElement('footer');
   f.className = 'site-footer';
-  f.innerHTML = '<span class="marca">NutriChefIA</span> es un producto de ' +
-    '<a href="https://www.solucionesctec.com" target="_blank" rel="noopener">www.solucionesctec.com</a>' +
-    ' · Todos los derechos reservados 2026';
+  f.innerHTML = '<span class="marca">CONCURSO CREA Y EMPRENDE 2026</span>';
   const main = document.querySelector('.main');
   if (main) {
     main.appendChild(f);
@@ -755,8 +758,9 @@ function _guardarPrefsMascota(p) {
   //
   // 🔴 DONDE VIVE, segun el tamano de la pantalla:
   //   - ESCRITORIO: dentro de la barra superior (que es `position: sticky`), con su etiqueta.
-  //     Flotando sobre el contenido se comia los botones del final de la pagina, que es donde
-  //     estan las acciones del plan.
+  //     Esta SIEMPRE: cuando solo salia con el chef escondido, no habia forma visible de
+  //     apagarlo salvo dar con la X pegada a su cabeza. Flotando sobre el contenido se comia
+  //     los botones del final de la pagina, que es donde estan las acciones del plan.
   //   - MOVIL: el CSS lo saca de la barra (`position: fixed`) y lo deja REDONDO ABAJO A LA
   //     DERECHA, que es donde se busca con el pulgar y donde ya esta el chef. Van apilados: el
   //     boton pegado a la barra inferior y el chef encima.
@@ -785,7 +789,6 @@ function _guardarPrefsMascota(p) {
   }
   function aplicarVisibilidad(oculta) {
     caja.classList.toggle('hidden', oculta);
-    volver.classList.toggle('activo', oculta);  // en escritorio solo se ve si el chef no esta
     volver.classList.toggle('apagado', oculta);
     volver.innerHTML = '<img class="mv-ic" src="' + img.src + '" alt="" aria-hidden="true">'
       + '<span class="mv-txt">Asistente</span>';
